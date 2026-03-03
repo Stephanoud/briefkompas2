@@ -6,7 +6,15 @@ const sectionCardClass = "rounded-xl border border-slate-200 bg-white p-5 shadow
 export default function Page() {
   return (
     <>
-      <section className="border-b border-slate-200 py-12 sm:py-16">
+      <section className="w-full py-4">
+        <Container>
+          <div className="rounded-xl border-2 border-amber-500 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-900">
+            CONTAINER TEST
+          </div>
+        </Container>
+      </section>
+
+      <section className="w-full border-b border-slate-200 py-12 sm:py-16">
         <Container>
           <div className="grid gap-8 lg:grid-cols-12 lg:items-start">
             <div className="lg:col-span-7 text-center">
@@ -15,7 +23,7 @@ export default function Page() {
               </p>
 
               <h1 className="mx-auto max-w-3xl text-4xl sm:text-5xl leading-[1.05] tracking-tight">
-                Jouw bezwaar- of WOO-brief. Helder, rustig en controleerbaar.
+                Jouw bezwaar- of WOO-brief. Helder, rustig en controleerbaar. [[DEPLOY-TEST-771]]
               </h1>
 
               <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-slate-600">
@@ -64,7 +72,7 @@ export default function Page() {
         </Container>
       </section>
 
-      <section id="hoe-het-werkt" className="py-12 sm:py-16 scroll-mt-24">
+      <section id="hoe-het-werkt" className="w-full py-12 sm:py-16 scroll-mt-24">
         <Container>
           <div className="text-center">
             <h2 className="text-3xl font-semibold tracking-tight">Hoe het werkt</h2>
@@ -95,7 +103,7 @@ export default function Page() {
         </Container>
       </section>
 
-      <section id="prijzen" className="bg-slate-50 py-12 sm:py-16 scroll-mt-24">
+      <section id="prijzen" className="w-full bg-slate-50 py-12 sm:py-16 scroll-mt-24">
         <Container>
           <div className="text-center">
             <h2 className="text-3xl font-semibold tracking-tight">Prijzen</h2>
@@ -128,7 +136,7 @@ export default function Page() {
         </Container>
       </section>
 
-      <section id="faq" className="py-12 sm:py-16 scroll-mt-24">
+      <section id="faq" className="w-full py-12 sm:py-16 scroll-mt-24">
         <Container>
           <div className="text-center">
             <h2 className="text-3xl font-semibold tracking-tight">FAQ</h2>
