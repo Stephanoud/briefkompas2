@@ -39,7 +39,7 @@ export default function RootLayout({
       >
         <div className="min-h-screen flex flex-col">
           <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur">
-            <Container className="flex items-center justify-between py-3">
+            <Container className="grid grid-cols-[auto_1fr_auto] items-center gap-4 py-3">
               <Link href="/" className="flex items-center gap-2">
                 <span className="h-8 w-8 rounded-md bg-slate-900 text-white text-sm font-semibold inline-flex items-center justify-center">
                   BK
@@ -49,7 +49,7 @@ export default function RootLayout({
                 </span>
               </Link>
 
-              <nav className="hidden sm:flex items-center gap-7 text-sm text-slate-600">
+              <nav className="hidden sm:flex items-center justify-center gap-7 text-sm text-slate-600">
                 <Link href="/#hoe-het-werkt" className="hover:text-slate-900">
                   Hoe het werkt
                 </Link>
@@ -74,7 +74,7 @@ export default function RootLayout({
 
           <footer className="w-full border-t border-slate-200 bg-slate-50">
             <Container className="py-8">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col items-center gap-4 text-center">
                 <div>
                   <p className="text-sm font-semibold text-slate-900">BriefKompas.nl</p>
                   <p className="text-sm text-slate-600">
@@ -82,7 +82,7 @@ export default function RootLayout({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-5 text-sm text-slate-600">
+                <div className="flex flex-wrap items-center justify-center gap-5 text-sm text-slate-600">
                   <Link href="/privacy" className="hover:text-slate-900">
                     Privacy
                   </Link>
