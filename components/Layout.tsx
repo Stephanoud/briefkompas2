@@ -16,7 +16,7 @@ export const Header: React.FC = () => {
           <Link href="/pricing" className="text-[var(--muted)] hover:text-[var(--brand-strong)]">
             Prijzen
           </Link>
-          <Link href="/#faq" className="text-[var(--muted)] hover:text-[var(--brand-strong)]">
+          <Link href="/faq" className="text-[var(--muted)] hover:text-[var(--brand-strong)]">
             FAQ
           </Link>
           <Link href="/disclaimer" className="text-[var(--muted)] hover:text-[var(--brand-strong)]">
@@ -43,6 +43,11 @@ export const Footer: React.FC = () => {
           <div>
             <h4 className="font-semibold text-[var(--foreground)] mb-4">Links</h4>
             <ul className="space-y-2 text-sm">
+              <li>
+                <Link href="/faq" className="text-[var(--muted)] hover:text-[var(--brand-strong)]">
+                  FAQ
+                </Link>
+              </li>
               <li>
                 <Link href="/disclaimer" className="text-[var(--muted)] hover:text-[var(--brand-strong)]">
                   Disclaimer
