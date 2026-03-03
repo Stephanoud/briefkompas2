@@ -3,18 +3,28 @@ import Stripe from "stripe";
 import { generateStripeLineItem } from "@/lib/utils";
 import { Flow, Product } from "@/types";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
+export const runtime = "nodejs";
+
 const isPlaceholder = (value?: string) =>
   !value || value.includes("YOUR_") || value.includes("YOUR-");
 
+function getStripeClient() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key || isPlaceholder(key)) {
+    return null;
+  }
+  return new Stripe(key);
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const stripe = getStripeClient();
     const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
     const proto = req.headers.get("x-forwarded-proto") || "https";
     const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || (host ? `${proto}://${host}` : "");
 
-    if (isPlaceholder(stripeSecretKey)) {
+    if (!stripe || isPlaceholder(stripeSecretKey)) {
       return NextResponse.json(
         { error: "Stripe is niet geconfigureerd: STRIPE_SECRET_KEY ontbreekt of is een placeholder." },
         { status: 500 }
