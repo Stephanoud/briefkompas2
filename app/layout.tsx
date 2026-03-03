@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono, DM_Serif_Display } from "next/font/google";
 import "./globals.css";
-import { Container } from "@/components/Container";
+import Container from "@/components/Container";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -38,8 +38,8 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${dmSerif.variable} antialiased`}
       >
         <div className="min-h-screen flex flex-col">
-          <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur">
-            <Container className="h-16 flex items-center justify-between">
+          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur">
+            <Container className="flex items-center justify-between py-3">
               <Link href="/" className="flex items-center gap-2">
                 <span className="h-8 w-8 rounded-md bg-slate-900 text-white text-sm font-semibold inline-flex items-center justify-center">
                   BK
@@ -63,7 +63,7 @@ export default function RootLayout({
 
               <Link
                 href="/start-bezwaar"
-                className="inline-flex h-10 items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
+                className="inline-flex h-11 items-center justify-center rounded-md bg-emerald-700 px-5 text-sm font-semibold text-white hover:bg-emerald-600"
               >
                 Start bezwaar
               </Link>

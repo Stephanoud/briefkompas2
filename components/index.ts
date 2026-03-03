@@ -6,4 +6,4 @@ export { Input } from "./Input";
 export { Textarea } from "./Textarea";
 export { ChatBubble } from "./ChatBubble";
 export { UploadBox } from "./UploadBox";
-export { Container } from "./Container";
+export { default as Container } from "./Container";
