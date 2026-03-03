@@ -10,7 +10,9 @@ const isPlaceholder = (value?: string) =>
 export async function POST(req: NextRequest) {
   try {
     const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    const proto = req.headers.get("x-forwarded-proto") || "https";
+    const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || (host ? `${proto}://${host}` : "");
 
     if (isPlaceholder(stripeSecretKey)) {
       return NextResponse.json(
@@ -21,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     if (!appUrl) {
       return NextResponse.json(
-        { error: "NEXT_PUBLIC_APP_URL ontbreekt in .env.local." },
+        { error: "Kon app URL niet bepalen voor checkout redirect." },
         { status: 500 }
       );
     }

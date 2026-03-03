@@ -15,7 +15,18 @@ export default function ReviewPage({ params }: ReviewPageProps) {
   const router = useRouter();
   const flow = params.flow as Flow;
   const appStore = useAppStore();
-  const intakeData = appStore.intakeData;
+  const cachedIntake =
+    typeof window !== "undefined"
+      ? sessionStorage.getItem("briefkompas_intake")
+      : null;
+  let intakeData: IntakeFormData | null = appStore.intakeData;
+  if (!intakeData && cachedIntake) {
+    try {
+      intakeData = JSON.parse(cachedIntake) as IntakeFormData;
+    } catch {
+      intakeData = null;
+    }
+  }
 
   if (!intakeData) {
     return (
@@ -38,8 +49,11 @@ export default function ReviewPage({ params }: ReviewPageProps) {
     router.push(`/pricing/${flow}`);
   };
 
-  const renderField = (label: string, value: any) => {
-    if (!value) return null;
+  const renderField = (
+    label: string,
+    value: string | boolean | undefined | null
+  ) => {
+    if (value === undefined || value === null || value === "") return null;
     if (typeof value === "boolean") {
       value = value ? "Ja" : "Nee";
     }
@@ -132,7 +146,7 @@ export default function ReviewPage({ params }: ReviewPageProps) {
           )}
 
           <Alert type="info">
-            Klopt alles? Klik "Terug naar intake" als je iets wilt wijzigen. Anders ga je door naar
+            Klopt alles? Klik Terug naar intake als je iets wilt wijzigen. Anders ga je door naar
             het volgende stap waar je je pakket kiest.
           </Alert>
         </div>

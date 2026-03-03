@@ -63,6 +63,23 @@ export default function IntakePage({ params }: IntakePageProps) {
     setMessages((prev) => [...prev, assistantMessage]);
   };
 
+  const handleBackStep = () => {
+    if (isLoading) return;
+
+    if (isComplete) {
+      setIsComplete(false);
+      const previousIndex = Math.max(0, steps.length - 1);
+      setCurrentStepIndex(previousIndex);
+      addAssistantMessage(`Terug naar vorige vraag: ${steps[previousIndex].question}`);
+      return;
+    }
+
+    if (currentStepIndex <= 0) return;
+    const previousIndex = currentStepIndex - 1;
+    setCurrentStepIndex(previousIndex);
+    addAssistantMessage(`Terug naar vorige vraag: ${steps[previousIndex].question}`);
+  };
+
   const handleSubmitAnswer = async () => {
     if (!currentInput.trim() || !currentStep) {
       setValidationError("Vul een antwoord in");
@@ -156,7 +173,9 @@ export default function IntakePage({ params }: IntakePageProps) {
 
   const handleContinue = () => {
     if (!isIntakeReady) return;
-    appStore.setIntakeData({ ...intakeData, flow } as IntakeFormData);
+    const finalizedData = { ...intakeData, flow } as IntakeFormData;
+    appStore.setIntakeData(finalizedData);
+    sessionStorage.setItem("briefkompas_intake", JSON.stringify(finalizedData));
     router.push(`/review/${flow}`);
   };
 
@@ -218,9 +237,17 @@ export default function IntakePage({ params }: IntakePageProps) {
           </Alert>
         )}
 
-        <div className="mt-6 flex gap-4">
+        <div className="mt-6 flex gap-3">
           <Button variant="secondary" onClick={() => router.push("/")} className="flex-1">
             Annuleren
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={handleBackStep}
+            disabled={isLoading || (currentStepIndex === 0 && !isComplete)}
+            className="flex-1"
+          >
+            Vorige vraag
           </Button>
           <Button onClick={handleContinue} disabled={!isIntakeReady} className="flex-1">
             Naar Overzicht
