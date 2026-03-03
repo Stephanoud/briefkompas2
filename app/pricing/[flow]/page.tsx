@@ -81,12 +81,12 @@ export default function PricingPage({ params }: PricingPageProps) {
       });
 
       const data = await response.json();
-      if (data.checkoutUrl) {
+      if (response.ok && data.checkoutUrl) {
         window.location.href = data.checkoutUrl;
       } else {
-        setError("Fout bij het creëren van checkout sessie");
+        setError(data.error || "Fout bij het creeren van checkout sessie");
       }
-    } catch (err) {
+    } catch {
       setError("Er ging iets fout. Probeer opnieuw.");
     }
   };
@@ -255,3 +255,4 @@ export default function PricingPage({ params }: PricingPageProps) {
     </div>
   );
 }
+

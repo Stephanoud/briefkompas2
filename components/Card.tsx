@@ -10,13 +10,13 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(
     return (
       <div
         ref={ref}
-        className={`bg-white rounded-lg border border-gray-200 shadow-sm p-6 ${className}`}
+        className={`bg-[var(--surface)] rounded-2xl border border-[var(--border)] shadow-[0_12px_30px_rgba(17,33,28,0.06)] p-6 ${className} max-w-full`}
         {...props}
       >
         {title && (
           <div className="mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-            {subtitle && <p className="text-sm text-gray-600 mt-1">{subtitle}</p>}
+            <h3 className="text-xl text-[var(--foreground)]">{title}</h3>
+            {subtitle && <p className="text-sm text-[var(--muted)] mt-1">{subtitle}</p>}
           </div>
         )}
         {children}

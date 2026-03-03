@@ -3,253 +3,125 @@
 import Link from "next/link";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
-import { Alert } from "@/components/index";
+import { Alert } from "@/components";
 
 export default function Home() {
   return (
-    <div className="min-h-screen">
-      {/* Hero Section */}
-      <section className="py-12 md:py-20">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            Jouw bezwaar- en WOO-brief in minuten
-          </h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-8">
-            BriefKompas.nl helpt je stap voor stap bij het opstellen van een bezwaarschrift of WOO-verzoek.
-            Geen juridisch advies, wel professionele begeleiding.
-          </p>
-        </div>
+    <div className="space-y-14">
+      <section className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] px-6 py-12 md:px-12 md:py-16 shadow-[0_20px_50px_rgba(17,33,28,0.08)]">
+        <p className="text-sm font-semibold tracking-wide text-[var(--brand)] uppercase mb-4">
+          BriefKompas.nl
+        </p>
+        <h1 className="text-4xl md:text-6xl text-[var(--foreground)] leading-tight">
+          Maak je bezwaar- of WOO-brief in een rustige, heldere flow.
+        </h1>
+        <p className="text-lg md:text-xl text-[var(--muted)] max-w-3xl mt-5">
+          Je krijgt stap voor stap begeleiding, met duidelijke vragen en direct een bruikbare conceptbrief.
+        </p>
 
-        {/* CTA Buttons */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-          <Link href="/start-bezwaar" className="flex-1 sm:flex-none">
-            <Button size="lg" className="w-full sm:w-auto">
-              Start Bezwaar
-            </Button>
+        <div className="flex flex-col sm:flex-row gap-4 mt-8">
+          <Link href="/start-bezwaar">
+            <Button size="lg">Start bezwaar</Button>
           </Link>
-          <Link href="/start-woo" className="flex-1 sm:flex-none">
-            <Button size="lg" variant="secondary" className="w-full sm:w-auto">
+          <Link href="/start-woo">
+            <Button size="lg" variant="secondary">
               Start WOO-verzoek
             </Button>
           </Link>
         </div>
-
-        {/* Disclaimer Alert */}
-        <Alert type="warning" title="Belangrijk">
-          Dit is GEEN juridisch advies. BriefKompas.nl helpt je bij het structureren van je brief.
-          Je bent zelf verantwoordelijk voor de inhoud en verzending.
-        </Alert>
       </section>
 
-      {/* Features Section */}
-      <section className="py-12 md:py-20 bg-gray-50 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 my-12">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">
-            Hoe werkt BriefKompas?
-          </h2>
+      <Alert type="warning" title="Belangrijk">
+        BriefKompas geeft geen juridisch advies. Je blijft altijd zelf verantwoordelijk voor inhoud en verzending.
+      </Alert>
 
-          <div className="grid md:grid-cols-3 gap-8">
-            <Card>
-              <div className="text-3xl mb-4">💬</div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Geleide Chat</h3>
-              <p className="text-gray-600 text-sm">
-                Een AI-chatbot stelt je stap voor stap de juiste vragen om alle noodzakelijke informatie
-                in kaart te brengen.
-              </p>
-            </Card>
-
-            <Card>
-              <div className="text-3xl mb-4">📋</div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Controleer Gegevens</h3>
-              <p className="text-gray-600 text-sm">
-                Bekijk je antwoorden in een duidelijk overzicht. Pas alles aan als je dat wilt voordat
-                je verder gaat.
-              </p>
-            </Card>
-
-            <Card>
-              <div className="text-3xl mb-4">📄</div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Brief Gegenereerd</h3>
-              <p className="text-gray-600 text-sm">
-                Je krijgt een professioneel opgemaakte conceptbrief die je kunt aanpassen en downloaden
-                als PDF of Word.
-              </p>
-            </Card>
-          </div>
+      <section className="space-y-6">
+        <h2 className="text-3xl md:text-4xl text-[var(--foreground)] text-center">Hoe het werkt</h2>
+        <div className="grid md:grid-cols-3 gap-5">
+          <Card>
+            <p className="text-xs font-semibold text-[var(--brand)] uppercase mb-2">Stap 1</p>
+            <h3 className="text-xl text-[var(--foreground)] mb-2">Intake met vragen</h3>
+            <p className="text-sm text-[var(--muted)]">
+              De chatbot stelt precies de vragen die nodig zijn voor jouw situatie.
+            </p>
+          </Card>
+          <Card>
+            <p className="text-xs font-semibold text-[var(--brand)] uppercase mb-2">Stap 2</p>
+            <h3 className="text-xl text-[var(--foreground)] mb-2">Controle en keuze</h3>
+            <p className="text-sm text-[var(--muted)]">
+              Je controleert je antwoorden en kiest het pakket dat bij je past.
+            </p>
+          </Card>
+          <Card>
+            <p className="text-xs font-semibold text-[var(--brand)] uppercase mb-2">Stap 3</p>
+            <h3 className="text-xl text-[var(--foreground)] mb-2">Brief klaar</h3>
+            <p className="text-sm text-[var(--muted)]">
+              Je ontvangt een nette conceptbrief die je aanpast en als DOCX downloadt.
+            </p>
+          </Card>
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section className="py-12 md:py-20">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">
-            Prijzen
-          </h2>
-
-          <div className="grid md:grid-cols-2 gap-8 mb-8">
-            {/* Basic Plan */}
-            <Card title="Basis" subtitle="€7,95 eenmalig">
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-3">Inclusief:</h4>
-                  <ul className="space-y-2 text-sm text-gray-600">
-                    <li className="flex items-start gap-2">
-                      <span className="text-green-600 font-bold">✓</span>
-                      <span>Geleide chatbot intake</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-green-600 font-bold">✓</span>
-                      <span>1 PDF-upload (besluit)</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-green-600 font-bold">✓</span>
-                      <span>Standaard brief</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-green-600 font-bold">✓</span>
-                      <span>Download als .docx</span>
-                    </li>
-                  </ul>
-                </div>
-                <Link href="/pricing/basis">
-                  <Button variant="secondary" className="w-full">
-                    Bekijk details
-                  </Button>
-                </Link>
-              </div>
-            </Card>
-
-            {/* Premium Plan */}
-            <Card title="Uitgebreid" subtitle="€14,95 eenmalig">
-              <div className="space-y-4">
-                <div className="bg-blue-50 border border-blue-200 rounded px-2 py-1 text-xs font-semibold text-blue-700 mb-3 inline-block">
-                  AANBEVOLEN
-                </div>
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-3">Alles van Basis, plus:</h4>
-                  <ul className="space-y-2 text-sm text-gray-600">
-                    <li className="flex items-start gap-2">
-                      <span className="text-blue-600 font-bold">+</span>
-                      <span>Tot 5 bijlagen</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-blue-600 font-bold">+</span>
-                      <span>Samenvatting van besluit</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-blue-600 font-bold">+</span>
-                      <span>Bijlagenoverzicht in brief</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-blue-600 font-bold">+</span>
-                      <span>Editable jurisprudentikolom</span>
-                    </li>
-                  </ul>
-                </div>
-                <Link href="/pricing/uitgebreid">
-                  <Button className="w-full">
-                    Aan de slag →
-                  </Button>
-                </Link>
-              </div>
-            </Card>
-          </div>
+      <section className="space-y-6">
+        <h2 className="text-3xl md:text-4xl text-[var(--foreground)] text-center">Pakketten</h2>
+        <div className="grid md:grid-cols-2 gap-5">
+          <Card title="Basis" subtitle="EUR 7,95 eenmalig">
+            <ul className="text-sm text-[var(--muted)] space-y-2">
+              <li>Chat intake</li>
+              <li>1 PDF upload</li>
+              <li>Standaard brief</li>
+              <li>Download als DOCX</li>
+            </ul>
+          </Card>
+          <Card title="Uitgebreid" subtitle="EUR 14,95 eenmalig" className="relative overflow-hidden">
+            <div className="absolute right-4 top-4 rounded-full bg-[var(--accent)]/20 px-3 py-1 text-xs font-semibold text-[var(--brand-strong)]">
+              Aanbevolen
+            </div>
+            <ul className="text-sm text-[var(--muted)] space-y-2">
+              <li>Alles uit Basis</li>
+              <li>Tot 5 bijlagen</li>
+              <li>Samenvatting van besluit</li>
+              <li>Verwijzingen en jurisprudentieblok</li>
+            </ul>
+          </Card>
         </div>
       </section>
 
-      {/* FAQ Section */}
-      <section id="faq" className="py-12 md:py-20 bg-gray-50 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-3xl mx-auto">
-          <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">
-            Veel Gestelde Vragen
-          </h2>
-
-          <div className="space-y-6">
-            <Card>
-              <h3 className="font-semibold text-gray-900 mb-2">
-                Geeft BriefKompas juridisch advies?
-              </h3>
-              <p className="text-gray-600 text-sm">
-                Nee, BriefKompas geeft geen juridisch advies. We helpen je bij het structureren en
-                formuleren van je brief, maar je bent zelf verantwoordelijk voor de inhoud en
-                verzending. Voor juridisch advies raadpleeg je een advocaat.
-              </p>
-            </Card>
-
-            <Card>
-              <h3 className="font-semibold text-gray-900 mb-2">
-                Wat is het verschil tussen Basis en Uitgebreid?
-              </h3>
-              <p className="text-gray-600 text-sm mb-3">
-                Basis is geschikt voor eenvoudige bezwaren. Uitgebreid geeft je extra ruimte voor
-                bijlagen, samenvatting van het besluit en een jurisprudentiëkolom waar je relevante
-                rechtszaken kunt toevoegen.
-              </p>
-            </Card>
-
-            <Card>
-              <h3 className="font-semibold text-gray-900 mb-2">
-                Hoe lang duurt het proces?
-              </h3>
-              <p className="text-gray-600 text-sm">
-                De intake duurt ongeveer 10-15 minuten. Daarna keer je de gegevens en selecteer je je
-                pakket. De brief wordt direct gegenereerd.
-              </p>
-            </Card>
-
-            <Card>
-              <h3 className="font-semibold text-gray-900 mb-2">
-                Kan ik mijn brief aanpassen?
-              </h3>
-              <p className="text-gray-600 text-sm">
-                Ja! Je krijgt de brief als bewerkbaar document (.docx/PDF). Je kunt deze volledig
-                aanpassen voordat je deze verzendt.
-              </p>
-            </Card>
-
-            <Card>
-              <h3 className="font-semibold text-gray-900 mb-2">
-                Is mijn gegevens veilig?
-              </h3>
-              <p className="text-gray-600 text-sm">
-                We slaan je gegevens alleen op voor deze sessie. Na afronding van je bestelling,
-                worden alle persoonlijke gegevens verwijderd. Zie onze privacyverklaring voor meer
-                informatie.
-              </p>
-            </Card>
-
-            <Card>
-              <h3 className="font-semibold text-gray-900 mb-2">
-                Wat is een WOO-verzoek?
-              </h3>
-              <p className="text-gray-600 text-sm">
-                WOO staat voor Wet Open Overheid. Dit geeft je het recht om documenten van
-                overheidsinstanties op te vragen. BriefKompas helpt je een gestructureerd verzoek in
-                te dienen.
-              </p>
-            </Card>
-          </div>
-        </div>
+      <section id="faq" className="space-y-4">
+        <h2 className="text-3xl md:text-4xl text-[var(--foreground)] text-center">Veelgestelde vragen</h2>
+        <Card>
+          <h3 className="text-lg text-[var(--foreground)] mb-2">Is dit juridisch advies?</h3>
+          <p className="text-sm text-[var(--muted)]">
+            Nee. De tool helpt met structuur en formulering, maar geeft geen juridisch advies.
+          </p>
+        </Card>
+        <Card>
+          <h3 className="text-lg text-[var(--foreground)] mb-2">Hoe lang duurt het?</h3>
+          <p className="text-sm text-[var(--muted)]">
+            De intake duurt meestal 10 tot 15 minuten, afhankelijk van je dossier.
+          </p>
+        </Card>
+        <Card>
+          <h3 className="text-lg text-[var(--foreground)] mb-2">Kan ik de brief aanpassen?</h3>
+          <p className="text-sm text-[var(--muted)]">
+            Ja. Na generatie kun je tekst aanpassen voordat je de brief verstuurt.
+          </p>
+        </Card>
       </section>
 
-      {/* CTA Section */}
-      <section className="py-12 md:py-20">
+      <section className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] px-6 py-10 md:px-10 md:py-12">
         <div className="text-center">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">
-            Klaar om te beginnen?
-          </h2>
-          <p className="text-lg text-gray-600 mb-8">
-            Kies je type verzoek en volg de geleide intake.
+          <h2 className="text-3xl md:text-4xl text-[var(--foreground)]">Klaar om te starten?</h2>
+          <p className="text-[var(--muted)] mt-3 mb-6">
+            Kies je traject en ga direct verder met de intake.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/start-bezwaar">
-              <Button size="lg" className="px-8">
-                Bezwaarbrief
-              </Button>
+              <Button size="lg">Start bezwaar</Button>
             </Link>
             <Link href="/start-woo">
-              <Button size="lg" variant="secondary" className="px-8">
-                WOO-verzoek
+              <Button size="lg" variant="secondary">
+                Start WOO-verzoek
               </Button>
             </Link>
           </div>
