@@ -2,40 +2,7 @@ import Link from "next/link";
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-white text-slate-900">
-      {/* Topbar */}
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-900 text-white text-sm font-semibold">
-              BK
-            </div>
-            <span className="text-sm font-semibold tracking-tight">BriefKompas.nl</span>
-          </div>
-
-          <nav className="hidden items-center gap-6 text-sm text-slate-600 sm:flex">
-            <a href="#prijzen" className="hover:text-slate-900">
-              Prijzen
-            </a>
-            <a href="#faq" className="hover:text-slate-900">
-              FAQ
-            </a>
-            <Link href="/disclaimer" className="hover:text-slate-900">
-              Disclaimer
-            </Link>
-          </nav>
-
-          <div className="flex items-center gap-2">
-            <Link
-              href="/start-bezwaar"
-              className="inline-flex h-9 items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800"
-            >
-              Start bezwaar
-            </Link>
-          </div>
-        </div>
-      </header>
-
+    <div className="bg-white text-slate-900 w-full">
       {/* Hero */}
       <section className="border-b border-slate-200">
         <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-12 lg:items-center">
@@ -265,60 +232,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-          <div className="grid gap-8 sm:grid-cols-3">
-            <div>
-              <div className="text-sm font-semibold">BriefKompas.nl</div>
-              <p className="mt-2 text-sm text-slate-600">
-                AI-gestuurde self-service tool voor bezwaarbrieven en WOO-verzoeken.
-              </p>
-            </div>
-
-            <div className="text-sm">
-              <div className="font-semibold">Links</div>
-              <ul className="mt-2 space-y-2 text-slate-600">
-                <li>
-                  <a href="#prijzen" className="hover:text-slate-900">
-                    Prijzen
-                  </a>
-                </li>
-                <li>
-                  <a href="#faq" className="hover:text-slate-900">
-                    FAQ
-                  </a>
-                </li>
-                <li>
-                  <Link href="/privacy" className="hover:text-slate-900">
-                    Privacy
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/disclaimer" className="hover:text-slate-900">
-                    Disclaimer
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/over" className="hover:text-slate-900">
-                    Over
-                  </Link>
-                </li>
-              </ul>
-            </div>
-
-            <div className="text-sm">
-              <div className="font-semibold">Contact</div>
-              <p className="mt-2 text-slate-600">info@briefkompas.nl</p>
-            </div>
-          </div>
-
-          <div className="mt-8 text-xs text-slate-500">
-            © {new Date().getFullYear()} BriefKompas.nl — conceptgenerator, geen juridisch advies.
-          </div>
-        </div>
-      </footer>
-    </main>
+    </div>
   );
 }

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, DM_Serif_Display } from "next/font/google";
 import "./globals.css";
-import { Header, Footer } from "@/components/Layout";
+import { Footer } from "@/components/Layout";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,8 +37,40 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${dmSerif.variable} antialiased`}
       >
         <div className="flex flex-col min-h-screen">
-          <Header />
-          <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10">
+          {/* Global Sticky Header */}
+          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur">
+            <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-900 text-white text-sm font-semibold">
+                  BK
+                </div>
+                <span className="text-sm font-semibold tracking-tight">BriefKompas.nl</span>
+              </div>
+
+              <nav className="hidden items-center gap-6 text-sm text-slate-600 sm:flex">
+                <a href="#prijzen" className="hover:text-slate-900">
+                  Prijzen
+                </a>
+                <a href="#faq" className="hover:text-slate-900">
+                  FAQ
+                </a>
+                <a href="/disclaimer" className="hover:text-slate-900">
+                  Disclaimer
+                </a>
+              </nav>
+
+              <div className="flex items-center gap-2">
+                <a
+                  href="/start-bezwaar"
+                  className="inline-flex h-9 items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  Start bezwaar
+                </a>
+              </div>
+            </div>
+          </header>
+
+          <main className="flex-1 w-full">
             {children}
           </main>
           <Footer />
