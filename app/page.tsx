@@ -7,16 +7,16 @@ import { Alert } from "@/components";
 
 export default function Home() {
   return (
-    <div className="max-w-4xl mx-auto space-y-10">
+    <div className="max-w-4xl mx-auto space-y-10 text-center">
       <section className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] px-6 py-12 md:px-12 md:py-14 text-center shadow-[0_20px_50px_rgba(17,33,28,0.08)]">
         <p className="text-sm font-semibold tracking-wide text-[var(--brand)] uppercase mb-3">
           BriefKompas.nl
         </p>
-        <h1 className="text-4xl md:text-6xl text-[var(--foreground)] leading-tight max-w-3xl mx-auto">
+        <h1 className="text-4xl md:text-6xl text-[var(--foreground)] leading-tight max-w-3xl mx-auto text-center">
           Jouw bezwaar- of WOO-brief in een rustige, heldere flow.
         </h1>
-        <p className="text-lg md:text-xl text-[var(--muted)] max-w-2xl mx-auto mt-5">
-          Geen juridisch advies, wel duidelijke begeleiding van intake tot conceptbrief.
+        <p className="text-lg md:text-xl text-[var(--muted)] max-w-2xl mx-auto mt-5 text-center">
+          Van intake tot conceptbrief, jouw hulp voor een goede brief.
         </p>
       </section>
 
