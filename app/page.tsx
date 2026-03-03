@@ -92,8 +92,8 @@ export default function HomePage() {
       {/* How it works */}
       <section id="hoe-het-werkt" className="py-12">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <h2 className="text-2xl font-semibold tracking-tight">Hoe het werkt</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
+          <h2 className="text-2xl font-semibold tracking-tight text-center">Hoe het werkt</h2>
+          <p className="mt-2 text-sm text-slate-600 text-center">
             Drie stappen. Geen gedoe. Jij houdt regie.
           </p>
 
@@ -124,16 +124,14 @@ export default function HomePage() {
       {/* Pricing */}
       <section id="prijzen" className="border-t border-slate-200 bg-slate-50 py-12">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold tracking-tight">Prijzen</h2>
-              <p className="mt-2 text-sm text-slate-600">
-                Eenvoudig: betalen per brief. Geen abonnement.
-              </p>
-            </div>
+          <div className="text-center">
+            <h2 className="text-2xl font-semibold tracking-tight">Prijzen</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Eenvoudig: betalen per brief. Geen abonnement.
+            </p>
           </div>
 
-          <div className="mt-8 grid gap-4 lg:grid-cols-2">
+          <div className="mt-8 grid gap-6 lg:grid-cols-2">
             {/* Basic */}
             <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between">
@@ -197,7 +195,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-xl border border-slate-200 bg-white p-4 text-xs text-slate-600">
+          <div className="mt-8 rounded-xl border border-slate-200 bg-white p-4 text-xs text-slate-600 text-center">
             <span className="font-semibold text-slate-700">Let op:</span> BriefKompas geeft geen juridisch advies. Jij
             controleert en verstuurt de brief zelf.
           </div>
@@ -207,7 +205,7 @@ export default function HomePage() {
       {/* FAQ */}
       <section id="faq" className="py-12">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <h2 className="text-2xl font-semibold tracking-tight">FAQ</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-center">FAQ</h2>
 
           <div className="mt-6 grid gap-4 lg:grid-cols-3">
             {[
