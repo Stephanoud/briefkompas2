@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Geist, Geist_Mono, DM_Serif_Display } from "next/font/google";
 import "./globals.css";
-import { Footer } from "@/components/Layout";
+import { Container } from "@/components/Container";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,44 +37,69 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${dmSerif.variable} antialiased`}
       >
-        <div className="flex flex-col min-h-screen">
-          {/* Global Sticky Header */}
-          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur">
-            <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-900 text-white text-sm font-semibold">
+        <div className="min-h-screen flex flex-col">
+          <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur">
+            <Container className="h-16 flex items-center justify-between">
+              <Link href="/" className="flex items-center gap-2">
+                <span className="h-8 w-8 rounded-md bg-slate-900 text-white text-sm font-semibold inline-flex items-center justify-center">
                   BK
-                </div>
-                <span className="text-sm font-semibold tracking-tight">BriefKompas.nl</span>
-              </div>
+                </span>
+                <span className="text-sm font-semibold tracking-tight text-slate-900">
+                  BriefKompas.nl
+                </span>
+              </Link>
 
-              <nav className="hidden items-center gap-6 text-sm text-slate-600 sm:flex">
-                <a href="#prijzen" className="hover:text-slate-900">
+              <nav className="hidden sm:flex items-center gap-7 text-sm text-slate-600">
+                <Link href="/#prijzen" className="hover:text-slate-900">
                   Prijzen
-                </a>
-                <a href="#faq" className="hover:text-slate-900">
+                </Link>
+                <Link href="/#faq" className="hover:text-slate-900">
                   FAQ
-                </a>
-                <a href="/disclaimer" className="hover:text-slate-900">
+                </Link>
+                <Link href="/disclaimer" className="hover:text-slate-900">
                   Disclaimer
-                </a>
+                </Link>
               </nav>
 
-              <div className="flex items-center gap-2">
-                <a
-                  href="/start-bezwaar"
-                  className="inline-flex h-9 items-center justify-center rounded-md bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800"
-                >
-                  Start bezwaar
-                </a>
-              </div>
-            </div>
+              <Link
+                href="/start-bezwaar"
+                className="inline-flex h-10 items-center justify-center rounded-md bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                Start bezwaar
+              </Link>
+            </Container>
           </header>
 
-          <main className="flex-1 w-full">
-            {children}
-          </main>
-          <Footer />
+          <main className="flex-1 w-full py-10">{children}</main>
+
+          <footer className="w-full border-t border-slate-200 bg-slate-50">
+            <Container className="py-8">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">BriefKompas.nl</p>
+                  <p className="text-sm text-slate-600">
+                    AI-gestuurde self-service tool voor bezwaar- en WOO-brieven.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-5 text-sm text-slate-600">
+                  <Link href="/privacy" className="hover:text-slate-900">
+                    Privacy
+                  </Link>
+                  <Link href="/over" className="hover:text-slate-900">
+                    Over
+                  </Link>
+                  <a href="mailto:info@briefkompas.nl" className="hover:text-slate-900">
+                    Contact
+                  </a>
+                </div>
+              </div>
+
+              <p className="mt-6 border-t border-slate-200 pt-4 text-center text-sm text-slate-500">
+                Copyright 2026 BriefKompas.nl. Alle rechten voorbehouden.
+              </p>
+            </Container>
+          </footer>
         </div>
       </body>
     </html>
