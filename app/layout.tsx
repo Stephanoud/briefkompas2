@@ -70,7 +70,9 @@ export default function RootLayout({
             </Container>
           </header>
 
-          <main className="flex-1 w-full py-10">{children}</main>
+          <main className="flex-1 w-full py-10">
+            <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">{children}</div>
+          </main>
 
           <footer className="w-full border-t border-slate-200 bg-slate-50">
             <Container className="py-8">
