@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { IntakeFormData, Flow, Product } from "@/types";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+export const runtime = "nodejs";
+
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return null;
+  }
+  return new OpenAI({ apiKey });
+}
 
 function generateBezwaarPrompt(
   data: IntakeFormData,
@@ -68,6 +74,14 @@ Zorg dat het verzoek professioneel, duidelijk en zonder juridische jargon wordt 
 
 export async function POST(req: NextRequest) {
   try {
+    const openai = getOpenAIClient();
+    if (!openai) {
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY ontbreekt op de server." },
+        { status: 500 }
+      );
+    }
+
     const { intakeData, product, flow } = await req.json() as {
       intakeData: IntakeFormData;
       product: Product;
