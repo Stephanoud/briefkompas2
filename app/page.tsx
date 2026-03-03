@@ -6,14 +6,6 @@ const sectionCardClass = "rounded-xl border border-slate-200 bg-white p-5 shadow
 export default function Page() {
   return (
     <>
-      <section className="w-full py-4">
-        <Container>
-          <div className="rounded-xl border-2 border-amber-500 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-900">
-            CONTAINER TEST
-          </div>
-        </Container>
-      </section>
-
       <section className="w-full border-b border-slate-200 py-12 sm:py-16">
         <Container>
           <div className="grid gap-8 lg:grid-cols-12 lg:items-start">
@@ -23,7 +15,7 @@ export default function Page() {
               </p>
 
               <h1 className="mx-auto max-w-3xl text-4xl sm:text-5xl leading-[1.05] tracking-tight">
-                Jouw bezwaar- of WOO-brief. Helder, rustig en controleerbaar. [[DEPLOY-TEST-771]]
+                Jouw bezwaar- of WOO-brief. Helder, rustig en controleerbaar.
               </h1>
 
               <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-slate-600">
@@ -103,65 +95,34 @@ export default function Page() {
         </Container>
       </section>
 
-      <section id="prijzen" className="w-full bg-slate-50 py-12 sm:py-16 scroll-mt-24">
+      <section className="w-full border-t border-slate-200 py-12 sm:py-16">
         <Container>
-          <div className="text-center">
-            <h2 className="text-3xl font-semibold tracking-tight">Prijzen</h2>
-            <p className="mt-2 text-sm text-slate-600">Je kiest je pakket na intake en review.</p>
-          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+            <h2 className="text-2xl font-semibold tracking-tight">Klaar om te starten?</h2>
+            <p className="mt-3 text-sm text-slate-600">Begin direct met de intake van jouw traject.</p>
 
-          <div className="mt-8 grid gap-4 lg:grid-cols-2">
-            <article className={sectionCardClass}>
-              <h3 className="text-base font-semibold">Basis</h3>
-              <p className="mt-1 text-3xl font-semibold">EUR 7,95</p>
-              <ul className="mt-4 space-y-2 text-sm text-slate-600">
-                <li>1 besluit upload (bij bezwaar)</li>
-                <li>Begeleide intake en overzicht</li>
-                <li>Conceptbrief in vaste structuur</li>
-                <li>Download als DOCX</li>
-              </ul>
-            </article>
+            <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+              <Link
+                href="/start-bezwaar"
+                className="inline-flex h-11 items-center justify-center rounded-md bg-emerald-700 px-5 text-sm font-semibold text-white hover:bg-emerald-600"
+              >
+                Start bezwaar
+              </Link>
 
-            <article className={sectionCardClass}>
-              <h3 className="text-base font-semibold">Uitgebreid</h3>
-              <p className="mt-1 text-3xl font-semibold">EUR 14,95</p>
-              <ul className="mt-4 space-y-2 text-sm text-slate-600">
-                <li>Alles van Basis</li>
-                <li>Extra bijlagen upload (maximaal 5)</li>
-                <li>Bijlagenoverzicht in de brief</li>
-                <li>Extra bewerkbare sectie voor verwijzingen</li>
-              </ul>
-            </article>
-          </div>
-        </Container>
-      </section>
+              <Link
+                href="/start-woo"
+                className="inline-flex h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+              >
+                Start WOO-verzoek
+              </Link>
 
-      <section id="faq" className="w-full py-12 sm:py-16 scroll-mt-24">
-        <Container>
-          <div className="text-center">
-            <h2 className="text-3xl font-semibold tracking-tight">FAQ</h2>
-          </div>
-
-          <div className="mt-8 grid gap-4 lg:grid-cols-3">
-            {[
-              {
-                q: "Is dit juridisch advies?",
-                a: "Nee. BriefKompas helpt je met opbouw en formulering, maar vervangt geen juridisch advies.",
-              },
-              {
-                q: "Kan ik bijlagen toevoegen?",
-                a: "Ja. Het besluit is verplicht bij bezwaar; extra bijlagen zijn mogelijk in Uitgebreid.",
-              },
-              {
-                q: "Kan ik de brief aanpassen?",
-                a: "Ja. Je kunt de conceptbrief controleren en aanpassen voordat je deze downloadt.",
-              },
-            ].map((item) => (
-              <article key={item.q} className={sectionCardClass}>
-                <h3 className="text-base font-semibold">{item.q}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">{item.a}</p>
-              </article>
-            ))}
+              <Link
+                href="/faq"
+                className="inline-flex h-11 items-center justify-center rounded-md px-3 text-sm font-medium text-slate-600 hover:text-slate-900"
+              >
+                Veelgestelde vragen
+              </Link>
+            </div>
           </div>
         </Container>
       </section>

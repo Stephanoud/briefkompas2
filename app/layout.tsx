@@ -50,10 +50,10 @@ export default function RootLayout({
               </Link>
 
               <nav className="hidden sm:flex items-center gap-7 text-sm text-slate-600">
-                <Link href="/#prijzen" className="hover:text-slate-900">
-                  Prijzen
+                <Link href="/#hoe-het-werkt" className="hover:text-slate-900">
+                  Hoe het werkt
                 </Link>
-                <Link href="/#faq" className="hover:text-slate-900">
+                <Link href="/faq" className="hover:text-slate-900">
                   FAQ
                 </Link>
                 <Link href="/disclaimer" className="hover:text-slate-900">
