@@ -1,16 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f5f8f6;
-  --foreground: #11211c;
-  --muted: #5a6d65;
+  --background: #f4f8f6;
+  --foreground: #12231f;
+  --muted: #536b64;
   --surface: #ffffff;
-  --surface-soft: #edf4f1;
-  --border: #d5e1dc;
-  --brand: #0d7a63;
-  --brand-strong: #0a5f4e;
-  --accent: #d98b4d;
-  --ring: #38a88a;
+  --surface-soft: #edf5f1;
+  --border: #d4e3dc;
+  --brand: #2f6cf3;
+  --brand-strong: #2454c6;
+  --accent: #0f8f6d;
+  --ring: #6c8fff;
 }
 
 @theme inline {
@@ -24,11 +24,12 @@
 
 body {
   background:
-    radial-gradient(circle at 15% -5%, #dff5ed 0%, rgba(223, 245, 237, 0) 35%),
-    radial-gradient(circle at 85% 0%, #f8e8da 0%, rgba(248, 232, 218, 0) 34%),
-    var(--background);
+    radial-gradient(circle at 8% -8%, #e3f7ef 0%, rgba(227, 247, 239, 0) 37%),
+    radial-gradient(circle at 92% 0%, #e7f0ff 0%, rgba(231, 240, 255, 0) 36%),
+    linear-gradient(180deg, #f8fbfa 0%, var(--background) 38%);
   color: var(--foreground);
   font-family: var(--font-geist-sans), "Segoe UI", sans-serif;
+  line-height: 1.5;
   min-height: 100vh;
 }
 * {
@@ -83,7 +84,7 @@ h1,
 h2,
 h3 {
   font-family: var(--font-dm-serif), Georgia, serif;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }
 
 a {
