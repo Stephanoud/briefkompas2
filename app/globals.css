@@ -32,9 +32,9 @@ body {
   line-height: 1.5;
   min-height: 100vh;
 }
-* {
-  margin: 0;
-  padding: 0;
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
