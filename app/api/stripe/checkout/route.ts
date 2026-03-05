@@ -8,6 +8,24 @@ export const runtime = "nodejs";
 const isPlaceholder = (value?: string) =>
   !value || value.includes("YOUR_") || value.includes("YOUR-");
 
+const isFlow = (value: unknown): value is Flow =>
+  value === "bezwaar" || value === "woo";
+
+const isProduct = (value: unknown): value is Product =>
+  value === "basis" || value === "uitgebreid";
+
+function extractFlowFromReferer(referer: string | null): Flow | null {
+  if (!referer) return null;
+  try {
+    const { pathname } = new URL(referer);
+    const segments = pathname.split("/").filter(Boolean);
+    const candidate = segments.find((segment) => isFlow(segment));
+    return candidate ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function getStripeClient() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key || isPlaceholder(key)) {
@@ -38,14 +56,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { flow, product } = await req.json() as {
-      flow: Flow;
-      product: Product;
-    };
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    const flowFromBody = body.flow;
+    const productFromBody = body.product ?? body.selectedProduct ?? body.package;
+
+    const flow = isFlow(flowFromBody)
+      ? flowFromBody
+      : extractFlowFromReferer(req.headers.get("referer"));
+    const product = isProduct(productFromBody) ? productFromBody : null;
 
     if (!flow || !product) {
       return NextResponse.json(
-        { error: "Missing flow or product" },
+        { error: "Ontbrekende of ongeldige flow/product. Vernieuw de pagina en kies je pakket opnieuw." },
         { status: 400 }
       );
     }

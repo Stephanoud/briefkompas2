@@ -1,34 +1,46 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { UploadBox } from "@/components/UploadBox";
 import { Alert } from "@/components/index";
-import { Flow, Product, UploadedFileRef } from "@/types";
+import { Flow, IntakeFormData, Product, UploadedFileRef } from "@/types";
 import { getPriceFormatted } from "@/lib/utils";
 
 interface PricingPageProps {
   params: { flow: Flow };
 }
 
+const toFlow = (value: unknown): Flow | null =>
+  value === "bezwaar" || value === "woo" ? value : null;
+
+const toProduct = (value: unknown): Product | null =>
+  value === "basis" || value === "uitgebreid" ? value : null;
+
 export default function PricingPage({ params }: PricingPageProps) {
   const router = useRouter();
-  const flow = params.flow as Flow;
+  const routeParams = useParams<{ flow?: string }>();
   const appStore = useAppStore();
 
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const routeFlow = toFlow(routeParams?.flow) || toFlow(params?.flow);
+  const activeFlow = routeFlow || toFlow(appStore.flow);
+
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(() =>
+    toProduct(appStore.product)
+  );
   const [bijlagen, setBijlagen] = useState<UploadedFileRef[]>([]);
   const [error, setError] = useState("");
 
   const handleSelectProduct = (product: Product) => {
     setSelectedProduct(product);
     appStore.setProduct(product);
+    setError("");
   };
 
-  const handleBijagenSelect = (files: File[]) => {
+  const handleBijlagenSelect = (files: File[]) => {
     if (selectedProduct === "basis") {
       setError("Bijlagen zijn alleen beschikbaar in het Uitgebreid pakket");
       return;
@@ -55,28 +67,52 @@ export default function PricingPage({ params }: PricingPageProps) {
   };
 
   const handleContinue = async () => {
-    if (!selectedProduct) {
+    const checkoutProduct = selectedProduct || toProduct(appStore.product);
+    if (!checkoutProduct) {
       setError("Selecteer een pakket");
       return;
     }
 
-    // Update store with bijlagen
-    appStore.setIntakeData({
-      ...appStore.intakeData!,
+    const checkoutFlow = activeFlow;
+    if (!checkoutFlow) {
+      setError("Je sessie mist het type traject. Ga een stap terug en probeer opnieuw.");
+      return;
+    }
+
+    const cachedIntake =
+      typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_intake") : null;
+    let parsedCachedIntake: Partial<IntakeFormData> = {};
+
+    if (cachedIntake) {
+      try {
+        parsedCachedIntake = JSON.parse(cachedIntake) as Partial<IntakeFormData>;
+      } catch {
+        parsedCachedIntake = {};
+      }
+    }
+
+    const mergedIntakeData: Partial<IntakeFormData> = {
+      ...parsedCachedIntake,
+      ...appStore.intakeData,
+      flow: checkoutFlow,
       files: {
+        ...parsedCachedIntake.files,
         ...appStore.intakeData?.files,
         bijlagen,
       },
-    });
+    };
 
-    // Create Stripe checkout session
+    appStore.setIntakeData(mergedIntakeData as IntakeFormData);
+    sessionStorage.setItem("briefkompas_intake", JSON.stringify(mergedIntakeData));
+
     try {
       const response = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          flow,
-          product: selectedProduct,
+          flow: checkoutFlow,
+          product: checkoutProduct,
+          selectedProduct: checkoutProduct,
         }),
       });
 
@@ -84,40 +120,45 @@ export default function PricingPage({ params }: PricingPageProps) {
       if (response.ok && data.checkoutUrl) {
         window.location.href = data.checkoutUrl;
       } else {
-        setError(data.error || "Fout bij het creeren van checkout sessie");
+        setError(data.error || "Fout bij het aanmaken van de checkout sessie");
       }
     } catch {
       setError("Er ging iets fout. Probeer opnieuw.");
     }
   };
 
+  const flowLabel =
+    activeFlow === "bezwaar" ? "bezwaarbrief" : activeFlow === "woo" ? "WOO-verzoek" : "brief";
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Kies je pakket</h1>
-        <p className="text-gray-600">
-          Selecteer het pakket dat het beste bij je behoeften past
-        </p>
+        <p className="text-gray-600">Selecteer het pakket dat het beste bij je behoeften past</p>
       </div>
 
-      {error && <Alert type="error" title="Fout">{error}</Alert>}
+      {!activeFlow && (
+        <Alert type="error" title="Fout">
+          Het type traject ontbreekt in deze sessie. Ga terug naar het overzicht en kies opnieuw.
+        </Alert>
+      )}
 
-      {/* Product Cards */}
+      {error && (
+        <Alert type="error" title="Fout">
+          {error}
+        </Alert>
+      )}
+
       <div className="grid md:grid-cols-2 gap-6 mb-8">
-        {/* Basis */}
         <Card
           className={`cursor-pointer transition-all ${
-            selectedProduct === "basis"
-              ? "ring-2 ring-blue-500 bg-blue-50"
-              : "hover:shadow-lg"
+            selectedProduct === "basis" ? "ring-2 ring-blue-500 bg-blue-50" : "hover:shadow-lg"
           }`}
           onClick={() => handleSelectProduct("basis")}
         >
           <div className="mb-4">
             <h3 className="text-2xl font-bold text-gray-900">Basis</h3>
-            <p className="text-3xl font-bold text-blue-600">
-              {getPriceFormatted("basis")}
-            </p>
+            <p className="text-3xl font-bold text-blue-600">{getPriceFormatted("basis")}</p>
             <p className="text-sm text-gray-600">eenmalige betaling</p>
           </div>
 
@@ -125,40 +166,32 @@ export default function PricingPage({ params }: PricingPageProps) {
             <h4 className="font-semibold text-gray-900">Inclusief:</h4>
             <ul className="space-y-2 text-sm">
               <li className="flex items-center gap-2">
-                <span className="text-green-600">✓</span>
+                <span className="text-green-600">&#10003;</span>
                 <span>Geleide chatbot intake</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-green-600">✓</span>
+                <span className="text-green-600">&#10003;</span>
                 <span>1 PDF-upload (besluit)</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-green-600">✓</span>
-                <span>
-                  Standaard {flow === "bezwaar" ? "bezwaarbrief" : "WOO-verzoek"}
-                </span>
+                <span className="text-green-600">&#10003;</span>
+                <span>Standaard {flowLabel}</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-green-600">✓</span>
+                <span className="text-green-600">&#10003;</span>
                 <span>Download als .docx</span>
               </li>
             </ul>
           </div>
 
-          <Button
-            variant={selectedProduct === "basis" ? "primary" : "secondary"}
-            className="w-full"
-          >
+          <Button variant={selectedProduct === "basis" ? "primary" : "secondary"} className="w-full">
             {selectedProduct === "basis" ? "Geselecteerd" : "Selecteer"}
           </Button>
         </Card>
 
-        {/* Uitgebreid */}
         <Card
           className={`cursor-pointer transition-all ${
-            selectedProduct === "uitgebreid"
-              ? "ring-2 ring-blue-500 bg-blue-50"
-              : "hover:shadow-lg"
+            selectedProduct === "uitgebreid" ? "ring-2 ring-blue-500 bg-blue-50" : "hover:shadow-lg"
           }`}
           onClick={() => handleSelectProduct("uitgebreid")}
         >
@@ -167,9 +200,7 @@ export default function PricingPage({ params }: PricingPageProps) {
               AANBEVOLEN
             </div>
             <h3 className="text-2xl font-bold text-gray-900">Uitgebreid</h3>
-            <p className="text-3xl font-bold text-blue-600">
-              {getPriceFormatted("uitgebreid")}
-            </p>
+            <p className="text-3xl font-bold text-blue-600">{getPriceFormatted("uitgebreid")}</p>
             <p className="text-sm text-gray-600">eenmalige betaling</p>
           </div>
 
@@ -190,7 +221,7 @@ export default function PricingPage({ params }: PricingPageProps) {
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-blue-600">+</span>
-                <span>Editable jurisprudentikolom</span>
+                <span>Editable jurisprudentiekolom</span>
               </li>
             </ul>
           </div>
@@ -204,7 +235,6 @@ export default function PricingPage({ params }: PricingPageProps) {
         </Card>
       </div>
 
-      {/* Extra Bijlagen Upload (only for uitgebreid) */}
       {selectedProduct === "uitgebreid" && (
         <Card title="Optionele extra bijlagen" subtitle="Tot 5 bestanden">
           <UploadBox
@@ -212,15 +242,13 @@ export default function PricingPage({ params }: PricingPageProps) {
             accept=".pdf"
             multiple
             maxSize={25 * 1024 * 1024}
-            onFileSelect={handleBijagenSelect}
+            onFileSelect={handleBijlagenSelect}
             uploadedFiles={bijlagen}
           />
 
           {bijlagen.length > 0 && (
             <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm font-semibold text-blue-900 mb-2">
-                {bijlagen.length} bijlage(n) geselecteerd
-              </p>
+              <p className="text-sm font-semibold text-blue-900 mb-2">{bijlagen.length} bijlage(n) geselecteerd</p>
               <ul className="space-y-1">
                 {bijlagen.map((file) => (
                   <li key={file.path} className="flex justify-between items-center text-sm">
@@ -239,20 +267,14 @@ export default function PricingPage({ params }: PricingPageProps) {
         </Card>
       )}
 
-      {/* Action Buttons */}
       <div className="flex gap-4 mt-8">
-        <Button
-          variant="secondary"
-          onClick={() => router.back()}
-          className="flex-1"
-        >
+        <Button variant="secondary" onClick={() => router.back()} className="flex-1">
           Terug
         </Button>
-        <Button onClick={handleContinue} disabled={!selectedProduct} className="flex-1">
-          Ga naar betaling →
+        <Button onClick={handleContinue} disabled={!selectedProduct || !activeFlow} className="flex-1">
+          Ga naar betaling
         </Button>
       </div>
     </div>
   );
 }
-

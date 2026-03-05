@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
@@ -27,7 +26,7 @@ export default function StartBezwaar() {
 
         <div className="space-y-4 mb-8">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="font-semibold text-blue-900 mb-2">📋 Wat is een bezwaarschrift?</h3>
+            <h3 className="font-semibold text-blue-900 mb-2">Wat is een bezwaarschrift?</h3>
             <p className="text-sm text-blue-800">
               Met een bezwaarschrift maak je formeel bezwaar tegen een besluit van een
               bestuursorgaan. Het bestuursorgaan moet je bezwaar in behandeling nemen.
@@ -35,15 +34,26 @@ export default function StartBezwaar() {
           </div>
 
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <h3 className="font-semibold text-yellow-900 mb-2">⏰ Termijn</h3>
+            <h3 className="font-semibold text-yellow-900 mb-2">Termijn</h3>
             <p className="text-sm text-yellow-800">
               Je hebt meestal 6 weken om bezwaar in te dienen na ontvangst van het besluit.
               Controleer je brieven voor de exacte termijn.
             </p>
           </div>
 
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+            <h3 className="font-semibold text-indigo-900 mb-2">Jurisprudentie als kompas</h3>
+            <p className="text-sm text-indigo-800">
+              BriefKompas gebruikt relevante jurisprudentie als kompas voor de
+              briefgeneratie. Zo verkleinen we de kans op verzonnen jurisprudentie.
+              De AI wordt als het ware vooraf gevoed met juridische context voordat
+              de gestructureerde vragen worden beantwoord. Daarmee verbetert de
+              briefkwaliteit ten opzichte van generieke AI-modellen.
+            </p>
+          </div>
+
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <h3 className="font-semibold text-red-900 mb-2">⚠️ Belangrijk</h3>
+            <h3 className="font-semibold text-red-900 mb-2">Belangrijk</h3>
             <p className="text-sm text-red-800">
               Dit is GEEN juridisch advies. BriefKompas helpt je structureren, maar je bent zelf
               verantwoordelijk. Voor juridisch advies, raadpleeg een advocaat.
@@ -53,9 +63,11 @@ export default function StartBezwaar() {
 
         <div className="space-y-3">
           <p className="text-sm text-gray-600">
-            ✓ Je hebt je besluit bij de hand<br/>
-            ✓ Je hebt ongeveer 10-15 minuten<br/>
-            ✓ Je bent klaar om te beginnen
+            &#10003; Je hebt je besluit bij de hand
+            <br />
+            &#10003; Je hebt ongeveer 10-15 minuten
+            <br />
+            &#10003; Je bent klaar om te beginnen
           </p>
 
           <div className="flex gap-4 pt-4">

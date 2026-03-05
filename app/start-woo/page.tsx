@@ -26,35 +26,62 @@ export default function StartWoo() {
 
         <div className="space-y-4 mb-8">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="font-semibold text-blue-900 mb-2">📖 Wat is een WOO-verzoek?</h3>
+            <h3 className="font-semibold text-blue-900 mb-2">Wat is een WOO-verzoek?</h3>
             <p className="text-sm text-blue-800">
-              De Wet Open Overheid (WOO) geeft je het recht om documenten van overheidsinstanties
-              op te vragen. Dit helpt je inzicht krijgen in overheidshandelen.
+              De Wet Open Overheid (WOO) geeft je het recht om documenten van
+              overheidsinstanties op te vragen. Dit helpt je inzicht krijgen in
+              overheidshandelen.
             </p>
           </div>
 
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <h3 className="font-semibold text-yellow-900 mb-2">⏰ Responstermijn</h3>
+            <h3 className="font-semibold text-yellow-900 mb-2">Responstermijn</h3>
             <p className="text-sm text-yellow-800">
-              Het bestuursorgaan moet binnen 5 werkdagen op je verzoek reageren. Ze kunnen maximaal
-              10 werkdagen extra nodig hebben.
+              Het bestuursorgaan beslist in principe binnen 4 weken op je verzoek.
+              Deze termijn kan eenmalig met 2 weken worden verlengd.
+            </p>
+          </div>
+
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+            <h3 className="font-semibold text-orange-900 mb-2">
+              Wanneer mag een bestuursorgaan weigeren?
+            </h3>
+            <p className="text-sm text-orange-800">
+              Een bestuursorgaan mag informatie alleen geheel of gedeeltelijk weigeren
+              bij een wettelijke uitzonderingsgrond, bijvoorbeeld bescherming van
+              privacy, opsporing en veiligheid, of vertrouwelijke bedrijfsgegevens.
+              Zonder zo&apos;n wettelijke grond mag een verzoek niet zomaar worden
+              afgewezen: wat wel openbaar kan, moet worden verstrekt.
+            </p>
+          </div>
+
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+            <h3 className="font-semibold text-indigo-900 mb-2">Jurisprudentie als kompas</h3>
+            <p className="text-sm text-indigo-800">
+              BriefKompas gebruikt relevante jurisprudentie als kompas voor de
+              briefgeneratie. Zo verkleinen we de kans op verzonnen jurisprudentie.
+              De AI wordt als het ware vooraf gevoed met juridische context voordat
+              de gestructureerde vragen worden beantwoord. Daarmee verbetert de
+              briefkwaliteit ten opzichte van generieke AI-modellen.
             </p>
           </div>
 
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <h3 className="font-semibold text-green-900 mb-2">💡 Spoedeisend?</h3>
+            <h3 className="font-semibold text-green-900 mb-2">Spoedeisend?</h3>
             <p className="text-sm text-green-800">
-              Je kunt aangeven dat het verzoek spoedeisend is. Dit kan helpen bij snellere
-              verwerking.
+              Je kunt aangeven dat het verzoek spoedeisend is. Dit kan helpen bij
+              snellere verwerking.
             </p>
           </div>
         </div>
 
         <div className="space-y-3">
           <p className="text-sm text-gray-600">
-            ✓ Je weet welk bestuursorgaan<br/>
-            ✓ Je weet wat je wilt opvragen<br/>
-            ✓ Je bent klaar om te beginnen
+            &#10003; Je weet welk bestuursorgaan
+            <br />
+            &#10003; Je weet wat je wilt opvragen
+            <br />
+            &#10003; Je bent klaar om te beginnen
           </p>
 
           <div className="flex gap-4 pt-4">
