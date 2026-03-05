@@ -74,7 +74,7 @@ export default function Page() {
                   </p>
 
                   <div className="mt-5 flex flex-col items-center gap-3 lg:items-start">
-                    <Link href="/start-bezwaar" className={primaryButtonClass}>
+                    <Link href="/start-brief" className={primaryButtonClass}>
                       Start je brief
                     </Link>
                     <a href="#hoe-het-werkt" className={tertiaryButtonClass}>
@@ -193,7 +193,7 @@ export default function Page() {
               </p>
 
               <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-                <Link href="/start-bezwaar" className={primaryButtonClass}>
+                <Link href="/start-brief" className={primaryButtonClass}>
                   Start je brief
                 </Link>
 
