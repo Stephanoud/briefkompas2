@@ -9,6 +9,7 @@ import { Textarea } from "@/components/Textarea";
 import { Alert } from "@/components/index";
 import { generateDocx, downloadFile } from "@/lib/utils";
 import { Flow } from "@/types";
+import { ReferenceItem } from "@/src/types/references";
 
 interface ResultPageProps {
   params: { flow: Flow };
@@ -18,23 +19,35 @@ export default function ResultPage({ params }: ResultPageProps) {
   const router = useRouter();
   const flow = params.flow as Flow;
   const appStore = useAppStore();
+  const generatedReferences: ReferenceItem[] = appStore.generatedLetter?.references || [];
 
   const [letterText, setLetterText] = useState(
     appStore.generatedLetter?.letterText || ""
   );
-  const [references, setReferences] = useState(
-    appStore.generatedLetter?.references?.join("\n") || ""
-  );
+  const [manualReferences, setManualReferences] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+
+  const getEcliSearchUrl = (ecli: string) =>
+    `https://uitspraken.rechtspraak.nl/#zoekresultaten?zoekterm=${encodeURIComponent(ecli)}`;
 
   const handleDownload = async () => {
     try {
       setIsDownloading(true);
       let finalText = letterText;
 
-      if (appStore.product === "uitgebreid" && references) {
-        finalText += "\n\n--- VERWIJZINGEN & JURISPRUDENTIE ---\n" + references;
+      if (generatedReferences.length > 0) {
+        const referenceText = generatedReferences
+          .map((reference, index) => {
+            const ecliPart = reference.ecli ? ` (${reference.ecli})` : "";
+            return `${index + 1}. ${reference.title}${ecliPart}\nTopic: ${reference.topic}\nToepasregel: ${reference.principle}`;
+          })
+          .join("\n\n");
+        finalText += `\n\n--- BRONNEN / JURISPRUDENTIE ---\n${referenceText}`;
+      }
+
+      if (appStore.product === "uitgebreid" && manualReferences.trim()) {
+        finalText += "\n\n--- EIGEN TOEVOEGINGEN ---\n" + manualReferences.trim();
       }
 
       const blob = await generateDocx(finalText);
@@ -78,15 +91,44 @@ export default function ResultPage({ params }: ResultPageProps) {
             />
           </Card>
 
-          {/* References (only for uitgebreid) */}
+          {generatedReferences.length > 0 && (
+            <Card title="Bronnen / jurisprudentie" subtitle="Bronnen die beschikbaar zijn voor deze brief">
+              <div className="space-y-4">
+                {generatedReferences.map((reference) => (
+                  <article
+                    key={reference.id}
+                    className="rounded-lg border border-[var(--border)] bg-[var(--surface-soft)] p-3"
+                  >
+                    <h4 className="text-sm font-semibold text-[var(--foreground)]">{reference.title}</h4>
+                    {reference.ecli && (
+                      <a
+                        href={getEcliSearchUrl(reference.ecli)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 inline-block text-xs font-medium text-[var(--brand)] hover:underline"
+                      >
+                        {reference.ecli}
+                      </a>
+                    )}
+                    <p className="mt-2 text-xs text-[var(--muted)]">
+                      <span className="font-semibold text-[var(--foreground)]">Topic:</span> {reference.topic}
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--muted)]">{reference.principle}</p>
+                  </article>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Extra user references (only for uitgebreid) */}
           {appStore.product === "uitgebreid" && (
             <Card
-              title="Verwijzingen & Jurisprudentie (optioneel)"
-              subtitle="Voeg relevante rechtszaken of wetten toe"
+              title="Eigen toevoegingen (optioneel)"
+              subtitle="Voeg zelf extra verwijzingen of notities toe"
             >
               <Textarea
-                value={references}
-                onChange={(e) => setReferences(e.target.value)}
+                value={manualReferences}
+                onChange={(e) => setManualReferences(e.target.value)}
                 className="min-h-32 font-mono text-sm"
                 placeholder="Bijv: ECLI:NL:HR:2020:123, artikel 6:233 BW, etc."
               />

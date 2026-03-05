@@ -1,3 +1,5 @@
+import { ReferenceItem } from "@/src/types/references";
+
 export type Flow = "bezwaar" | "woo";
 export type Product = "basis" | "uitgebreid";
 
@@ -46,7 +48,7 @@ export interface ChatStep {
 
 export interface GeneratedLetter {
   letterText: string;
-  references?: string[];
+  references?: ReferenceItem[];
 }
 
 export interface StripeCheckoutData {

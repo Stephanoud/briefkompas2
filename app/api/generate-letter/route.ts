@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { IntakeFormData, Flow, Product } from "@/types";
+import { getReferences } from "@/src/data/references";
+import { ReferenceItem } from "@/src/types/references";
 
 export const runtime = "nodejs";
 
@@ -14,7 +16,8 @@ function getOpenAIClient() {
 
 function generateBezwaarPrompt(
   data: IntakeFormData,
-  product: Product
+  product: Product,
+  referencesBlock: string
 ): string {
   return `Je bent een juridisch assistent. Genereer een professioneel bezwaarschrift op basis van deze gegevens:
 
@@ -36,18 +39,20 @@ Genereer een formeel bezwaarschrift met deze onderdelen:
 7. VERZOEK
 8. SLOTWOORD
 
-${
+${ 
   product === "uitgebreid"
     ? "Voeg ook een sectie toe: BIJLAGEN - met een overzicht van meegestuurde documenten."
     : ""
 }
+
+${referencesBlock}
 
 Voeg onderaan toe: "Dit is een conceptbrief. Controleer alle gegevens zorgvuldig voordat verzending. BriefKompas.nl geeft geen juridisch advies."
 
 Zorg dat de brief professioneel, duidelijk en zonder juridische jargon wordt opgesteld.`;
 }
 
-function generateWooPrompt(data: IntakeFormData): string {
+function generateWooPrompt(data: IntakeFormData, referencesBlock: string): string {
   return `Je bent een juridisch assistent. Genereer een professioneel WOO-verzoek op basis van deze gegevens:
 
 Bestuursorgaan: ${data.bestuursorgaan}
@@ -67,9 +72,50 @@ Genereer een formeel WOO-verzoek met deze onderdelen:
 7. ${data.spoed ? "SPOEDEISEND BELANG" : ""}
 8. SLOTWOORD
 
+${referencesBlock}
+
 Voeg onderaan toe: "Dit is een conceptbrief. Controleer alles zorgvuldig voordat verzending. BriefKompas.nl geeft geen juridisch advies."
 
 Zorg dat het verzoek professioneel, duidelijk en zonder juridische jargon wordt opgesteld.`;
+}
+
+function detectOrgType(value?: string): ReferenceItem["orgType"] | undefined {
+  if (!value) return undefined;
+  const normalized = value.toLowerCase();
+  if (normalized.includes("gemeente")) return "gemeente";
+  if (normalized.includes("provincie")) return "provincie";
+  if (normalized.includes("waterschap")) return "waterschap";
+  if (normalized.includes("ministerie") || normalized.includes("rijk") || normalized.includes("belastingdienst")) {
+    return "rijk";
+  }
+  return "overig";
+}
+
+function buildReferenceKeywords(data: IntakeFormData, flow: Flow): string[] {
+  const rawText =
+    flow === "woo"
+      ? [data.bestuursorgaan, data.wooOnderwerp, data.wooDocumenten, data.wooPeriode].join(" ")
+      : [data.bestuursorgaan, data.categorie, data.doel, data.gronden].join(" ");
+
+  return rawText
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((keyword) => keyword.trim())
+    .filter((keyword) => keyword.length >= 3);
+}
+
+function formatReferencesForPrompt(references: ReferenceItem[]): string {
+  if (!references.length) return "";
+
+  const lines = references.map((reference, index) => {
+    const ecliPart = reference.ecli ? ` (${reference.ecli})` : "";
+    return `${index + 1}. ${reference.title}${ecliPart} | topic: ${reference.topic} | toepasregel: ${reference.principle}`;
+  });
+
+  return [
+    "Gebruik indien relevant onderstaande bronnen ter onderbouwing. Noem ECLI's alleen als je ze daadwerkelijk gebruikt.",
+    ...lines,
+  ].join("\n");
 }
 
 export async function POST(req: NextRequest) {
@@ -95,10 +141,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const references = getReferences({
+      flow,
+      orgType: detectOrgType(intakeData.bestuursorgaan),
+      decisionType: flow === "bezwaar" ? intakeData.categorie : undefined,
+      keywords: buildReferenceKeywords(intakeData, flow),
+      limit: 6,
+    });
+
+    const referencesBlock = formatReferencesForPrompt(references);
+
     const prompt =
       flow === "bezwaar"
-        ? generateBezwaarPrompt(intakeData, product)
-        : generateWooPrompt(intakeData);
+        ? generateBezwaarPrompt(intakeData, product, referencesBlock)
+        : generateWooPrompt(intakeData, referencesBlock);
 
     const message = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
@@ -124,7 +180,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       letter: {
         letterText,
-        references: [],
+        references,
       },
     });
   } catch (error) {
