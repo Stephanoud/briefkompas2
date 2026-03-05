@@ -4,10 +4,8 @@ import Container from "@/components/Container";
 const contentWidthClass = "mx-auto w-full max-w-[1100px]";
 const surfaceCardClass =
   "rounded-2xl border border-[var(--border)] bg-white shadow-[0_14px_36px_rgba(17,33,28,0.08)]";
-const primaryButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-md bg-[var(--brand)] px-5 text-sm font-semibold text-white hover:bg-[var(--brand-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2";
-const secondaryButtonClass =
-  "inline-flex h-11 items-center justify-center rounded-md border border-[var(--border)] bg-white px-5 text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--surface-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2";
+const startButtonClass =
+  "inline-flex h-11 items-center justify-center rounded-md border border-[#d7dde1] bg-[#f3f5f7] px-5 text-sm font-semibold text-[var(--foreground)] hover:bg-[#e9edf1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2";
 const tertiaryButtonClass =
   "inline-flex h-11 items-center justify-center rounded-md px-3 text-sm font-medium text-[var(--muted)] hover:text-[var(--foreground)]";
 
@@ -40,57 +38,60 @@ export default function Page() {
     <>
       <section className="w-full border-b border-[var(--border)] py-10 sm:py-14">
         <Container>
-          <div
-            className={`${contentWidthClass} rounded-[28px] border border-[var(--border)] bg-[linear-gradient(145deg,#ffffff_0%,#f6faf8_62%,#edf7f3_100%)] px-6 py-8 shadow-[0_24px_48px_rgba(17,33,28,0.08)] sm:px-10 sm:py-10`}
-          >
-            <div className="grid gap-8 lg:grid-cols-[1.06fr_0.94fr] lg:items-start">
-              <div className="text-center lg:text-left">
-                <p className="inline-flex items-center rounded-full border border-[var(--border)] bg-white/80 px-3 py-1 text-xs font-medium text-[var(--muted)]">
-                  Van intake tot conceptbrief
-                </p>
+          <div className={contentWidthClass}>
+            <div className="text-center">
+              <p className="inline-flex items-center rounded-full border border-[var(--border)] bg-white/80 px-3 py-1 text-xs font-medium text-[var(--muted)]">
+                Van intake tot conceptbrief
+              </p>
+              <h1 className="mx-auto mt-4 max-w-[15ch] text-4xl leading-[1.02] tracking-[-0.02em] sm:text-5xl">
+                Jouw bezwaar- of WOO-brief. Helder, rustig en controleerbaar.
+              </h1>
+            </div>
 
-                <h1 className="mx-auto mt-4 max-w-[15ch] text-4xl leading-[1.02] tracking-[-0.02em] sm:text-5xl lg:mx-0">
-                  Jouw bezwaar- of WOO-brief. Helder, rustig en controleerbaar.
-                </h1>
-
-                <p className="mx-auto mt-5 max-w-[58ch] text-base leading-relaxed text-[var(--muted)] lg:mx-0">
-                  Van intake tot conceptbrief, jouw hulp voor een goede brief.
-                </p>
-
-                <div className="mt-8 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
-                  <Link href="/start-bezwaar" className={primaryButtonClass}>
-                    Start bezwaar
-                  </Link>
-
-                  <Link href="/start-woo" className={secondaryButtonClass}>
-                    Start WOO-verzoek
-                  </Link>
-
-                  <a href="#hoe-het-werkt" className={tertiaryButtonClass}>
-                    Hoe het werkt
-                  </a>
-                </div>
-              </div>
-
-              <div className="mx-auto w-full max-w-md">
-                <div className={`${surfaceCardClass} p-6 sm:p-7`}>
-                  <h2 className="text-lg font-semibold text-center text-[var(--foreground)]">Wat je krijgt</h2>
-
-                  <ol className="mt-4 space-y-3 text-sm leading-relaxed text-[var(--muted)]">
-                    {heroBenefits.map((benefit, index) => (
-                      <li key={benefit} className="flex gap-3">
-                        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-soft)] text-xs font-semibold text-[var(--brand)]">
-                          {index + 1}
-                        </span>
-                        <span>{benefit}</span>
-                      </li>
-                    ))}
-                  </ol>
-
-                  <p className="mt-5 text-xs leading-relaxed text-[var(--muted)]">
-                    <span className="font-semibold text-[var(--foreground)]">Belangrijk:</span> BriefKompas geeft geen
-                    juridisch advies. Jij blijft verantwoordelijk voor de inhoud en verzending.
+            <div
+              className="mt-7 rounded-[28px] border border-[var(--border)] bg-[linear-gradient(145deg,#ffffff_0%,#f6faf8_62%,#edf7f3_100%)] px-6 py-8 shadow-[0_24px_48px_rgba(17,33,28,0.08)] sm:px-10 sm:py-10"
+            >
+              <div className="grid gap-8 lg:grid-cols-[1.06fr_0.94fr] lg:items-start">
+                <div className="text-center">
+                  <p className="mx-auto max-w-[58ch] text-base leading-relaxed text-[var(--muted)]">
+                    Van intake tot conceptbrief, jouw hulp voor een goede brief.
                   </p>
+
+                  <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+                    <Link href="/start-bezwaar" className={startButtonClass}>
+                      Start bezwaar
+                    </Link>
+
+                    <Link href="/start-woo" className={startButtonClass}>
+                      Start WOO-verzoek
+                    </Link>
+
+                    <a href="#hoe-het-werkt" className={tertiaryButtonClass}>
+                      Hoe het werkt
+                    </a>
+                  </div>
+                </div>
+
+                <div className="mx-auto w-full max-w-md">
+                  <div className={`${surfaceCardClass} p-6 sm:p-7`}>
+                    <h2 className="text-lg font-semibold text-center text-[var(--foreground)]">Wat je krijgt</h2>
+
+                    <ol className="mt-4 space-y-3 text-sm leading-relaxed text-[var(--muted)]">
+                      {heroBenefits.map((benefit, index) => (
+                        <li key={benefit} className="flex gap-3">
+                          <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-soft)] text-xs font-semibold text-[var(--brand)]">
+                            {index + 1}
+                          </span>
+                          <span>{benefit}</span>
+                        </li>
+                      ))}
+                    </ol>
+
+                    <p className="mt-5 text-xs leading-relaxed text-[var(--muted)]">
+                      <span className="font-semibold text-[var(--foreground)]">Belangrijk:</span> BriefKompas geeft
+                      geen juridisch advies. Jij blijft verantwoordelijk voor de inhoud en verzending.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -131,11 +132,11 @@ export default function Page() {
               </p>
 
               <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-                <Link href="/start-bezwaar" className={primaryButtonClass}>
+                <Link href="/start-bezwaar" className={startButtonClass}>
                   Start bezwaar
                 </Link>
 
-                <Link href="/start-woo" className={secondaryButtonClass}>
+                <Link href="/start-woo" className={startButtonClass}>
                   Start WOO-verzoek
                 </Link>
 
