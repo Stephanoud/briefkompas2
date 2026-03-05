@@ -43,8 +43,8 @@ export default function Page() {
               <p className="inline-flex items-center rounded-full border border-[var(--border)] bg-white/80 px-3 py-1 text-xs font-medium text-[var(--muted)]">
                 Van intake tot conceptbrief
               </p>
-              <h1 className="mx-auto mt-4 max-w-[15ch] text-4xl leading-[1.02] tracking-[-0.02em] sm:text-5xl">
-                Jouw bezwaar- of WOO-brief. Helder, rustig en controleerbaar.
+              <h1 className="mx-auto mt-4 w-full text-4xl leading-[1.02] tracking-[-0.02em] sm:text-5xl">
+                Jouw bezwaar- of WOO-brief. Helder, met impact en controleerbaar.
               </h1>
             </div>
 
