@@ -9,7 +9,7 @@ interface ButtonProps
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   (
-    { variant = "primary", size = "md", isLoading = false, children, ...props },
+    { variant = "primary", size = "md", isLoading = false, className = "", children, ...props },
     ref
   ) => {
     const baseStyles =
@@ -32,7 +32,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         ref={ref}
-        className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]}`}
+        className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${className}`.trim()}
         disabled={isLoading || props.disabled}
         {...props}
       >
