@@ -1,19 +1,17 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { LoadingSpinner, Alert } from "@/components/index";
 import { Flow } from "@/types";
 
-interface GeneratePageProps {
-  params: { flow: Flow };
-}
-
-export default function GeneratePage({ params }: GeneratePageProps) {
+export default function GeneratePage() {
   const router = useRouter();
-  const flow = params.flow as Flow;
+  const params = useParams<{ flow: string }>();
+  const rawFlow = params?.flow;
+  const flow = (Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) as Flow;
   const appStore = useAppStore();
 
   useEffect(() => {

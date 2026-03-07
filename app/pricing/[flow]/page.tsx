@@ -8,11 +8,7 @@ import { Button } from "@/components/Button";
 import { UploadBox } from "@/components/UploadBox";
 import { Alert } from "@/components/index";
 import { Flow, IntakeFormData, Product, UploadedFileRef } from "@/types";
-import { getPriceFormatted } from "@/lib/utils";
-
-interface PricingPageProps {
-  params: { flow: Flow };
-}
+import { getPriceFormatted, TEST_PRICING_LABEL } from "@/lib/utils";
 
 const toFlow = (value: unknown): Flow | null =>
   value === "bezwaar" || value === "woo" ? value : null;
@@ -20,12 +16,12 @@ const toFlow = (value: unknown): Flow | null =>
 const toProduct = (value: unknown): Product | null =>
   value === "basis" || value === "uitgebreid" ? value : null;
 
-export default function PricingPage({ params }: PricingPageProps) {
+export default function PricingPage() {
   const router = useRouter();
   const routeParams = useParams<{ flow?: string }>();
   const appStore = useAppStore();
 
-  const routeFlow = toFlow(routeParams?.flow) || toFlow(params?.flow);
+  const routeFlow = toFlow(routeParams?.flow);
   const activeFlow = routeFlow || toFlow(appStore.flow);
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(() =>
@@ -159,7 +155,7 @@ export default function PricingPage({ params }: PricingPageProps) {
           <div className="mb-4">
             <h3 className="text-2xl font-bold text-gray-900">Basis</h3>
             <p className="text-3xl font-bold text-blue-600">{getPriceFormatted("basis")}</p>
-            <p className="text-sm text-gray-600">eenmalige betaling</p>
+            <p className="text-sm text-gray-600">eenmalige betaling - {TEST_PRICING_LABEL}</p>
           </div>
 
           <div className="space-y-3 mb-6">
@@ -201,7 +197,7 @@ export default function PricingPage({ params }: PricingPageProps) {
             </div>
             <h3 className="text-2xl font-bold text-gray-900">Uitgebreid</h3>
             <p className="text-3xl font-bold text-blue-600">{getPriceFormatted("uitgebreid")}</p>
-            <p className="text-sm text-gray-600">eenmalige betaling</p>
+            <p className="text-sm text-gray-600">eenmalige betaling - {TEST_PRICING_LABEL}</p>
           </div>
 
           <div className="space-y-3 mb-6">

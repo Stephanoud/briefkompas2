@@ -63,7 +63,7 @@ export default function RootLayout({
 
               <Link
                 href="/start-brief"
-                className="inline-flex h-10 items-center justify-center rounded-md bg-[var(--brand)] px-5 text-sm font-semibold text-white hover:bg-[var(--brand-strong)]"
+                className="cta-button-link inline-flex h-10 items-center justify-center rounded-md bg-[var(--brand)] px-5 text-sm font-semibold text-white hover:bg-[var(--brand-strong)]"
               >
                 Start brief
               </Link>

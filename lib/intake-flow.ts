@@ -1,5 +1,71 @@
 import { ChatStep, IntakeFormData, Flow } from "@/types";
 
+const questionPrefixPattern = /^(wat|hoe|waarom|welke|wanneer|wie|kan|kun|mag|moet)\b/i;
+const yearPattern = /\b(19|20)\d{2}\b/;
+const datePattern = /\b\d{1,2}[-/.]\d{1,2}(?:[-/.]\d{2,4})?\b/;
+const monthPattern =
+  /\b(januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\b/i;
+const rangeWordPattern = /\b(van|tot|tussen|sinds|vanaf|voor|na|afgelopen|laatste)\b/i;
+const periodUnitPattern = /\b(jaar|jaren|maand|maanden|week|weken|dag|dagen|kwartaal|kwartalen)\b/i;
+const commonDoelAnswers = new Set([
+  "intrekken",
+  "herzien",
+  "aanpassen",
+  "verminderen",
+  "matigen",
+  "kwijtschelden",
+  "uitstel",
+  "opschorten",
+  "corrigeren",
+  "vernietigen",
+]);
+
+function normalizeInput(value: string): string {
+  return value.trim();
+}
+
+export function isLikelyClarifyingQuestion(value: string): boolean {
+  const trimmed = normalizeInput(value);
+  if (!trimmed) return false;
+  if (trimmed.includes("?")) return true;
+
+  const lower = trimmed.toLowerCase();
+  const isShortInput = lower.split(/\s+/).length <= 10;
+  return isShortInput && questionPrefixPattern.test(lower);
+}
+
+function isWooPeriodAnswer(value: string): boolean {
+  const trimmed = normalizeInput(value);
+  if (trimmed.length < 6) return false;
+  if (isLikelyClarifyingQuestion(trimmed)) return false;
+
+  const hasDateReference =
+    yearPattern.test(trimmed) || datePattern.test(trimmed) || monthPattern.test(trimmed);
+  const hasRangeWord = rangeWordPattern.test(trimmed);
+  const hasPeriodUnit = periodUnitPattern.test(trimmed);
+  const hasNumber = /\d/.test(trimmed);
+
+  return (hasDateReference && (hasRangeWord || hasNumber || hasPeriodUnit)) || (hasRangeWord && hasPeriodUnit && hasNumber);
+}
+
+function isBezwaarDoelAnswer(value: string): boolean {
+  const trimmed = normalizeInput(value).toLowerCase();
+  if (trimmed.length < 3) return false;
+  if (commonDoelAnswers.has(trimmed)) return true;
+  return trimmed.length >= 8;
+}
+
+const validationMessageByStepId: Record<string, string> = {
+  bestuursorgaan: "Noem een concreet bestuursorgaan, bijvoorbeeld 'gemeente Utrecht'.",
+  categorie: "Kies een categorie: boete, uitkering, belasting, vergunning of overig.",
+  doel: "Geef je doel, bijvoorbeeld: intrekken, herzien, aanpassen of matigen.",
+  gronden: "Geef in ieder geval kort aan waarom je het niet eens bent met het besluit.",
+  periode: "Noem een concrete periode, bijvoorbeeld 'januari 2023 tot januari 2024' of 'afgelopen 2 jaar'.",
+  documenten: "Noem welke documenten je verwacht, bijvoorbeeld 'emails, notulen en rapporten'.",
+  digitale_verstrekking: "Antwoord met ja of nee.",
+  spoed: "Antwoord met ja of nee.",
+};
+
 export const bezwaarSteps: ChatStep[] = [
   {
     id: "bestuursorgaan",
@@ -7,32 +73,17 @@ export const bezwaarSteps: ChatStep[] = [
       "Tegen welk bestuursorgaan richt je het bezwaar? (bijvoorbeeld: gemeente Amsterdam, belastingdienst)",
     field: "bestuursorgaan",
     required: true,
-    validation: (value) => value.length > 5,
-  },
-  {
-    id: "datum_besluit",
-    question: "Op welke datum is het besluit genomen?",
-    field: "datumBesluit",
-    required: true,
-    validation: (value) => /^\d{2}-\d{2}-\d{4}$|^\d{4}-\d{2}-\d{2}$/.test(value),
-  },
-  {
-    id: "kenmerk",
-    question:
-      "Wat is het kenmerk of zaaknummer van het besluit? (dit staat meestal op de brief)",
-    field: "kenmerk",
-    required: false,
-    validation: (value) => value.length > 2,
+    validation: (value) => normalizeInput(value).length > 5,
   },
   {
     id: "categorie",
     question:
-      "Wat is de soort besluit? (Kies één: boete, uitkering, belasting, vergunning, overig)",
+      "Wat is de soort besluit? (Kies een: boete, uitkering, belasting, vergunning, overig)",
     field: "categorie",
     required: true,
     validation: (value) =>
       ["boete", "uitkering", "belasting", "vergunning", "overig"].includes(
-        value.toLowerCase()
+        normalizeInput(value).toLowerCase()
       ),
   },
   {
@@ -40,7 +91,7 @@ export const bezwaarSteps: ChatStep[] = [
     question: "Wat wil je bereiken met dit bezwaar? (Wil je het intrekken, herzien, etc.?)",
     field: "doel",
     required: true,
-    validation: (value) => value.length > 10,
+    validation: (value) => isBezwaarDoelAnswer(value),
   },
   {
     id: "gronden",
@@ -48,15 +99,15 @@ export const bezwaarSteps: ChatStep[] = [
       "Waarom ben je het niet eens met het besluit? Beschrijf zo uitgebreid mogelijk wat volgens jou onjuist is.",
     field: "gronden",
     required: true,
-    validation: (value) => value.length >= 200,
+    validation: (value) => normalizeInput(value).length >= 3,
   },
   {
     id: "persoonlijke_omstandigheden",
     question:
-      "Zijn er relevante persoonlijke omstandigheden? (bijv. financiële moeilijkheden, gezondheid - dit is optioneel)",
+      "Zijn er relevante persoonlijke omstandigheden? (bijv. financiele moeilijkheden, gezondheid - dit is optioneel)",
     field: "persoonlijkeOmstandigheden",
     required: false,
-    validation: (value) => true,
+    validation: () => true,
   },
 ];
 
@@ -67,7 +118,7 @@ export const wooSteps: ChatStep[] = [
       "Aan welk bestuursorgaan stel je het WOO-verzoek? (bijvoorbeeld: gemeente Amsterdam, ministerie van BIZA)",
     field: "bestuursorgaan",
     required: true,
-    validation: (value) => value.length > 5,
+    validation: (value) => normalizeInput(value).length > 5,
   },
   {
     id: "onderwerp",
@@ -75,7 +126,7 @@ export const wooSteps: ChatStep[] = [
       "Over welk onderwerp wil je documenten opvragen? Zijn er concrete onderwerpen of projecten?",
     field: "wooOnderwerp",
     required: true,
-    validation: (value) => value.length > 10,
+    validation: (value) => normalizeInput(value).length > 10,
   },
   {
     id: "periode",
@@ -83,7 +134,7 @@ export const wooSteps: ChatStep[] = [
       "Over welke periode wil je documenten? (bijv. 'januari 2023 tot januari 2024' of 'van voor 1 januari 2023')",
     field: "wooPeriode",
     required: true,
-    validation: (value) => value.length > 5,
+    validation: (value) => isWooPeriodAnswer(value),
   },
   {
     id: "documenten",
@@ -91,21 +142,21 @@ export const wooSteps: ChatStep[] = [
       "Welke soort documenten vermoed je dat bestaan? (bijv. emails, rapporten, notulen, besluitstukken)",
     field: "wooDocumenten",
     required: true,
-    validation: (value) => value.length > 5,
+    validation: (value) => normalizeInput(value).length > 5,
   },
   {
     id: "digitale_verstrekking",
     question: "Wil je dat de documenten digitaal worden verstrekt? (ja/nee)",
     field: "digitaleVerstrekking",
     required: false,
-    validation: (value) => ["ja", "nee", "yes", "no"].includes(value.toLowerCase()),
+    validation: (value) => ["ja", "nee", "yes", "no"].includes(normalizeInput(value).toLowerCase()),
   },
   {
     id: "spoed",
     question: "Is er sprake van spoedeisend belang? (ja/nee)",
     field: "spoed",
     required: false,
-    validation: (value) => ["ja", "nee", "yes", "no"].includes(value.toLowerCase()),
+    validation: (value) => ["ja", "nee", "yes", "no"].includes(normalizeInput(value).toLowerCase()),
   },
 ];
 
@@ -114,31 +165,44 @@ export function getStepsByFlow(flow: Flow): ChatStep[] {
 }
 
 export function validateStep(step: ChatStep, value: string): boolean {
+  const trimmed = normalizeInput(value);
+  if (!trimmed) return false;
+  if (isLikelyClarifyingQuestion(trimmed)) return false;
   if (!step.validation) return true;
-  return step.validation(value);
+  return step.validation(trimmed);
+}
+
+export function getValidationErrorMessage(step: ChatStep, value: string): string {
+  const trimmed = normalizeInput(value);
+  if (!trimmed) return "Vul een antwoord in.";
+
+  if (isLikelyClarifyingQuestion(trimmed)) {
+    return "Dit lijkt een vraag. Geef eerst een concreet antwoord op de huidige intakevraag.";
+  }
+
+  if (!validateStep(step, trimmed)) {
+    return validationMessageByStepId[step.id] ?? "Dit antwoord voldoet niet aan de vereisten.";
+  }
+
+  return "";
 }
 
 export function needsFollowUp(
   formData: IntakeFormData,
   stepId: string
 ): string | null {
-  if (stepId === "gronden" && formData.gronden) {
-    const len = formData.gronden.length;
-    if (len < 300) {
-      return "Je omschrijving is nog wat beperkt. Kun je wat meer details geven over waarom je het niet eens bent met het besluit?";
-    }
-  }
+  void formData;
+  void stepId;
   return null;
 }
 
 export function isIntakeBezwaarComplete(formData: IntakeFormData): boolean {
   return !!(
     formData.bestuursorgaan &&
-    formData.datumBesluit &&
     formData.categorie &&
     formData.doel &&
     formData.gronden &&
-    formData.gronden.length >= 200 &&
+    formData.gronden.length >= 3 &&
     formData.files?.besluit
   );
 }

@@ -13,12 +13,16 @@ export function getLetterId(): string {
   return `BRIEF-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+export const TEST_PRICING_LABEL = "test periode";
+
 export function getPriceInCents(product: "basis" | "uitgebreid"): number {
-  return product === "basis" ? 795 : 1495;
+  void product;
+  return 1;
 }
 
 export function getPriceFormatted(product: "basis" | "uitgebreid"): string {
-  return product === "basis" ? "€7,95" : "€14,95";
+  void product;
+  return `€0,01 (${TEST_PRICING_LABEL})`;
 }
 
 export async function generateDocx(letterText: string): Promise<Blob> {
@@ -74,8 +78,8 @@ export function generateStripeLineItem(
   const tier = product === "basis" ? "basis" : "uitgebreid";
   const name =
     flow === "bezwaar"
-      ? `Bezwaarbrief - ${tier}`
-      : `WOO-verzoek - ${tier}`;
+      ? `Bezwaarbrief - ${tier} (${TEST_PRICING_LABEL})`
+      : `WOO-verzoek - ${tier} (${TEST_PRICING_LABEL})`;
 
   return {
     price_data: {
@@ -84,8 +88,8 @@ export function generateStripeLineItem(
         name: name,
         description:
           product === "basis"
-            ? "Basisversie met standaard brief"
-            : "Uitgebreide versie met extra bijlagen en referenties",
+            ? `Basisversie met standaard brief - ${TEST_PRICING_LABEL}`
+            : `Uitgebreide versie met extra bijlagen en referenties - ${TEST_PRICING_LABEL}`,
       },
       unit_amount: price,
     },

@@ -18,6 +18,28 @@ export default function FaqPage() {
       </Card>
 
       <Card>
+        <h2 className="text-xl text-[var(--foreground)] mb-2">
+          Waarom is BriefKompas beter dan als leek je vraag direct in ChatGPT zetten?
+        </h2>
+        <p className="text-sm text-[var(--muted)]">
+          Een losse vraag in ChatGPT kan snel zijn, maar bij bezwaar- en WOO-brieven zitten er risico&apos;s aan. Als
+          leek zie je vaak niet welke informatie juridisch cruciaal is, waardoor de uitkomst onvolledig of te
+          algemeen kan zijn.
+        </p>
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--muted)]">
+          <li>Belangrijke feiten of termijnen ontbreken sneller zonder gestructureerde intake.</li>
+          <li>De briefopbouw is niet altijd consistent met wat een bestuursorgaan praktisch verwacht.</li>
+          <li>Tekst kan overtuigend klinken, maar inhoudelijk te vaag of niet toetsbaar zijn.</li>
+          <li>Je kunt ongemerkt te veel persoonlijke gegevens delen in open prompts.</li>
+        </ul>
+        <p className="mt-3 text-sm text-[var(--muted)]">
+          BriefKompas probeert die risico&apos;s te mitigeren met een juridische backbone: een vaste briefstructuur,
+          stapsgewijze intake, controlemomenten vóór genereren en een duidelijk concept dat jij altijd zelf controleert
+          en aanpast.
+        </p>
+      </Card>
+
+      <Card>
         <h2 className="text-xl text-[var(--foreground)] mb-2">Hoe lang duurt het proces?</h2>
         <p className="text-sm text-[var(--muted)]">
           De intake duurt meestal 10 tot 15 minuten. Daarna kun je direct verder met pakketkeuze en briefgeneratie.

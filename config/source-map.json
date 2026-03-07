@@ -1,0 +1,86 @@
+{
+  "version": "2026-03-06",
+  "allowlistDomains": [
+    "wetten.overheid.nl",
+    "overheid.nl",
+    "rijksoverheid.nl",
+    "iplo.nl",
+    "belastingdienst.nl",
+    "uwv.nl",
+    "cjib.nl",
+    "om.nl",
+    "rechtspraak.nl",
+    "uitspraken.rechtspraak.nl",
+    "data.rechtspraak.nl",
+    "raadvanstate.nl",
+    "herstel.toeslagen.nl",
+    "handboek.toeslagen.nl"
+  ],
+  "caseTypes": {
+    "woo": {
+      "routes": ["woo_verzoek", "bezwaar_woo_besluit"],
+      "primarySources": ["wetten.overheid.nl", "rijksoverheid.nl", "overheid.nl"],
+      "useCaseLaw": false
+    },
+    "omgevingswet_vergunning": {
+      "routes": ["bezwaar_awb", "zienswijze_of_beroep"],
+      "primarySources": ["wetten.overheid.nl", "iplo.nl", "rijksoverheid.nl"],
+      "useCaseLaw": "only_if_validated"
+    },
+    "verkeersboete": {
+      "routes": ["administratief_beroep_ovj", "beroep_kantonrechter"],
+      "primarySources": ["wetten.overheid.nl", "cjib.nl", "om.nl", "rechtspraak.nl"],
+      "useCaseLaw": "only_if_validated"
+    },
+    "taakstraf": {
+      "routes": ["bezwaar_omzettingskennisgeving", "verzet_strafbeschikking"],
+      "primarySources": ["wetten.overheid.nl", "cjib.nl", "om.nl", "rechtspraak.nl"],
+      "useCaseLaw": "only_if_validated"
+    },
+    "belastingaanslag": {
+      "routes": ["bezwaar_fiscaal", "beroep_belastingrechter"],
+      "primarySources": ["wetten.overheid.nl", "belastingdienst.nl", "rechtspraak.nl"],
+      "useCaseLaw": "only_if_validated"
+    },
+    "uwv_uitkering": {
+      "routes": ["bezwaar_uwv"],
+      "primarySources": ["uwv.nl", "wetten.overheid.nl", "rijksoverheid.nl"],
+      "useCaseLaw": "only_if_validated"
+    },
+    "toeslag": {
+      "routes": ["bezwaar_toeslagen", "bezwaar_definitieve_berekening", "bezwaar_uht"],
+      "primarySources": [
+        "wetten.overheid.nl",
+        "belastingdienst.nl",
+        "handboek.toeslagen.nl",
+        "herstel.toeslagen.nl",
+        "rechtspraak.nl",
+        "raadvanstate.nl"
+      ],
+      "useCaseLaw": "only_if_validated"
+    },
+    "onzeker_handmatige_triage": {
+      "routes": ["handmatige_triage"],
+      "primarySources": ["wetten.overheid.nl", "overheid.nl"],
+      "useCaseLaw": false
+    }
+  },
+  "validation": {
+    "law": {
+      "requireOfficialSource": true,
+      "requireBwbr": true
+    },
+    "caseLaw": {
+      "requireEcliFormat": true,
+      "requireOfficialFetch": true,
+      "requireCourt": true,
+      "requireDecisionDate": true,
+      "requireTopicMatch": true,
+      "requireHoldingExtraction": true
+    },
+    "routing": {
+      "decisionDocumentOverridesGenericWebsite": true,
+      "fallbackToSafeDraftOnConflict": true
+    }
+  }
+}

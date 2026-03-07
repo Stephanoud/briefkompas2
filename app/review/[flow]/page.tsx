@@ -1,19 +1,17 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Alert } from "@/components/index";
 import { Flow, IntakeFormData } from "@/types";
 
-interface ReviewPageProps {
-  params: { flow: Flow };
-}
-
-export default function ReviewPage({ params }: ReviewPageProps) {
+export default function ReviewPage() {
   const router = useRouter();
-  const flow = params.flow as Flow;
+  const params = useParams<{ flow: string }>();
+  const rawFlow = params?.flow;
+  const flow = (Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) as Flow;
   const appStore = useAppStore();
   const cachedIntake =
     typeof window !== "undefined"
@@ -98,7 +96,9 @@ export default function ReviewPage({ params }: ReviewPageProps) {
                 )}
                 {renderField(
                   "Gronden (samenvatting)",
-                  intakeData.gronden?.substring(0, 100) + "..."
+                  intakeData.gronden
+                    ? `${intakeData.gronden.substring(0, 100)}...`
+                    : "Niet ingevuld"
                 )}
                 {renderField(
                   "Persoonlijke omstandigheden",

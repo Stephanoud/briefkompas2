@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
@@ -11,13 +11,11 @@ import { generateDocx, downloadFile } from "@/lib/utils";
 import { Flow } from "@/types";
 import { ReferenceItem } from "@/src/types/references";
 
-interface ResultPageProps {
-  params: { flow: Flow };
-}
-
-export default function ResultPage({ params }: ResultPageProps) {
+export default function ResultPage() {
   const router = useRouter();
-  const flow = params.flow as Flow;
+  const params = useParams<{ flow: string }>();
+  const rawFlow = params?.flow;
+  const flow = (Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) as Flow;
   const appStore = useAppStore();
   const generatedReferences: ReferenceItem[] = appStore.generatedLetter?.references || [];
 

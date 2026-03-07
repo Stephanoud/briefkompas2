@@ -4,13 +4,15 @@
   --background: #f4f8f6;
   --foreground: #12231f;
   --muted: #536b64;
+  --muted-strong: #3a534c;
   --surface: #ffffff;
   --surface-soft: #edf5f1;
   --border: #d4e3dc;
-  --brand: #2f6cf3;
-  --brand-strong: #2454c6;
+  --border-strong: #c3d5ce;
+  --brand: #1f6657;
+  --brand-strong: #184f44;
   --accent: #0f8f6d;
-  --ring: #6c8fff;
+  --ring: #7ab6a5;
 }
 
 @theme inline {
@@ -89,6 +91,14 @@ h3 {
 
 a {
   color: inherit;
+}
+
+.cta-button-link,
+.cta-button-link:hover,
+.cta-button-link:visited,
+.cta-button-link:active,
+.cta-button-link:focus-visible {
+  color: #ffffff !important;
 }
 
 ::selection {
