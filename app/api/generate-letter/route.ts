@@ -60,7 +60,7 @@ function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
     ];
   }
 
-  return [
+  const caseFacts = [
     `Bestuursorgaan: ${data.bestuursorgaan}`,
     `Datum besluit: ${data.datumBesluit ?? "onbekend"}`,
     `Kenmerk: ${data.kenmerk ?? "onbekend"}`,
@@ -69,6 +69,20 @@ function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
     `Gronden: ${data.gronden ?? "onbekend"}`,
     `Persoonlijke omstandigheden: ${data.persoonlijkeOmstandigheden ?? "geen"}`,
   ];
+
+  if (data.besluitDocumentType) {
+    caseFacts.push(`Documenttype besluit: ${data.besluitDocumentType}`);
+  }
+
+  if (data.besluitSamenvatting) {
+    caseFacts.push(`Samenvatting van besluit: ${data.besluitSamenvatting}`);
+  }
+
+  if (data.besluitTekst) {
+    caseFacts.push(`Tekstfragment uit besluit: ${data.besluitTekst.slice(0, 1600)}`);
+  }
+
+  return caseFacts;
 }
 
 function buildSafeFallbackLetter(params: {

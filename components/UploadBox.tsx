@@ -10,6 +10,11 @@ interface UploadBoxProps {
   uploadedFiles?: UploadedFileRef[];
   error?: string;
   required?: boolean;
+  helperText?: string;
+  actionText?: string;
+  descriptionText?: string;
+  disabled?: boolean;
+  capture?: "user" | "environment";
 }
 
 export const UploadBox: React.FC<UploadBoxProps> = ({
@@ -21,10 +26,16 @@ export const UploadBox: React.FC<UploadBoxProps> = ({
   uploadedFiles = [],
   error,
   required = false,
+  helperText,
+  actionText = "klik om te kiezen",
+  descriptionText = "Sleep bestanden hier of",
+  disabled = false,
+  capture,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleClick = () => {
+    if (disabled) return;
     inputRef.current?.click();
   };
 
@@ -43,22 +54,23 @@ export const UploadBox: React.FC<UploadBoxProps> = ({
   return (
     <div className="flex flex-col gap-2">
       {label && (
-        <label className="text-sm font-medium text-gray-700">
+        <label className="text-sm font-medium text-[var(--foreground)]">
           {label} {required && <span className="text-red-600">*</span>}
         </label>
       )}
 
       <div
         onClick={handleClick}
-        className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
-          error
-            ? "border-red-500 bg-red-50"
-            : "border-gray-300 hover:border-blue-500 hover:bg-blue-50"
-        }`}
+        aria-disabled={disabled}
+        className={`rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+          disabled
+            ? "cursor-not-allowed border-[var(--border)] bg-[var(--surface-soft)]/60 opacity-75"
+            : "cursor-pointer"
+        } ${error ? "border-red-500 bg-red-50" : "border-[var(--border)] bg-white hover:border-[var(--ring)] hover:bg-[var(--surface-soft)]/60"}`}
       >
         <div className="flex flex-col items-center gap-2">
           <svg
-            className="w-8 h-8 text-gray-400"
+            className="h-8 w-8 text-[var(--muted)]"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -71,14 +83,11 @@ export const UploadBox: React.FC<UploadBoxProps> = ({
             />
           </svg>
           <div>
-            <p className="text-sm font-medium text-gray-700">
-              Sleep bestanden hier of
-            </p>
-            <p className="text-sm text-blue-600">klik om te kiezen</p>
+            <p className="text-sm font-medium text-[var(--foreground)]">{descriptionText}</p>
+            <p className="text-sm text-[var(--brand)]">{disabled ? "Bezig met analyseren..." : actionText}</p>
           </div>
-          <p className="text-xs text-gray-500">
-            PDF tot {(maxSize / 1024 / 1024).toFixed(0)}MB
-          </p>
+          <p className="text-xs text-[var(--muted)]">Bestanden tot {(maxSize / 1024 / 1024).toFixed(0)}MB</p>
+          {helperText && <p className="max-w-md text-xs leading-relaxed text-[var(--muted)]">{helperText}</p>}
         </div>
 
         <input
@@ -87,6 +96,8 @@ export const UploadBox: React.FC<UploadBoxProps> = ({
           hidden
           accept={accept}
           multiple={multiple}
+          capture={capture}
+          disabled={disabled}
           onChange={handleChange}
         />
       </div>
@@ -95,16 +106,11 @@ export const UploadBox: React.FC<UploadBoxProps> = ({
 
       {uploadedFiles.length > 0 && (
         <div className="mt-2">
-          <p className="text-sm font-medium text-gray-700 mb-2">
-            Geüploade bestanden:
-          </p>
+          <p className="mb-2 text-sm font-medium text-[var(--foreground)]">Geuploade bestanden:</p>
           <ul className="space-y-1">
             {uploadedFiles.map((file) => (
-              <li
-                key={file.path}
-                className="text-sm text-gray-600 flex items-center gap-2"
-              >
-                <span className="w-4 h-4 bg-green-500 rounded-full"></span>
+              <li key={file.path} className="flex items-center gap-2 text-sm text-[var(--muted)]">
+                <span className="h-4 w-4 rounded-full bg-[var(--accent)]"></span>
                 {file.name} ({(file.size / 1024).toFixed(0)}KB)
               </li>
             ))}

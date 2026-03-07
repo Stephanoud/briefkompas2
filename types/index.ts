@@ -2,6 +2,7 @@ import { ReferenceItem } from "@/src/types/references";
 
 export type Flow = "bezwaar" | "woo";
 export type Product = "basis" | "uitgebreid";
+export type DecisionDocumentSource = "pdf" | "image";
 
 export interface UploadedFileRef {
   name: string;
@@ -15,6 +16,10 @@ export interface IntakeFormData {
   bestuursorgaan: string;
   datumBesluit?: string;
   kenmerk?: string;
+  besluitSamenvatting?: string;
+  besluitTekst?: string;
+  besluitBronType?: DecisionDocumentSource;
+  besluitDocumentType?: string;
   categorie?: string;
   doel: string;
   gronden?: string;
@@ -49,6 +54,17 @@ export interface ChatStep {
 export interface GeneratedLetter {
   letterText: string;
   references?: ReferenceItem[];
+}
+
+export interface DecisionExtractionResult {
+  datumBesluit?: string | null;
+  kenmerk?: string | null;
+  samenvatting?: string | null;
+  extractedText?: string | null;
+  analysisSource?: DecisionDocumentSource | null;
+  documentType?: string | null;
+  extracted: boolean;
+  warning?: string | null;
 }
 
 export interface StripeCheckoutData {

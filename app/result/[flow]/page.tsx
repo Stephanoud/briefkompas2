@@ -7,9 +7,11 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Textarea } from "@/components/Textarea";
 import { Alert } from "@/components/index";
-import { generateDocx, downloadFile } from "@/lib/utils";
+import { downloadFile, generateDocx, generatePdf } from "@/lib/utils";
 import { Flow } from "@/types";
 import { ReferenceItem } from "@/src/types/references";
+
+type DownloadFormat = "docx" | "pdf";
 
 export default function ResultPage() {
   const router = useRouter();
@@ -19,51 +21,60 @@ export default function ResultPage() {
   const appStore = useAppStore();
   const generatedReferences: ReferenceItem[] = appStore.generatedLetter?.references || [];
 
-  const [letterText, setLetterText] = useState(
-    appStore.generatedLetter?.letterText || ""
-  );
+  const [letterText, setLetterText] = useState(appStore.generatedLetter?.letterText || "");
   const [manualReferences, setManualReferences] = useState("");
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat | null>(null);
   const [confirmed, setConfirmed] = useState(false);
 
   const getEcliSearchUrl = (ecli: string) =>
     `https://uitspraken.rechtspraak.nl/#zoekresultaten?zoekterm=${encodeURIComponent(ecli)}`;
 
-  const handleDownload = async () => {
+  const buildExportText = () => {
+    let finalText = letterText;
+
+    if (generatedReferences.length > 0) {
+      const referenceText = generatedReferences
+        .map((reference, index) => {
+          const ecliPart = reference.ecli ? ` (${reference.ecli})` : "";
+          return `${index + 1}. ${reference.title}${ecliPart}\nTopic: ${reference.topic}\nToepasregel: ${reference.principle}`;
+        })
+        .join("\n\n");
+
+      finalText += `\n\n--- BRONNEN / JURISPRUDENTIE ---\n${referenceText}`;
+    }
+
+    if (appStore.product === "uitgebreid" && manualReferences.trim()) {
+      finalText += `\n\n--- EIGEN TOEVOEGINGEN ---\n${manualReferences.trim()}`;
+    }
+
+    return finalText;
+  };
+
+  const handleDownload = async (format: DownloadFormat) => {
     try {
-      setIsDownloading(true);
-      let finalText = letterText;
+      setDownloadFormat(format);
 
-      if (generatedReferences.length > 0) {
-        const referenceText = generatedReferences
-          .map((reference, index) => {
-            const ecliPart = reference.ecli ? ` (${reference.ecli})` : "";
-            return `${index + 1}. ${reference.title}${ecliPart}\nTopic: ${reference.topic}\nToepasregel: ${reference.principle}`;
-          })
-          .join("\n\n");
-        finalText += `\n\n--- BRONNEN / JURISPRUDENTIE ---\n${referenceText}`;
-      }
-
-      if (appStore.product === "uitgebreid" && manualReferences.trim()) {
-        finalText += "\n\n--- EIGEN TOEVOEGINGEN ---\n" + manualReferences.trim();
-      }
-
-      const blob = await generateDocx(finalText);
-      const filename = `${flow === "bezwaar" ? "bezwaarbrief" : "woo-verzoek"}-${
+      const finalText = buildExportText();
+      const filenameBase = `${flow === "bezwaar" ? "bezwaarbrief" : "woo-verzoek"}-${
         new Date().toISOString().split("T")[0]
-      }.docx`;
+      }`;
 
-      downloadFile(blob, filename);
-      setIsDownloading(false);
+      const blob =
+        format === "pdf"
+          ? await generatePdf(finalText)
+          : await generateDocx(finalText);
+
+      downloadFile(blob, `${filenameBase}.${format}`);
     } catch (error) {
       console.error("Download error:", error);
-      setIsDownloading(false);
+    } finally {
+      setDownloadFormat(null);
     }
   };
 
   if (!letterText) {
     return (
-      <div className="max-w-2xl mx-auto">
+      <div className="mx-auto max-w-2xl">
         <Alert type="error" title="Fout">
           Geen brief gegenereerd. Ga terug en probeer opnieuw.
         </Alert>
@@ -75,12 +86,10 @@ export default function ResultPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="grid md:grid-cols-3 gap-6">
-        {/* Main Content */}
-        <div className="md:col-span-2 space-y-6">
-          {/* Letter Preview */}
-          <Card title="Je Brief" subtitle="Pas deze aan naar je wensen">
+    <div className="mx-auto max-w-4xl">
+      <div className="grid gap-6 md:grid-cols-3">
+        <div className="space-y-6 md:col-span-2">
+          <Card title="Je brief" subtitle="Pas deze aan naar je wensen">
             <Textarea
               value={letterText}
               onChange={(e) => setLetterText(e.target.value)}
@@ -118,12 +127,8 @@ export default function ResultPage() {
             </Card>
           )}
 
-          {/* Extra user references (only for uitgebreid) */}
           {appStore.product === "uitgebreid" && (
-            <Card
-              title="Eigen toevoegingen (optioneel)"
-              subtitle="Voeg zelf extra verwijzingen of notities toe"
-            >
+            <Card title="Eigen toevoegingen (optioneel)" subtitle="Voeg zelf extra verwijzingen of notities toe">
               <Textarea
                 value={manualReferences}
                 onChange={(e) => setManualReferences(e.target.value)}
@@ -133,56 +138,61 @@ export default function ResultPage() {
             </Card>
           )}
 
-          {/* Disclaimer */}
           <Alert type="warning" title="Aandacht">
-            Dit is een conceptbrief. Controleer alles zorgvuldig voordat je deze verzendt.
-            BriefKompas levert geen juridisch advies. Je bent zelf verantwoordelijk.
+            Dit is een conceptbrief. Controleer alles zorgvuldig voordat je deze verzendt. BriefKompas
+            levert geen juridisch advies. Je bent zelf verantwoordelijk.
           </Alert>
 
-          {/* Confirmation */}
           <Card>
-            <label className="flex items-start gap-3 cursor-pointer">
+            <label className="flex cursor-pointer items-start gap-3">
               <input
                 type="checkbox"
                 checked={confirmed}
                 onChange={(e) => setConfirmed(e.target.checked)}
-                className="mt-1 rounded cursor-pointer"
+                className="mt-1 cursor-pointer rounded"
               />
               <span className="text-sm text-gray-600">
-                Ik heb de brief gecontroleerd en ben zelf verantwoordelijk voor de inhoud en
-                verzending.
+                Ik heb de brief gecontroleerd en ben zelf verantwoordelijk voor de inhoud en verzending.
               </span>
             </label>
           </Card>
         </div>
 
-        {/* Sidebar */}
         <div>
           <Card title="Verzenden">
             <div className="space-y-3">
               <Button
-                onClick={handleDownload}
-                disabled={!confirmed || isDownloading}
-                isLoading={isDownloading}
+                onClick={() => handleDownload("pdf")}
+                disabled={!confirmed || downloadFormat !== null}
+                isLoading={downloadFormat === "pdf"}
                 className="w-full"
               >
-                {isDownloading ? "Downloaden..." : "Download .docx"}
+                {downloadFormat === "pdf" ? "PDF maken..." : "Download PDF"}
               </Button>
 
-              <div className="pt-4 border-t border-gray-200">
-                <h4 className="font-semibold text-sm text-gray-900 mb-2">Volgende stappen:</h4>
-                <ol className="text-xs text-gray-600 space-y-1">
-                  <li>1. Download je brief</li>
-                  <li>2. Open in Word/LibreOffice</li>
-                  <li>3. Controleer gegevens</li>
-                  <li>4. Voeg handtekening toe (optioneel)</li>
-                  <li>5. Verzend naar bestuursorgaan</li>
+              <Button
+                variant="secondary"
+                onClick={() => handleDownload("docx")}
+                disabled={!confirmed || downloadFormat !== null}
+                isLoading={downloadFormat === "docx"}
+                className="w-full"
+              >
+                {downloadFormat === "docx" ? "DOCX maken..." : "Download DOCX"}
+              </Button>
+
+              <div className="border-t border-gray-200 pt-4">
+                <h4 className="mb-2 text-sm font-semibold text-gray-900">Volgende stappen:</h4>
+                <ol className="space-y-1 text-xs text-gray-600">
+                  <li>1. Download je brief als PDF of DOCX</li>
+                  <li>2. Controleer persoonsgegevens en inhoud</li>
+                  <li>3. Voeg handtekening toe als dat nodig is</li>
+                  <li>4. Verstuur de brief naar het bestuursorgaan</li>
                 </ol>
               </div>
 
-              <div className="pt-4 border-t border-gray-200">
-                <p className="text-xs text-gray-600 font-semibold">
-                  ⏰ {flow === "bezwaar" ? "Verzenden binnen 6 weken" : "Geen vaste termijn"}
+              <div className="border-t border-gray-200 pt-4">
+                <p className="text-xs font-semibold text-gray-600">
+                  {flow === "bezwaar" ? "Verzenden binnen 6 weken" : "Geen vaste termijn"}
                 </p>
               </div>
             </div>

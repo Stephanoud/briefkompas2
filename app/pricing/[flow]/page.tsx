@@ -167,7 +167,7 @@ export default function PricingPage() {
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-green-600">&#10003;</span>
-                <span>1 PDF-upload (besluit)</span>
+                <span>1 besluit-upload (PDF of foto)</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-green-600">&#10003;</span>
@@ -175,7 +175,7 @@ export default function PricingPage() {
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-green-600">&#10003;</span>
-                <span>Download als .docx</span>
+                <span>Download als PDF en DOCX</span>
               </li>
             </ul>
           </div>

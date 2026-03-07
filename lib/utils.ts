@@ -1,4 +1,8 @@
-import { Document, Packer, Paragraph, TextRun, AlignmentType } from "docx";
+import { AlignmentType, Document, Packer, Paragraph, TextRun } from "docx";
+
+function normalizeLetterLines(letterText: string): string[] {
+  return letterText.replace(/\r\n/g, "\n").split("\n");
+}
 
 export function formatDate(date: Date | string): string {
   if (typeof date === "string") return date;
@@ -10,7 +14,7 @@ export function formatDate(date: Date | string): string {
 }
 
 export function getLetterId(): string {
-  return `BRIEF-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `BRIEF-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
 export const TEST_PRICING_LABEL = "test periode";
@@ -22,29 +26,36 @@ export function getPriceInCents(product: "basis" | "uitgebreid"): number {
 
 export function getPriceFormatted(product: "basis" | "uitgebreid"): string {
   void product;
-  return `€0,01 (${TEST_PRICING_LABEL})`;
+  return `EUR0,01 (${TEST_PRICING_LABEL})`;
 }
 
 export async function generateDocx(letterText: string): Promise<Blob> {
+  const paragraphs = normalizeLetterLines(letterText).map((line) =>
+    new Paragraph({
+      alignment: AlignmentType.LEFT,
+      spacing: {
+        line: 300,
+        after: line.trim() ? 120 : 80,
+      },
+      children: [
+        new TextRun({
+          text: line || " ",
+          size: 22,
+        }),
+      ],
+    })
+  );
+
   const doc = new Document({
     sections: [
       {
         children: [
+          ...paragraphs,
           new Paragraph({
-            text: letterText,
-            spacing: {
-              line: 240,
-              after: 200,
-            },
-          }),
-          new Paragraph({
-            text: "",
-            spacing: { before: 400 },
-          }),
-          new Paragraph({
+            spacing: { before: 240 },
             children: [
               new TextRun({
-                text: "Dit is een conceptbrief gegenereerd met BriefKompas.nl. Controleer de inhoud zorgvuldig voordat u deze verzendt.",
+                text: "Dit is een conceptbrief gegenereerd met BriefKompas.nl. Controleer de inhoud zorgvuldig voordat je deze verzendt.",
                 italics: true,
                 size: 20,
               }),
@@ -55,8 +66,55 @@ export async function generateDocx(letterText: string): Promise<Blob> {
     ],
   });
 
-  const blob = await Packer.toBlob(doc);
-  return blob;
+  return Packer.toBlob(doc);
+}
+
+export async function generatePdf(letterText: string): Promise<Blob> {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({
+    unit: "mm",
+    format: "a4",
+  });
+
+  const margin = 18;
+  const lineHeight = 6;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const maxWidth = pageWidth - margin * 2;
+  let cursorY = margin;
+
+  const writeParagraph = (paragraph: string, extraSpacing = 2) => {
+    const lines = paragraph.trim() ? doc.splitTextToSize(paragraph, maxWidth) : [""];
+
+    for (const line of lines) {
+      if (cursorY > pageHeight - margin) {
+        doc.addPage();
+        cursorY = margin;
+      }
+
+      doc.text(line || " ", margin, cursorY);
+      cursorY += lineHeight;
+    }
+
+    cursorY += extraSpacing;
+  };
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+
+  for (const line of normalizeLetterLines(letterText)) {
+    writeParagraph(line);
+  }
+
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  writeParagraph(
+    "Dit is een conceptbrief gegenereerd met BriefKompas.nl. Controleer de inhoud zorgvuldig voordat je deze verzendt.",
+    0
+  );
+
+  const arrayBuffer = doc.output("arraybuffer");
+  return new Blob([arrayBuffer], { type: "application/pdf" });
 }
 
 export function downloadFile(blob: Blob, filename: string): void {
@@ -85,7 +143,7 @@ export function generateStripeLineItem(
     price_data: {
       currency: "eur",
       product_data: {
-        name: name,
+        name,
         description:
           product === "basis"
             ? `Basisversie met standaard brief - ${TEST_PRICING_LABEL}`
@@ -97,4 +155,5 @@ export function generateStripeLineItem(
   };
 }
 
-export const DISCLAIMER_TEXT = `BELANGRIJK: Dit is GEEN juridisch advies. BriefKompas.nl biedt voorlichting en hulp bij het opstellen van brieven, maar vervangt geen advocaat. Je bent zelf verantwoordelijk voor de inhoud van je brief. Controleer alles zorgvuldig voordat je indient.`;
+export const DISCLAIMER_TEXT =
+  "BELANGRIJK: Dit is GEEN juridisch advies. BriefKompas.nl biedt voorlichting en hulp bij het opstellen van brieven, maar vervangt geen advocaat. Je bent zelf verantwoordelijk voor de inhoud van je brief. Controleer alles zorgvuldig voordat je indient.";

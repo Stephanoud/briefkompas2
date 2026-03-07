@@ -11,7 +11,7 @@ import {
 } from "@/lib/intake-flow";
 import { getAnswerSuggestions, grondenFallbackOptions } from "@/lib/intake/answerSuggestions";
 import { filterBestuursorganen } from "@/lib/intake/bestuursorganen";
-import { ChatMessage, Flow, IntakeFormData } from "@/types";
+import { ChatMessage, DecisionExtractionResult, Flow, IntakeFormData } from "@/types";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
@@ -22,6 +22,19 @@ import { StepHeader, Alert } from "@/components";
 const shortGrondenThreshold = 120;
 const confirmYesValues = new Set(["ja", "ja, doorgaan", "ja doorgaan", "doorgaan", "ok", "oke", "prima"]);
 const confirmNoValues = new Set(["nee", "nee, ik wil meer toelichten", "nee ik wil meer toelichten", "meer toelichten"]);
+
+function truncatePreview(value: string, maxLength = 220): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function getDocumentSourceLabel(source?: IntakeFormData["besluitBronType"]): string | null {
+  if (source === "image") return "foto";
+  if (source === "pdf") return "PDF";
+  return null;
+}
 
 export default function IntakePage() {
   const router = useRouter();
@@ -55,6 +68,8 @@ export default function IntakePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [validationError, setValidationError] = useState("");
   const [pendingGrondenConfirmation, setPendingGrondenConfirmation] = useState<string | null>(null);
+  const [isAnalyzingDocument, setIsAnalyzingDocument] = useState(false);
+  const [documentAnalysisMessage, setDocumentAnalysisMessage] = useState("");
 
   const steps = getStepsByFlow(flow);
   const currentStep = steps[currentStepIndex];
@@ -143,7 +158,9 @@ export default function IntakePage() {
       if (updatedData.files?.besluit) {
         addAssistantMessage("Dank je! Je intake is voltooid. Klik op 'Naar Overzicht'.");
       } else {
-        addAssistantMessage("Prima! Upload nu het PDF-bestand van je besluit. Datum en kenmerk halen we daar automatisch uit.");
+        addAssistantMessage(
+          "Prima! Upload nu je besluit als PDF of maak met je telefoon een foto. Datum, kenmerk en een korte samenvatting halen we daar automatisch uit."
+        );
       }
     } else {
       setCurrentStepIndex(steps.length);
@@ -236,6 +253,14 @@ export default function IntakePage() {
     const selectedFile = files[0];
     let extractedDatumBesluit = intakeData.datumBesluit;
     let extractedKenmerk = intakeData.kenmerk;
+    let extractedSummary = intakeData.besluitSamenvatting;
+    let extractedText = intakeData.besluitTekst;
+    let extractedSource = intakeData.besluitBronType;
+    let extractedDocumentType = intakeData.besluitDocumentType;
+    let analysisNote = "";
+
+    setIsAnalyzingDocument(true);
+    setDocumentAnalysisMessage("");
 
     try {
       const formData = new FormData();
@@ -246,22 +271,35 @@ export default function IntakePage() {
         body: formData,
       });
 
-      if (response.ok) {
-        const extraction = (await response.json()) as {
-          datumBesluit?: string | null;
-          kenmerk?: string | null;
-        };
+      const payload = (await response.json()) as DecisionExtractionResult | { error?: string };
+
+      if (response.ok && "extracted" in payload) {
+        const extraction = payload as DecisionExtractionResult;
         extractedDatumBesluit = extraction.datumBesluit ?? extractedDatumBesluit;
         extractedKenmerk = extraction.kenmerk ?? extractedKenmerk;
+        extractedSummary = extraction.samenvatting ?? extractedSummary;
+        extractedText = extraction.extractedText ?? extractedText;
+        extractedSource = extraction.analysisSource ?? extractedSource;
+        extractedDocumentType = extraction.documentType ?? extractedDocumentType;
+        analysisNote = extraction.warning ?? "";
+      } else if ("error" in payload && payload.error) {
+        analysisNote = payload.error;
       }
     } catch {
-      // Metadata extractie is best effort; intake moet verder kunnen.
+      analysisNote = "Automatische analyse van het besluit is niet gelukt. Controleer datum en kenmerk handmatig.";
+    } finally {
+      setIsAnalyzingDocument(false);
+      setDocumentAnalysisMessage(analysisNote);
     }
 
     const updatedData = {
       ...intakeData,
       datumBesluit: extractedDatumBesluit,
       kenmerk: extractedKenmerk,
+      besluitSamenvatting: extractedSummary,
+      besluitTekst: extractedText,
+      besluitBronType: extractedSource,
+      besluitDocumentType: extractedDocumentType,
       files: {
         ...intakeData.files,
         besluit: {
@@ -279,21 +317,31 @@ export default function IntakePage() {
       const extractionNotes: string[] = [];
       if (updatedData.datumBesluit) extractionNotes.push(`datum: ${updatedData.datumBesluit}`);
       if (updatedData.kenmerk) extractionNotes.push(`kenmerk: ${updatedData.kenmerk}`);
+      if (updatedData.besluitDocumentType) extractionNotes.push(`documenttype: ${updatedData.besluitDocumentType}`);
+
+      const sourceLabel = getDocumentSourceLabel(updatedData.besluitBronType);
+      const summaryLine = updatedData.besluitSamenvatting
+        ? ` Samenvatting: ${truncatePreview(updatedData.besluitSamenvatting)}`
+        : "";
+      const noteLine = analysisNote ? ` ${analysisNote}` : "";
+      const sourceLine = sourceLabel ? ` via ${sourceLabel}` : "";
 
       if (questionsCompleted) {
         const extractionLine =
           extractionNotes.length > 0
             ? ` Gevonden in het besluit: ${extractionNotes.join(", ")}.`
-            : " Datum en kenmerk konden niet betrouwbaar uit de PDF worden gehaald.";
+            : " Datum en kenmerk konden niet betrouwbaar uit het bestand worden gehaald.";
         addAssistantMessage(
-          `Bestand ontvangen (${selectedFile.name}). Je intake is voltooid. Klik op 'Naar Overzicht'.${extractionLine}`
+          `Bestand ontvangen${sourceLine} (${selectedFile.name}). Je intake is voltooid. Klik op 'Naar Overzicht'.${extractionLine}${summaryLine}${noteLine}`
         );
       } else {
         const extractionLine =
           extractionNotes.length > 0
             ? ` Ik heb alvast ${extractionNotes.join(" en ")} uit het besluit gehaald.`
             : " Ik kon datum en kenmerk nog niet betrouwbaar uitlezen.";
-        addAssistantMessage(`Bestand ontvangen (${selectedFile.name}).${extractionLine} Ga verder met de intakevragen.`);
+        addAssistantMessage(
+          `Bestand ontvangen${sourceLine} (${selectedFile.name}).${extractionLine}${summaryLine}${noteLine} Ga verder met de intakevragen.`
+        );
       }
       return;
     }
@@ -391,13 +439,51 @@ export default function IntakePage() {
         )}
 
         {flow === "bezwaar" && !isIntakeReady && (
-          <UploadBox
-            label="Upload je besluit (PDF verplicht)"
-            accept=".pdf"
-            onFileSelect={handleFileSelect}
-            uploadedFiles={intakeData.files?.besluit ? [intakeData.files.besluit] : []}
-            required
-          />
+          <div className="space-y-4">
+            <UploadBox
+              label="Upload of fotografeer je besluit (verplicht)"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              descriptionText="Sleep je besluit hier of"
+              actionText="maak een foto of kies een bestand"
+              helperText="Op telefoon kun je direct een foto maken. Ondersteund: PDF, JPG, PNG en WEBP."
+              capture="environment"
+              disabled={isAnalyzingDocument}
+              onFileSelect={handleFileSelect}
+              uploadedFiles={intakeData.files?.besluit ? [intakeData.files.besluit] : []}
+              required
+            />
+
+            {isAnalyzingDocument && (
+              <Alert type="info" title="Besluit wordt geanalyseerd">
+                We lezen datum, kenmerk en relevante tekst uit je bestand. Dit duurt meestal enkele seconden.
+              </Alert>
+            )}
+
+            {documentAnalysisMessage && !isAnalyzingDocument && (
+              <Alert type="info" title="Documentanalyse">
+                {documentAnalysisMessage}
+              </Alert>
+            )}
+
+            {(intakeData.besluitSamenvatting || intakeData.besluitTekst) && (
+              <Alert type="success" title="Uit het besluit gehaald">
+                <div className="space-y-2 text-sm">
+                  {intakeData.besluitSamenvatting && (
+                    <p>
+                      <span className="font-semibold text-[var(--foreground)]">Samenvatting:</span>{" "}
+                      {intakeData.besluitSamenvatting}
+                    </p>
+                  )}
+                  {intakeData.besluitTekst && (
+                    <p>
+                      <span className="font-semibold text-[var(--foreground)]">Tekstfragment:</span>{" "}
+                      {truncatePreview(intakeData.besluitTekst, 320)}
+                    </p>
+                  )}
+                </div>
+              </Alert>
+            )}
+          </div>
         )}
 
         {isIntakeReady && (
