@@ -36,6 +36,33 @@ function getDocumentSourceLabel(source?: IntakeFormData["besluitBronType"]): str
   return null;
 }
 
+function getDocumentAnalysisPresentation(status?: IntakeFormData["besluitAnalyseStatus"]) {
+  if (status === "read") {
+    return {
+      title: "Besluit gelezen",
+      type: "success" as const,
+      description:
+        "De kern van het besluit is meegenomen. Controleer wel altijd datum, kenmerk en inhoud.",
+    };
+  }
+
+  if (status === "partial") {
+    return {
+      title: "Besluit deels gelezen",
+      type: "warning" as const,
+      description:
+        "Slechts een deel van het besluit kon betrouwbaar worden uitgelezen. Controleer de overgenomen gegevens extra goed.",
+    };
+  }
+
+  return {
+    title: "Alleen intake gebruikt",
+    type: "warning" as const,
+    description:
+      "Het besluit kon niet voldoende worden uitgelezen. Upload bij voorkeur een scherpere afbeelding of een doorzoekbare PDF.",
+  };
+}
+
 export default function IntakePage() {
   const router = useRouter();
   const params = useParams<{ flow: Flow }>();
@@ -257,6 +284,9 @@ export default function IntakePage() {
     let extractedText = intakeData.besluitTekst;
     let extractedSource = intakeData.besluitBronType;
     let extractedDocumentType = intakeData.besluitDocumentType;
+    let extractedAnalysis = intakeData.besluitAnalyse;
+    let extractedAnalysisStatus = intakeData.besluitAnalyseStatus;
+    let extractedReadability = intakeData.besluitLeeskwaliteit;
     let analysisNote = "";
 
     setIsAnalyzingDocument(true);
@@ -281,6 +311,9 @@ export default function IntakePage() {
         extractedText = extraction.extractedText ?? extractedText;
         extractedSource = extraction.analysisSource ?? extractedSource;
         extractedDocumentType = extraction.documentType ?? extractedDocumentType;
+        extractedAnalysis = extraction.decisionAnalysis ?? extractedAnalysis;
+        extractedAnalysisStatus = extraction.analysisStatus ?? extractedAnalysisStatus;
+        extractedReadability = extraction.readability ?? extractedReadability;
         analysisNote = extraction.warning ?? "";
       } else if ("error" in payload && payload.error) {
         analysisNote = payload.error;
@@ -300,6 +333,9 @@ export default function IntakePage() {
       besluitTekst: extractedText,
       besluitBronType: extractedSource,
       besluitDocumentType: extractedDocumentType,
+      besluitAnalyse: extractedAnalysis,
+      besluitAnalyseStatus: extractedAnalysisStatus,
+      besluitLeeskwaliteit: extractedReadability,
       files: {
         ...intakeData.files,
         besluit: {
@@ -318,10 +354,15 @@ export default function IntakePage() {
       if (updatedData.datumBesluit) extractionNotes.push(`datum: ${updatedData.datumBesluit}`);
       if (updatedData.kenmerk) extractionNotes.push(`kenmerk: ${updatedData.kenmerk}`);
       if (updatedData.besluitDocumentType) extractionNotes.push(`documenttype: ${updatedData.besluitDocumentType}`);
+      if (updatedData.besluitAnalyse?.onderwerp) extractionNotes.push(`onderwerp: ${updatedData.besluitAnalyse.onderwerp}`);
+      if (updatedData.besluitAnalyse?.termijnen) extractionNotes.push(`termijn: ${updatedData.besluitAnalyse.termijnen}`);
 
       const sourceLabel = getDocumentSourceLabel(updatedData.besluitBronType);
       const summaryLine = updatedData.besluitSamenvatting
         ? ` Samenvatting: ${truncatePreview(updatedData.besluitSamenvatting)}`
+        : "";
+      const statusLine = updatedData.besluitAnalyseStatus
+        ? ` Status: ${getDocumentAnalysisPresentation(updatedData.besluitAnalyseStatus).title.toLowerCase()}.`
         : "";
       const noteLine = analysisNote ? ` ${analysisNote}` : "";
       const sourceLine = sourceLabel ? ` via ${sourceLabel}` : "";
@@ -332,7 +373,7 @@ export default function IntakePage() {
             ? ` Gevonden in het besluit: ${extractionNotes.join(", ")}.`
             : " Datum en kenmerk konden niet betrouwbaar uit het bestand worden gehaald.";
         addAssistantMessage(
-          `Bestand ontvangen${sourceLine} (${selectedFile.name}). Je intake is voltooid. Klik op 'Naar Overzicht'.${extractionLine}${summaryLine}${noteLine}`
+          `Bestand ontvangen${sourceLine} (${selectedFile.name}). Je intake is voltooid. Klik op 'Naar Overzicht'.${statusLine}${extractionLine}${summaryLine}${noteLine}`
         );
       } else {
         const extractionLine =
@@ -340,7 +381,7 @@ export default function IntakePage() {
             ? ` Ik heb alvast ${extractionNotes.join(" en ")} uit het besluit gehaald.`
             : " Ik kon datum en kenmerk nog niet betrouwbaar uitlezen.";
         addAssistantMessage(
-          `Bestand ontvangen${sourceLine} (${selectedFile.name}).${extractionLine}${summaryLine}${noteLine} Ga verder met de intakevragen.`
+          `Bestand ontvangen${sourceLine} (${selectedFile.name}).${statusLine}${extractionLine}${summaryLine}${noteLine} Ga verder met de intakevragen.`
         );
       }
       return;
@@ -459,15 +500,43 @@ export default function IntakePage() {
               </Alert>
             )}
 
-            {documentAnalysisMessage && !isAnalyzingDocument && (
-              <Alert type="info" title="Documentanalyse">
-                {documentAnalysisMessage}
+            {(documentAnalysisMessage || intakeData.besluitAnalyseStatus) && !isAnalyzingDocument && (
+              <Alert
+                type={getDocumentAnalysisPresentation(intakeData.besluitAnalyseStatus).type}
+                title={getDocumentAnalysisPresentation(intakeData.besluitAnalyseStatus).title}
+              >
+                <span>{getDocumentAnalysisPresentation(intakeData.besluitAnalyseStatus).description}</span>
+                {documentAnalysisMessage && <span className="block pt-2">{documentAnalysisMessage}</span>}
               </Alert>
             )}
 
-            {(intakeData.besluitSamenvatting || intakeData.besluitTekst) && (
+            {(intakeData.besluitSamenvatting || intakeData.besluitTekst || intakeData.besluitAnalyse) && (
               <Alert type="success" title="Uit het besluit gehaald">
                 <div className="space-y-2 text-sm">
+                  {intakeData.besluitAnalyse?.onderwerp && (
+                    <p>
+                      <span className="font-semibold text-[var(--foreground)]">Onderwerp:</span>{" "}
+                      {intakeData.besluitAnalyse.onderwerp}
+                    </p>
+                  )}
+                  {intakeData.besluitAnalyse?.rechtsgrond && (
+                    <p>
+                      <span className="font-semibold text-[var(--foreground)]">Rechtsgrond:</span>{" "}
+                      {intakeData.besluitAnalyse.rechtsgrond}
+                    </p>
+                  )}
+                  {intakeData.besluitAnalyse?.besluitInhoud && (
+                    <p>
+                      <span className="font-semibold text-[var(--foreground)]">Besluitinhoud:</span>{" "}
+                      {intakeData.besluitAnalyse.besluitInhoud}
+                    </p>
+                  )}
+                  {intakeData.besluitAnalyse?.termijnen && (
+                    <p>
+                      <span className="font-semibold text-[var(--foreground)]">Termijnen:</span>{" "}
+                      {intakeData.besluitAnalyse.termijnen}
+                    </p>
+                  )}
                   {intakeData.besluitSamenvatting && (
                     <p>
                       <span className="font-semibold text-[var(--foreground)]">Samenvatting:</span>{" "}

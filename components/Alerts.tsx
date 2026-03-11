@@ -32,7 +32,7 @@ export const Alert: React.FC<AlertProps> = ({
         <span className="text-xs font-bold mt-1">{labels[type]}</span>
         <div>
           {title && <p className="font-semibold">{title}</p>}
-          <p className="text-sm">{children}</p>
+          <div className="text-sm">{children}</div>
         </div>
       </div>
     </div>

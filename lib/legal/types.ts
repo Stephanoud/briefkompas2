@@ -1,4 +1,11 @@
-import { Flow, IntakeFormData } from "@/types";
+import {
+  DecisionAnalysisStatus,
+  DecisionAnalysisSummary,
+  DecisionReadability,
+  Flow,
+  IntakeFormData,
+  LetterGenerationMode,
+} from "@/types";
 import { ReferenceItem } from "@/src/types/references";
 
 export type CaseType =
@@ -56,6 +63,9 @@ export interface PromptPayload {
   route: RouteType;
   caseFacts: string[];
   decisionMeta: string[];
+  decisionAnalysis?: DecisionAnalysisSummary | null;
+  decisionAnalysisStatus?: DecisionAnalysisStatus;
+  decisionReadability?: DecisionReadability | null;
   selectedSources: SourceDefinition[];
   validatedAuthorities: ValidatedCitation[];
   disallowedBehaviors: string[];
@@ -107,7 +117,10 @@ export interface SourceMapConfig {
 export interface GenerationGuardResult {
   ok: boolean;
   fallbackMode: "none" | "safe_generic";
+  generationMode: LetterGenerationMode;
   reasons: string[];
+  hardBlockers: string[];
+  softSignals: string[];
   missingFields: string[];
   caseType: CaseType;
   route: RouteType;

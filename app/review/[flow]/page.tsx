@@ -14,6 +14,12 @@ function truncatePreview(value: string, maxLength = 320): string {
   return `${value.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
+function getDecisionStatusLabel(status?: IntakeFormData["besluitAnalyseStatus"]): string {
+  if (status === "read") return "Besluit gelezen";
+  if (status === "partial") return "Besluit deels gelezen";
+  return "Alleen intake gebruikt";
+}
+
 export default function ReviewPage() {
   const router = useRouter();
   const params = useParams<{ flow: string }>();
@@ -101,11 +107,37 @@ export default function ReviewPage() {
                   "Gedetecteerd documenttype",
                   intakeData.besluitDocumentType || "Niet vastgesteld"
                 )}
+                {renderField("Status documentuitlezing", getDecisionStatusLabel(intakeData.besluitAnalyseStatus))}
+                {renderField("Leeskwaliteit", intakeData.besluitLeeskwaliteit || "Niet vastgesteld")}
               </div>
 
-              {(intakeData.besluitSamenvatting || intakeData.besluitTekst) && (
+              {(intakeData.besluitSamenvatting || intakeData.besluitTekst || intakeData.besluitAnalyse) && (
                 <div className="mt-4 rounded border border-[var(--border)] bg-white p-4">
                   <h4 className="text-sm font-semibold text-[var(--foreground)]">Uit het besluit gehaald</h4>
+                  {intakeData.besluitAnalyse?.onderwerp && (
+                    <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                      <span className="font-semibold text-[var(--foreground)]">Onderwerp:</span>{" "}
+                      {intakeData.besluitAnalyse.onderwerp}
+                    </p>
+                  )}
+                  {intakeData.besluitAnalyse?.rechtsgrond && (
+                    <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                      <span className="font-semibold text-[var(--foreground)]">Rechtsgrond:</span>{" "}
+                      {intakeData.besluitAnalyse.rechtsgrond}
+                    </p>
+                  )}
+                  {intakeData.besluitAnalyse?.besluitInhoud && (
+                    <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                      <span className="font-semibold text-[var(--foreground)]">Besluitinhoud:</span>{" "}
+                      {intakeData.besluitAnalyse.besluitInhoud}
+                    </p>
+                  )}
+                  {intakeData.besluitAnalyse?.termijnen && (
+                    <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                      <span className="font-semibold text-[var(--foreground)]">Termijnen:</span>{" "}
+                      {intakeData.besluitAnalyse.termijnen}
+                    </p>
+                  )}
                   {intakeData.besluitSamenvatting && (
                     <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
                       <span className="font-semibold text-[var(--foreground)]">Samenvatting:</span>{" "}

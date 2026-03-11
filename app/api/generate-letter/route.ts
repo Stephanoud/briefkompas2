@@ -23,6 +23,10 @@ function getOpenAIClient() {
   return new OpenAI({ apiKey });
 }
 
+function sanitize(value?: string): string {
+  return (value ?? "onbekend").trim() || "onbekend";
+}
+
 function detectOrgType(value?: string): ReferenceItem["orgType"] | undefined {
   if (!value) return undefined;
   const normalized = value.toLowerCase();
@@ -36,16 +40,41 @@ function detectOrgType(value?: string): ReferenceItem["orgType"] | undefined {
 }
 
 function buildReferenceKeywords(data: IntakeFormData, flow: Flow): string[] {
+  const decisionSignals = [
+    data.besluitDocumentType,
+    data.besluitSamenvatting,
+    data.besluitAnalyse?.onderwerp,
+    data.besluitAnalyse?.rechtsgrond,
+    data.besluitAnalyse?.besluitInhoud,
+    ...(data.besluitAnalyse?.aandachtspunten ?? []),
+  ];
+
   const rawText =
     flow === "woo"
       ? [data.bestuursorgaan, data.wooOnderwerp, data.wooDocumenten, data.wooPeriode].join(" ")
-      : [data.bestuursorgaan, data.categorie, data.doel, data.gronden].join(" ");
+      : [
+          data.bestuursorgaan,
+          data.categorie,
+          data.doel,
+          data.gronden,
+          ...decisionSignals,
+        ].join(" ");
 
   return rawText
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .map((keyword) => keyword.trim())
     .filter((keyword) => keyword.length >= 3);
+}
+
+function getDecisionStatusLabel(data: IntakeFormData): string {
+  if (data.besluitAnalyseStatus === "read") {
+    return "besluit gelezen";
+  }
+  if (data.besluitAnalyseStatus === "partial") {
+    return "besluit deels gelezen";
+  }
+  return "alleen intake gebruikt";
 }
 
 function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
@@ -66,8 +95,10 @@ function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
     `Kenmerk: ${data.kenmerk ?? "onbekend"}`,
     `Categorie: ${data.categorie ?? "onbekend"}`,
     `Doel: ${data.doel ?? "onbekend"}`,
-    `Gronden: ${data.gronden ?? "onbekend"}`,
+    `Gronden uit intake: ${data.gronden ?? "onbekend"}`,
     `Persoonlijke omstandigheden: ${data.persoonlijkeOmstandigheden ?? "geen"}`,
+    `Status besluituitlezing: ${getDecisionStatusLabel(data)}`,
+    `Leeskwaliteit besluitbestand: ${data.besluitLeeskwaliteit ?? "onbekend"}`,
   ];
 
   if (data.besluitDocumentType) {
@@ -78,8 +109,32 @@ function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
     caseFacts.push(`Samenvatting van besluit: ${data.besluitSamenvatting}`);
   }
 
+  if (data.besluitAnalyse?.bestuursorgaan) {
+    caseFacts.push(`Bestuursorgaan uit besluit: ${data.besluitAnalyse.bestuursorgaan}`);
+  }
+
+  if (data.besluitAnalyse?.onderwerp) {
+    caseFacts.push(`Onderwerp uit besluit: ${data.besluitAnalyse.onderwerp}`);
+  }
+
+  if (data.besluitAnalyse?.rechtsgrond) {
+    caseFacts.push(`Rechtsgrond uit besluit: ${data.besluitAnalyse.rechtsgrond}`);
+  }
+
+  if (data.besluitAnalyse?.besluitInhoud) {
+    caseFacts.push(`Kern van het besluit: ${data.besluitAnalyse.besluitInhoud}`);
+  }
+
+  if (data.besluitAnalyse?.termijnen) {
+    caseFacts.push(`Zichtbare termijn: ${data.besluitAnalyse.termijnen}`);
+  }
+
+  if (data.besluitAnalyse?.aandachtspunten?.length) {
+    caseFacts.push(`Aandachtspunten uit besluit: ${data.besluitAnalyse.aandachtspunten.join("; ")}`);
+  }
+
   if (data.besluitTekst) {
-    caseFacts.push(`Tekstfragment uit besluit: ${data.besluitTekst.slice(0, 1600)}`);
+    caseFacts.push(`Tekstfragment uit besluit: ${data.besluitTekst.slice(0, 2500)}`);
   }
 
   return caseFacts;
@@ -88,72 +143,90 @@ function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
 function buildSafeFallbackLetter(params: {
   flow: Flow;
   intakeData: IntakeFormData;
-  guard: GenerationGuardResult;
 }): string {
-  const { flow, intakeData, guard } = params;
-
-  const reasonText = guard.reasons.length
-    ? `Waarom fallback is gebruikt: ${guard.reasons.join("; ")}.`
-    : "Waarom fallback is gebruikt: onvoldoende zekerheid voor specialistische generatie.";
+  const { flow, intakeData } = params;
 
   if (flow === "woo") {
     return [
-      "CONCEPT WOO-VERZOEK (VEILIGE FALLBACK)",
-      "",
       "[Jouw naam]",
       "[Jouw adres]",
       "[Postcode en woonplaats]",
+      "[E-mailadres]",
+      "[Telefoonnummer]",
       "",
+      "Aan:",
       `${intakeData.bestuursorgaan}`,
       "[Adres bestuursorgaan]",
+      "[Postcode en plaats]",
       "",
       "Betreft: Woo-verzoek",
+      "Datum: [vandaag invullen]",
       "",
       "Geacht bestuursorgaan,",
       "",
-      "Hierbij verzoek ik op grond van de Wet open overheid om documenten over het volgende onderwerp:",
+      "Hierbij verzoek ik op grond van de Wet open overheid om openbaarmaking van documenten over het volgende onderwerp.",
+      "",
       `${intakeData.wooOnderwerp ?? "[onderwerp invullen]"}`,
       "",
       `Periode: ${intakeData.wooPeriode ?? "[periode invullen]"}`,
-      `Gevraagde documentsoorten: ${intakeData.wooDocumenten ?? "[documentsoorten invullen]"}`,
+      `Gevraagde documenten: ${intakeData.wooDocumenten ?? "[documentsoorten invullen]"}`,
       "",
-      "Ik verzoek om ontvangstbevestiging en, waar mogelijk, digitale verstrekking van de stukken.",
+      "Ik verzoek u de documenten, waar mogelijk, digitaal te verstrekken en de ontvangst van dit verzoek te bevestigen.",
       "",
-      "Met vriendelijke groet,",
+      "Hoogachtend,",
+      "",
       "[Jouw naam]",
       "",
-      reasonText,
-      "Dit is een veilige conceptbrief zonder jurisprudentieverwijzingen. Controleer alle gegevens voor verzending. BriefKompas.nl geeft geen juridisch advies.",
+      "Dit is een conceptbrief. Controleer alle gegevens zorgvuldig voor verzending. BriefKompas.nl geeft geen juridisch advies.",
     ].join("\n");
   }
 
+  const subject = intakeData.besluitDocumentType
+    ? `Bezwaarschrift tegen ${intakeData.besluitDocumentType}`
+    : "Bezwaarschrift";
+
   return [
-    "CONCEPT BEZWAARSCHRIFT (VEILIGE FALLBACK)",
-    "",
     "[Jouw naam]",
     "[Jouw adres]",
     "[Postcode en woonplaats]",
+    "[E-mailadres]",
+    "[Telefoonnummer]",
     "",
+    "Aan:",
     `${intakeData.bestuursorgaan}`,
     "[Adres bestuursorgaan]",
+    "[Postcode en plaats]",
     "",
-    "Betreft: Bezwaarschrift",
+    `Betreft: ${subject}`,
+    `Kenmerk: ${intakeData.kenmerk ?? "[kenmerk invullen]"}`,
+    `Datum besluit: ${intakeData.datumBesluit ?? "[datum invullen]"}`,
+    "Datum: [vandaag invullen]",
     "",
     "Geacht bestuursorgaan,",
     "",
-    `Hierbij maak ik bezwaar tegen het besluit van ${intakeData.datumBesluit ?? "[datum invullen]"}.`,
-    `Kenmerk/zaaknummer: ${intakeData.kenmerk ?? "[kenmerk invullen]"}`,
+    "Hierbij maak ik bezwaar tegen het hierboven genoemde besluit.",
     "",
-    `Doel van bezwaar: ${intakeData.doel ?? "[doel invullen]"}`,
-    `Kern van mijn bezwaar: ${intakeData.gronden ?? "[gronden invullen]"}`,
+    "Feiten en besluit",
+    `Volgens mijn gegevens betreft het een ${intakeData.categorie ?? "bestuursrechtelijk"} besluit van ${intakeData.bestuursorgaan}.`,
+    intakeData.besluitSamenvatting
+      ? intakeData.besluitSamenvatting
+      : "De precieze inhoud van het bestreden besluit moet nog nader worden gecontroleerd aan de hand van het besluit zelf.",
     "",
-    "Ik verzoek u mijn bezwaar in behandeling te nemen en het besluit te heroverwegen.",
+    "Gronden van bezwaar",
+    `Ik ben het niet eens met het besluit omdat ${sanitize(intakeData.gronden)}.`,
+    "Ik verzoek u het besluit opnieuw en volledig te beoordelen en daarbij ook mijn persoonlijke belangen mee te wegen.",
     "",
-    "Met vriendelijke groet,",
+    "Verzoek",
+    `Ik verzoek u het besluit te ${sanitize(intakeData.doel)} of daarvoor een nieuw besluit in de plaats te stellen.`,
+    "",
+    "Slot",
+    "Ik verzoek u mij in de gelegenheid te stellen mijn bezwaar zo nodig nader toe te lichten tijdens een hoorzitting.",
+    "",
+    "Hoogachtend,",
+    "",
     "[Jouw naam]",
     "",
-    reasonText,
-    "Dit is een veilige conceptbrief zonder jurisprudentieverwijzingen. Controleer alle gegevens voor verzending. BriefKompas.nl geeft geen juridisch advies.",
+    "Dit is een conceptbrief. Controleer alle gegevens zorgvuldig voor verzending. BriefKompas.nl geeft geen juridisch advies.",
   ].join("\n");
 }
 
@@ -173,21 +246,27 @@ function buildGuardResult(params: {
     ? validateAuthorities({ references, sourceSet })
     : { allowedAuthorities: [], rejectedAuthorities: [], auditTrail: ["No source set available for authority validation."] };
 
-  const reasons: string[] = [];
+  const softSignals: string[] = [];
+  const hardBlockers: string[] = [];
+
   if (classification.caseType === "onzeker_handmatige_triage" || classification.confidence < 0.7) {
-    reasons.push("case_type_uncertain");
+    softSignals.push("case_type_uncertain");
   }
 
   if (routing.route === "handmatige_triage" || routing.confidence < 0.6) {
-    reasons.push("route_uncertain");
+    softSignals.push("route_uncertain");
   }
 
   if (!sourceSetValidation.ok) {
-    reasons.push(...sourceSetValidation.reasons);
+    hardBlockers.push(...sourceSetValidation.reasons);
+  }
+
+  if (!sourceSet) {
+    hardBlockers.push("missing_source_set");
   }
 
   if (missingFields.length > 0) {
-    reasons.push("missing_required_intake_fields");
+    hardBlockers.push("missing_required_intake_fields");
   }
 
   const auditTrail = [
@@ -197,10 +276,20 @@ function buildGuardResult(params: {
     ...authorityValidation.auditTrail,
   ];
 
+  const generationMode =
+    hardBlockers.length > 0
+      ? "static_fallback"
+      : softSignals.length > 0
+        ? "safe_generic_ai"
+        : "validated";
+
   return {
-    ok: reasons.length === 0,
-    fallbackMode: reasons.length === 0 ? "none" : "safe_generic",
-    reasons,
+    ok: generationMode === "validated",
+    fallbackMode: generationMode === "static_fallback" ? "safe_generic" : "none",
+    generationMode,
+    reasons: [...softSignals, ...hardBlockers],
+    hardBlockers,
+    softSignals,
     missingFields,
     caseType: classification.caseType,
     route: routing.route,
@@ -249,17 +338,18 @@ export async function POST(req: NextRequest) {
 
     const guard = buildGuardResult({ intakeData, flow, references });
 
-    if (!guard.ok || !guard.selectedSourceSet) {
+    if (guard.generationMode === "static_fallback" || !guard.selectedSourceSet) {
       const fallbackLetter = buildSafeFallbackLetter({
         flow,
         intakeData,
-        guard,
       });
 
       return NextResponse.json({
         letter: {
           letterText: fallbackLetter,
           references: [] as ReferenceItem[],
+          generationMode: "static_fallback" as const,
+          guardReasons: guard.reasons,
         },
         guard,
       });
@@ -275,16 +365,29 @@ export async function POST(req: NextRequest) {
         `Route: ${guard.route}`,
         `CaseType confidence: ${guard.caseTypeConfidence.toFixed(2)}`,
         `Route confidence: ${guard.routeConfidence.toFixed(2)}`,
+        `Generation mode: ${guard.generationMode}`,
+        `Decision extraction status: ${intakeData.besluitAnalyseStatus ?? "failed"}`,
+        `Decision readability: ${intakeData.besluitLeeskwaliteit ?? "unknown"}`,
+        `Guard reasons: ${guard.reasons.length > 0 ? guard.reasons.join(", ") : "none"}`,
       ],
+      decisionAnalysis: intakeData.besluitAnalyse ?? null,
+      decisionAnalysisStatus: intakeData.besluitAnalyseStatus ?? "failed",
+      decisionReadability: intakeData.besluitLeeskwaliteit ?? null,
       selectedSources: guard.selectedSourceSet.primarySources,
       validatedAuthorities: guard.validatedAuthorities,
       disallowedBehaviors: [
         "Geen nieuwe bronnen buiten selectedSources/validatedAuthorities.",
         "Geen ECLI's zonder validatie.",
-        "Geen wetsartikelen op basis van aannames.",
-        "Geen stellige juridische conclusie zonder bronbasis.",
+        "Geen wetsartikelen of sectorspecifieke rechtsgronden op basis van aannames.",
+        "Geen stellige juridische conclusie zonder feitelijke basis in intake of besluitanalyse.",
       ],
     };
+
+    if (guard.generationMode === "safe_generic_ai") {
+      payload.disallowedBehaviors.push(
+        "Veilige modus actief: baseer je op algemene Awb-grondslagen en expliciet uit het besluit blijkende gegevens, zonder sectorspecifieke details te raden."
+      );
+    }
 
     const prompt = buildLetterPrompt({
       intakeData,
@@ -298,24 +401,22 @@ export async function POST(req: NextRequest) {
       const fallbackLetter = buildSafeFallbackLetter({
         flow,
         intakeData,
-        guard: {
-          ...guard,
-          ok: false,
-          fallbackMode: "safe_generic",
-          reasons: [...guard.reasons, "empty_generation_output"],
-        },
       });
 
       return NextResponse.json({
         letter: {
           letterText: fallbackLetter,
-          references: [] as ReferenceItem[],
+          references: guard.validatedAuthorities,
+          generationMode: "static_fallback" as const,
+          guardReasons: [...guard.reasons, "empty_generation_output"],
         },
         guard: {
           ...guard,
           ok: false,
           fallbackMode: "safe_generic",
+          generationMode: "static_fallback" as const,
           reasons: [...guard.reasons, "empty_generation_output"],
+          hardBlockers: [...guard.hardBlockers, "empty_generation_output"],
         },
       });
     }
@@ -324,6 +425,8 @@ export async function POST(req: NextRequest) {
       letter: {
         letterText,
         references: guard.validatedAuthorities,
+        generationMode: guard.generationMode,
+        guardReasons: guard.reasons,
       },
       guard,
     });

@@ -9,12 +9,12 @@ export default function PrivacyPage() {
         <div className="space-y-4 text-sm text-gray-600">
           <h3 className="font-semibold text-gray-900">Introductie</h3>
           <p>
-            BriefKompas.nl (hierna: "wij", "ons") respecteert je privacy. Deze verklaring
+            BriefKompas.nl (hierna: &quot;wij&quot;, &quot;ons&quot;) respecteert je privacy. Deze verklaring
             beschrijft hoe we je persoonsgegevens verzamelen, gebruiken en beschermen.
           </p>
 
           <h3 className="font-semibold text-gray-900">Welke gegevens verzamelen we?</h3>
-          <ul className="list-disc list-inside space-y-1 ml-2">
+          <ul className="ml-2 list-inside list-disc space-y-1">
             <li>Je naam en contactgegevens</li>
             <li>Informatie over je bezwaar of WOO-verzoek</li>
             <li>Geuploade PDF-bestanden (je besluit, bijlagen)</li>
@@ -23,7 +23,7 @@ export default function PrivacyPage() {
           </ul>
 
           <h3 className="font-semibold text-gray-900">Waarom verzamelen we dit?</h3>
-          <ul className="list-disc list-inside space-y-1 ml-2">
+          <ul className="ml-2 list-inside list-disc space-y-1">
             <li>Om je brief te genereren</li>
             <li>Om betaling te verwerken</li>
             <li>Om klantservice te bieden</li>
@@ -35,16 +35,14 @@ export default function PrivacyPage() {
             We bewaren je gegevens zolang nodig voor de service. Na afronding van je bestelling
             verwijderen we alle persoonlijke gegevens, behalve:
           </p>
-          <ul className="list-disc list-inside space-y-1 ml-2">
+          <ul className="ml-2 list-inside list-disc space-y-1">
             <li>Betaalgegevens (nodig voor administratie, max 7 jaar)</li>
             <li>Geanonimiseerde gebruiksgegevens (voor verbetering)</li>
           </ul>
 
           <h3 className="font-semibold text-gray-900">Delen we je gegevens?</h3>
-          <p>
-            We delen je gegevens niet met derden, behalve:
-          </p>
-          <ul className="list-disc list-inside space-y-1 ml-2">
+          <p>We delen je gegevens niet met derden, behalve:</p>
+          <ul className="ml-2 list-inside list-disc space-y-1">
             <li>Stripe (voor betaling)</li>
             <li>OpenAI (voor brief-generatie, anoniem)</li>
             <li>Als wettelijk verplicht</li>
@@ -52,18 +50,18 @@ export default function PrivacyPage() {
 
           <h3 className="font-semibold text-gray-900">Jouw rechten</h3>
           <p>Je hebt het recht om:</p>
-          <ul className="list-disc list-inside space-y-1 ml-2">
+          <ul className="ml-2 list-inside list-disc space-y-1">
             <li>Je gegevens in te zien</li>
             <li>Je gegevens te corrigeren</li>
             <li>Je gegevens te laten verwijderen</li>
-            <li>Je gegevens geëxporteerd te krijgen</li>
+            <li>Je gegevens geexporteerd te krijgen</li>
             <li>Je toestemming in te trekken</li>
           </ul>
 
           <h3 className="font-semibold text-gray-900">Cookies</h3>
           <p>
             We gebruiken cookies voor sessie-management en analytics. Je kunt cookies uitschakelen
-            in je browser, maar dit kan de service beïnvloeden.
+            in je browser, maar dit kan de service beinvloeden.
           </p>
 
           <h3 className="font-semibold text-gray-900">Beveiliging</h3>
@@ -83,9 +81,7 @@ export default function PrivacyPage() {
             gepubliceerd.
           </p>
 
-          <p className="pt-4 border-t border-gray-200 text-xs">
-            Gewijzigd: maart 2024
-          </p>
+          <p className="border-t border-gray-200 pt-4 text-xs">Gewijzigd: maart 2024</p>
         </div>
       </Card>
     </div>

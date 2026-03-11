@@ -3,6 +3,18 @@ import { ReferenceItem } from "@/src/types/references";
 export type Flow = "bezwaar" | "woo";
 export type Product = "basis" | "uitgebreid";
 export type DecisionDocumentSource = "pdf" | "image";
+export type DecisionAnalysisStatus = "read" | "partial" | "failed";
+export type DecisionReadability = "high" | "medium" | "low";
+export type LetterGenerationMode = "validated" | "safe_generic_ai" | "static_fallback";
+
+export interface DecisionAnalysisSummary {
+  bestuursorgaan?: string | null;
+  onderwerp?: string | null;
+  rechtsgrond?: string | null;
+  besluitInhoud?: string | null;
+  termijnen?: string | null;
+  aandachtspunten?: string[];
+}
 
 export interface UploadedFileRef {
   name: string;
@@ -20,6 +32,9 @@ export interface IntakeFormData {
   besluitTekst?: string;
   besluitBronType?: DecisionDocumentSource;
   besluitDocumentType?: string;
+  besluitAnalyse?: DecisionAnalysisSummary | null;
+  besluitAnalyseStatus?: DecisionAnalysisStatus;
+  besluitLeeskwaliteit?: DecisionReadability | null;
   categorie?: string;
   doel: string;
   gronden?: string;
@@ -54,6 +69,8 @@ export interface ChatStep {
 export interface GeneratedLetter {
   letterText: string;
   references?: ReferenceItem[];
+  generationMode?: LetterGenerationMode;
+  guardReasons?: string[];
 }
 
 export interface DecisionExtractionResult {
@@ -63,6 +80,9 @@ export interface DecisionExtractionResult {
   extractedText?: string | null;
   analysisSource?: DecisionDocumentSource | null;
   documentType?: string | null;
+  decisionAnalysis?: DecisionAnalysisSummary | null;
+  analysisStatus?: DecisionAnalysisStatus;
+  readability?: DecisionReadability | null;
   extracted: boolean;
   warning?: string | null;
 }

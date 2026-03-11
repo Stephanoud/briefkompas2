@@ -1,7 +1,11 @@
 import { AlignmentType, Document, Packer, Paragraph, TextRun } from "docx";
+import { parseLetterBlocks, LetterBlock } from "@/lib/letter-format";
+import { ReferenceItem } from "@/src/types/references";
 
-function normalizeLetterLines(letterText: string): string[] {
-  return letterText.replace(/\r\n/g, "\n").split("\n");
+export interface LetterExportPayload {
+  letterText: string;
+  generatedReferences?: ReferenceItem[];
+  manualReferences?: string;
 }
 
 export function formatDate(date: Date | string): string {
@@ -18,6 +22,11 @@ export function getLetterId(): string {
 }
 
 export const TEST_PRICING_LABEL = "test periode";
+export const TEST_BYPASS_DISCOUNT_CODE = "Test2026";
+
+export function isTestBypassDiscountCode(code?: string | null): boolean {
+  return code?.trim().toLowerCase() === TEST_BYPASS_DISCOUNT_CODE.toLowerCase();
+}
 
 export function getPriceInCents(product: "basis" | "uitgebreid"): number {
   void product;
@@ -29,26 +38,129 @@ export function getPriceFormatted(product: "basis" | "uitgebreid"): string {
   return `EUR0,01 (${TEST_PRICING_LABEL})`;
 }
 
-export async function generateDocx(letterText: string): Promise<Blob> {
-  const paragraphs = normalizeLetterLines(letterText).map((line) =>
-    new Paragraph({
-      alignment: AlignmentType.LEFT,
-      spacing: {
-        line: 300,
-        after: line.trim() ? 120 : 80,
-      },
-      children: [
-        new TextRun({
-          text: line || " ",
-          size: 22,
-        }),
-      ],
-    })
-  );
+function buildSupplementBlocks(payload: LetterExportPayload): LetterBlock[] {
+  const blocks: LetterBlock[] = [];
+
+  if (payload.generatedReferences && payload.generatedReferences.length > 0) {
+    blocks.push({ type: "heading", text: "Juridische aanknopingspunten" });
+    blocks.push({
+      type: "list",
+      ordered: true,
+      items: payload.generatedReferences.map((reference) => {
+        const ecliPart = reference.ecli ? ` (${reference.ecli})` : "";
+        return `${reference.title}${ecliPart}. Onderwerp: ${reference.topic}. ${reference.principle}`;
+      }),
+    });
+  }
+
+  if (payload.manualReferences?.trim()) {
+    blocks.push({ type: "heading", text: "Eigen toevoegingen" });
+    blocks.push({
+      type: "text",
+      lines: payload.manualReferences
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean),
+    });
+  }
+
+  return blocks;
+}
+
+function buildDocumentBlocks(payload: LetterExportPayload): LetterBlock[] {
+  return [...parseLetterBlocks(payload.letterText), ...buildSupplementBlocks(payload)];
+}
+
+function buildDocxParagraphs(blocks: LetterBlock[]): Paragraph[] {
+  const paragraphs: Paragraph[] = [];
+
+  blocks.forEach((block) => {
+    if (block.type === "heading") {
+      paragraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.LEFT,
+          spacing: {
+            before: 220,
+            after: 90,
+          },
+          children: [
+            new TextRun({
+              text: block.text,
+              size: 26,
+              bold: true,
+              font: "Times New Roman",
+            }),
+          ],
+        })
+      );
+      return;
+    }
+
+    if (block.type === "list") {
+      block.items.forEach((item, index) => {
+        paragraphs.push(
+          new Paragraph({
+            alignment: AlignmentType.LEFT,
+            spacing: {
+              after: 120,
+              line: 320,
+            },
+            indent: {
+              left: 360,
+              hanging: 200,
+            },
+            children: [
+              new TextRun({
+                text: `${block.ordered ? `${index + 1}.` : "-"} ${item}`,
+                size: 24,
+                font: "Times New Roman",
+              }),
+            ],
+          })
+        );
+      });
+      return;
+    }
+
+    block.lines.forEach((line, lineIndex) => {
+      paragraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.LEFT,
+          spacing: {
+            line: 320,
+            after: lineIndex === block.lines.length - 1 ? 150 : 40,
+          },
+          children: [
+            new TextRun({
+              text: line,
+              size: 24,
+              font: "Times New Roman",
+            }),
+          ],
+        })
+      );
+    });
+  });
+
+  return paragraphs;
+}
+
+export async function generateDocx(payload: LetterExportPayload): Promise<Blob> {
+  const paragraphs = buildDocxParagraphs(buildDocumentBlocks(payload));
 
   const doc = new Document({
     sections: [
       {
+        properties: {
+          page: {
+            margin: {
+              top: 1260,
+              right: 1260,
+              bottom: 1260,
+              left: 1260,
+            },
+          },
+        },
         children: [
           ...paragraphs,
           new Paragraph({
@@ -57,7 +169,8 @@ export async function generateDocx(letterText: string): Promise<Blob> {
               new TextRun({
                 text: "Dit is een conceptbrief gegenereerd met BriefKompas.nl. Controleer de inhoud zorgvuldig voordat je deze verzendt.",
                 italics: true,
-                size: 20,
+                size: 19,
+                font: "Times New Roman",
               }),
             ],
           }),
@@ -69,47 +182,74 @@ export async function generateDocx(letterText: string): Promise<Blob> {
   return Packer.toBlob(doc);
 }
 
-export async function generatePdf(letterText: string): Promise<Blob> {
+export async function generatePdf(payload: LetterExportPayload): Promise<Blob> {
   const { jsPDF } = await import("jspdf");
+  const blocks = buildDocumentBlocks(payload);
   const doc = new jsPDF({
     unit: "mm",
     format: "a4",
   });
 
-  const margin = 18;
-  const lineHeight = 6;
+  const margin = 20;
+  const lineHeight = 6.2;
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const maxWidth = pageWidth - margin * 2;
   let cursorY = margin;
 
-  const writeParagraph = (paragraph: string, extraSpacing = 2) => {
-    const lines = paragraph.trim() ? doc.splitTextToSize(paragraph, maxWidth) : [""];
-
-    for (const line of lines) {
-      if (cursorY > pageHeight - margin) {
-        doc.addPage();
-        cursorY = margin;
-      }
-
-      doc.text(line || " ", margin, cursorY);
-      cursorY += lineHeight;
+  const ensurePageSpace = (requiredHeight: number) => {
+    if (cursorY + requiredHeight <= pageHeight - margin) {
+      return;
     }
+    doc.addPage();
+    cursorY = margin;
+  };
+
+  const writeLines = (lines: string[], x: number, width: number, extraSpacing: number) => {
+    lines.forEach((line) => {
+      const wrapped = line.trim() ? doc.splitTextToSize(line, width) : [""];
+
+      wrapped.forEach((wrappedLine: string) => {
+        ensurePageSpace(lineHeight);
+        doc.text(wrappedLine || " ", x, cursorY);
+        cursorY += lineHeight;
+      });
+    });
 
     cursorY += extraSpacing;
   };
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
+  doc.setFont("times", "normal");
+  doc.setFontSize(11.5);
 
-  for (const line of normalizeLetterLines(letterText)) {
-    writeParagraph(line);
-  }
+  blocks.forEach((block) => {
+    if (block.type === "heading") {
+      doc.setFont("times", "bold");
+      doc.setFontSize(12.5);
+      writeLines([block.text], margin, maxWidth, 2.2);
+      doc.setFont("times", "normal");
+      doc.setFontSize(11.5);
+      return;
+    }
 
-  doc.setFont("helvetica", "italic");
+    if (block.type === "list") {
+      block.items.forEach((item, index) => {
+        const prefix = block.ordered ? `${index + 1}. ` : "- ";
+        writeLines([`${prefix}${item}`], margin + 4, maxWidth - 4, 0.8);
+      });
+      cursorY += 1.5;
+      return;
+    }
+
+    writeLines(block.lines, margin, maxWidth, 2.3);
+  });
+
+  doc.setFont("times", "italic");
   doc.setFontSize(9);
-  writeParagraph(
-    "Dit is een conceptbrief gegenereerd met BriefKompas.nl. Controleer de inhoud zorgvuldig voordat je deze verzendt.",
+  writeLines(
+    ["Dit is een conceptbrief gegenereerd met BriefKompas.nl. Controleer de inhoud zorgvuldig voordat je deze verzendt."],
+    margin,
+    maxWidth,
     0
   );
 
