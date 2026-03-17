@@ -8,6 +8,7 @@ import {
   getValidationErrorMessage,
   isLikelyClarifyingQuestion,
   needsFollowUp,
+  normalizeBezwaarCategorie,
 } from "@/lib/intake-flow";
 import { getAnswerSuggestions, grondenFallbackOptions } from "@/lib/intake/answerSuggestions";
 import { filterBestuursorganen } from "@/lib/intake/bestuursorganen";
@@ -152,10 +153,14 @@ export default function IntakePage() {
     if (!currentStep) return;
 
     const fieldName = currentStep.field;
+    const normalizedCategory =
+      currentStep.id === "categorie"
+        ? normalizeBezwaarCategorie(answer) ?? answer
+        : answer;
     const normalizedValue =
       fieldName === "digitaleVerstrekking" || fieldName === "spoed"
         ? ["ja", "yes", "j"].includes(answer.toLowerCase())
-        : answer;
+        : normalizedCategory;
 
     const updatedData = {
       ...intakeData,

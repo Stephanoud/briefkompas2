@@ -19,6 +19,16 @@ const commonDoelAnswers = new Set([
   "corrigeren",
   "vernietigen",
 ]);
+const bezwaarCategoriePatterns: Array<{ categorie: string; pattern: RegExp }> = [
+  { categorie: "boete", pattern: /\b(boete|verkeersboete|mulder|cjib)\b/i },
+  { categorie: "uitkering", pattern: /\b(uitkering|uwv|ww\b|wia|wajong|wao|ziektewet)\b/i },
+  { categorie: "belasting", pattern: /\b(belasting|aanslag|fiscaal|naheffing|woz)\b/i },
+  {
+    categorie: "vergunning",
+    pattern: /\b(vergunning|vergunnings|omgevingsvergunning|bouwvergunning|exploitatievergunning)\b/i,
+  },
+  { categorie: "overig", pattern: /\b(overig|overige|anders|andere)\b/i },
+];
 
 function normalizeInput(value: string): string {
   return value.trim();
@@ -55,6 +65,26 @@ function isBezwaarDoelAnswer(value: string): boolean {
   return trimmed.length >= 8;
 }
 
+export function normalizeBezwaarCategorie(value: string): string | null {
+  const trimmed = normalizeInput(value).toLowerCase();
+  if (!trimmed) return null;
+
+  if (["boete", "uitkering", "belasting", "vergunning", "overig"].includes(trimmed)) {
+    return trimmed;
+  }
+
+  const matchedCategory = bezwaarCategoriePatterns.find(({ pattern }) => pattern.test(trimmed))?.categorie;
+  if (matchedCategory) {
+    return matchedCategory;
+  }
+
+  if (/\b(weigering|weigeren|geweigerd|afwijzing|afwijzen|afgewezen)\b/i.test(trimmed)) {
+    return "overig";
+  }
+
+  return null;
+}
+
 const validationMessageByStepId: Record<string, string> = {
   bestuursorgaan: "Noem een concreet bestuursorgaan, bijvoorbeeld 'gemeente Utrecht'.",
   categorie: "Kies een categorie: boete, uitkering, belasting, vergunning of overig.",
@@ -81,10 +111,7 @@ export const bezwaarSteps: ChatStep[] = [
       "Wat is de soort besluit? (Kies een: boete, uitkering, belasting, vergunning, overig)",
     field: "categorie",
     required: true,
-    validation: (value) =>
-      ["boete", "uitkering", "belasting", "vergunning", "overig"].includes(
-        normalizeInput(value).toLowerCase()
-      ),
+    validation: (value) => normalizeBezwaarCategorie(value) !== null,
   },
   {
     id: "doel",
