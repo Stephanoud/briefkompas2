@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { generateStripeLineItem } from "@/lib/utils";
+import { generateStripeLineItem, isTestBypassDiscountCode } from "@/lib/utils";
 import { Flow, Product } from "@/types";
 
 export const runtime = "nodejs";
@@ -36,18 +36,9 @@ function getStripeClient() {
 
 export async function POST(req: NextRequest) {
   try {
-    const stripe = getStripeClient();
-    const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
     const proto = req.headers.get("x-forwarded-proto") || "https";
     const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || (host ? `${proto}://${host}` : "");
-
-    if (!stripe || isPlaceholder(stripeSecretKey)) {
-      return NextResponse.json(
-        { error: "Stripe is niet geconfigureerd: STRIPE_SECRET_KEY ontbreekt of is een placeholder." },
-        { status: 500 }
-      );
-    }
 
     if (!appUrl) {
       return NextResponse.json(
@@ -59,6 +50,7 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const flowFromBody = body.flow;
     const productFromBody = body.product ?? body.selectedProduct ?? body.package;
+    const discountCode = typeof body.discountCode === "string" ? body.discountCode : null;
 
     const flow = isFlow(flowFromBody)
       ? flowFromBody
@@ -69,6 +61,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Ontbrekende of ongeldige flow/product. Vernieuw de pagina en kies je pakket opnieuw." },
         { status: 400 }
+      );
+    }
+
+    if (isTestBypassDiscountCode(discountCode)) {
+      return NextResponse.json({
+        checkoutUrl: `${appUrl}/checkout/success?flow=${flow}&bypass_payment=1`,
+        sessionId: null,
+        bypassPayment: true,
+      });
+    }
+
+    const stripe = getStripeClient();
+    const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+
+    if (!stripe || isPlaceholder(stripeSecretKey)) {
+      return NextResponse.json(
+        { error: "Stripe is niet geconfigureerd: STRIPE_SECRET_KEY ontbreekt of is een placeholder." },
+        { status: 500 }
       );
     }
 

@@ -25,6 +25,9 @@
 # misc
 .DS_Store
 *.pem
+.vscode/
+tmp/
+live_home*.html
 
 # debug
 npm-debug.log*

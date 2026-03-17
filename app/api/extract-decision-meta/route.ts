@@ -16,6 +16,63 @@ const IMAGE_ANALYSIS_MODEL = "gpt-4.1";
 const TEXT_ANALYSIS_MODEL = "gpt-4.1-mini";
 const MAX_EXTRACTED_TEXT_LENGTH = 6000;
 const MAX_ANALYSIS_INPUT_LENGTH = 12000;
+const MONTH_NAME_ALIASES: Record<string, string> = {
+  january: "januari",
+  jan: "januari",
+  februari: "februari",
+  february: "februari",
+  feb: "februari",
+  maart: "maart",
+  march: "maart",
+  mar: "maart",
+  april: "april",
+  apr: "april",
+  mei: "mei",
+  may: "mei",
+  juni: "juni",
+  june: "juni",
+  jun: "juni",
+  juli: "juli",
+  july: "juli",
+  jul: "juli",
+  augustus: "augustus",
+  august: "augustus",
+  aug: "augustus",
+  september: "september",
+  sept: "september",
+  sep: "september",
+  oktober: "oktober",
+  october: "oktober",
+  oct: "oktober",
+  november: "november",
+  nov: "november",
+  december: "december",
+  dec: "december",
+};
+const MONTH_NAME_PATTERN = Object.keys(MONTH_NAME_ALIASES)
+  .sort((left, right) => right.length - left.length)
+  .join("|");
+const STRUCTURED_FIELD_STOP_LABELS = [
+  "datum van het besluit",
+  "datum besluit",
+  "datum beschikking",
+  "datum brief",
+  "dagtekening",
+  "datum",
+  "bestuursorgaan",
+  "betreft",
+  "onderwerp",
+  "besluit",
+  "motivering",
+  "zaaknummer",
+  "zaaknr",
+  "kenmerk",
+  "ons kenmerk",
+  "referentie",
+  "bijlage",
+  "bijlagen",
+  "namens",
+];
 
 type LlmDecisionAnalysis = {
   extractedText?: string | null;
@@ -34,14 +91,54 @@ type LlmDecisionAnalysis = {
 
 function getOpenAIClient() {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  if (!apiKey || isPlaceholderSecret(apiKey)) {
     return null;
   }
   return new OpenAI({ apiKey });
 }
 
+function isPlaceholderSecret(value?: string) {
+  return !value || value.includes("YOUR_") || value.includes("YOUR-");
+}
+
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function splitIntoNormalizedLines(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => normalizeWhitespace(line))
+    .filter(Boolean);
+}
+
+function normalizeMonthNames(value: string): string {
+  return value.replace(new RegExp(`\\b(${MONTH_NAME_PATTERN})\\b`, "gi"), (match) => {
+    const normalized = MONTH_NAME_ALIASES[match.toLowerCase()];
+    return normalized ?? match;
+  });
+}
+
+function normalizeExtractedDate(value: string): string {
+  return normalizeWhitespace(normalizeMonthNames(value));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function trimAtStructuredFieldBoundary(value: string): string {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) {
+    return "";
+  }
+
+  const stopPattern = new RegExp(
+    `\\s+(?=(?:${STRUCTURED_FIELD_STOP_LABELS.map((label) => escapeRegExp(label)).join("|")})\\b)`,
+    "i"
+  );
+  const [firstPart] = normalized.split(stopPattern);
+  return firstPart?.trim() ?? normalized;
 }
 
 function trimLength(value: string, maxLength: number): string {
@@ -158,24 +255,42 @@ function buildQualityWarning(params: {
 }
 
 function extractDateFromText(text: string): string | null {
-  const normalized = normalizeWhitespace(text);
+  const lines = splitIntoNormalizedLines(text);
+  const contextualLinePattern =
+    /^(datum(?:\s+van\s+het\s+besluit|\s+besluit|\s+beschikking|\s+brief)?|dagtekening)\s*[:\-]?\s*(.+)$/i;
 
+  for (const line of lines) {
+    const match = line.match(contextualLinePattern);
+    if (!match?.[2]) {
+      continue;
+    }
+
+    const candidate = extractDateCandidate(match[2]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  const normalized = normalizeWhitespace(text);
   const contextualPatterns = [
-    /(datum(?:\s+van\s+het\s+besluit|\s+besluit|\s+beschikking|\s+brief)?|dagtekening)\s*[:\-]?\s*(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}-\d{2}-\d{2})/i,
-    /(datum(?:\s+van\s+het\s+besluit|\s+besluit|\s+beschikking|\s+brief)?|dagtekening)\s*[:\-]?\s*(\d{1,2}\s+(?:januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\s+\d{4})/i,
+    new RegExp(
+      "(?:datum(?:\\s+van\\s+het\\s+besluit|\\s+besluit|\\s+beschikking|\\s+brief)?|dagtekening)\\s*[:\\-]?\\s*(\\d{1,2}[-/.]\\d{1,2}[-/.]\\d{2,4}|\\d{4}-\\d{2}-\\d{2})",
+      "i"
+    ),
+    new RegExp(
+      `(?:datum(?:\\s+van\\s+het\\s+besluit|\\s+besluit|\\s+beschikking|\\s+brief)?|dagtekening)\\s*[:\\-]?\\s*(\\d{1,2}\\s+(?:${MONTH_NAME_PATTERN})\\s+\\d{4})`,
+      "i"
+    ),
   ];
 
   for (const pattern of contextualPatterns) {
     const match = normalized.match(pattern);
-    if (match?.[2]) {
-      return match[2].trim();
+    if (match?.[1]) {
+      return normalizeExtractedDate(match[1]);
     }
   }
 
-  const genericPattern =
-    /\b(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+(?:januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\s+\d{4})\b/i;
-  const genericMatch = normalized.match(genericPattern);
-  return genericMatch?.[1]?.trim() ?? null;
+  return extractDateCandidate(normalized);
 }
 
 function sanitizeKenmerk(value: string): string {
@@ -186,21 +301,83 @@ function sanitizeKenmerk(value: string): string {
     .trim();
 }
 
-function extractKenmerkFromText(text: string): string | null {
-  const normalized = normalizeWhitespace(text);
-  const kenmerkPattern =
-    /(kenmerk|ons kenmerk|zaaknummer|zaaknr\.?|dossiernummer|referentie)\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-/_.\s]{2,60})/i;
-  const match = normalized.match(kenmerkPattern);
-  if (!match?.[2]) {
+function extractDateCandidate(value: string): string | null {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) {
     return null;
   }
 
-  const cleaned = sanitizeKenmerk(match[2]);
-  if (cleaned.length < 3) {
+  const patterns = [
+    /\b(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}-\d{2}-\d{2})\b/i,
+    new RegExp(`\\b(\\d{1,2}\\s+(?:${MONTH_NAME_PATTERN})\\s+\\d{4})\\b`, "i"),
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match?.[1]) {
+      return normalizeExtractedDate(match[1]);
+    }
+  }
+
+  return null;
+}
+
+function looksLikeKenmerk(value: string): boolean {
+  if (value.length < 3 || value.length > 60) {
+    return false;
+  }
+
+  const hasNumericSignal = /\d/.test(value);
+  const hasStructuredToken = /[A-Z0-9]+[-/_.][A-Z0-9]+/i.test(value);
+
+  if ((!hasNumericSignal && !hasStructuredToken) || /[.!?]/.test(value)) {
+    return false;
+  }
+
+  const lowercaseWords = value
+    .split(/\s+/)
+    .filter((token) => /^[a-z]{3,}$/u.test(token));
+
+  return lowercaseWords.length <= 1;
+}
+
+function sanitizeKenmerkCandidate(value: string): string | null {
+  const cleaned = sanitizeKenmerk(trimAtStructuredFieldBoundary(value));
+  if (!looksLikeKenmerk(cleaned)) {
     return null;
   }
 
   return cleaned;
+}
+
+function extractKenmerkFromText(text: string): string | null {
+  const lines = splitIntoNormalizedLines(text);
+  const linePattern =
+    /^(kenmerk|ons kenmerk|zaaknummer|zaaknr\.?|dossiernummer|referentie)\s*[:\-]?\s*(.+)$/i;
+
+  for (const line of lines) {
+    const match = line.match(linePattern);
+    if (!match?.[2]) {
+      continue;
+    }
+
+    const candidate = sanitizeKenmerkCandidate(match[2]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  const normalized = normalizeWhitespace(text);
+  const boundaryPattern = new RegExp(
+    `(?:kenmerk|ons kenmerk|zaaknummer|zaaknr\\.?|dossiernummer|referentie)\\s*[:\\-]?\\s*(.{2,80}?)(?=\\s+(?:${STRUCTURED_FIELD_STOP_LABELS.map((label) => escapeRegExp(label)).join("|")})\\b|$)`,
+    "i"
+  );
+  const match = normalized.match(boundaryPattern);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  return sanitizeKenmerkCandidate(match[1]);
 }
 
 function cleanJsonResponse(content: string): string {

@@ -5,8 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
-import { UploadBox } from "@/components/UploadBox";
-import { Alert } from "@/components/index";
+import { Alert, UploadBox } from "@/components/index";
 import { Flow, IntakeFormData, Product, UploadedFileRef } from "@/types";
 import { getPriceFormatted, TEST_PRICING_LABEL } from "@/lib/utils";
 
@@ -33,6 +32,9 @@ export default function PricingPage() {
   const handleSelectProduct = (product: Product) => {
     setSelectedProduct(product);
     appStore.setProduct(product);
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("briefkompas_product", product);
+    }
     setError("");
   };
 
@@ -62,17 +64,17 @@ export default function PricingPage() {
     setBijlagen((prev) => prev.filter((b) => b.path !== path));
   };
 
-  const handleContinue = async () => {
+  const prepareCheckoutContext = () => {
     const checkoutProduct = selectedProduct || toProduct(appStore.product);
     if (!checkoutProduct) {
       setError("Selecteer een pakket");
-      return;
+      return null;
     }
 
     const checkoutFlow = activeFlow;
     if (!checkoutFlow) {
       setError("Je sessie mist het type traject. Ga een stap terug en probeer opnieuw.");
-      return;
+      return null;
     }
 
     const cachedIntake =
@@ -99,16 +101,31 @@ export default function PricingPage() {
     };
 
     appStore.setIntakeData(mergedIntakeData as IntakeFormData);
+    appStore.setProduct(checkoutProduct);
     sessionStorage.setItem("briefkompas_intake", JSON.stringify(mergedIntakeData));
+    sessionStorage.setItem("briefkompas_product", checkoutProduct);
+    setError("");
+
+    return {
+      checkoutFlow,
+      checkoutProduct,
+    };
+  };
+
+  const handleContinueToPayment = async () => {
+    const checkoutContext = prepareCheckoutContext();
+    if (!checkoutContext) {
+      return;
+    }
 
     try {
       const response = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          flow: checkoutFlow,
-          product: checkoutProduct,
-          selectedProduct: checkoutProduct,
+          flow: checkoutContext.checkoutFlow,
+          product: checkoutContext.checkoutProduct,
+          selectedProduct: checkoutContext.checkoutProduct,
         }),
       });
 
@@ -121,6 +138,15 @@ export default function PricingPage() {
     } catch {
       setError("Er ging iets fout. Probeer opnieuw.");
     }
+  };
+
+  const handleContinueToTestVersion = () => {
+    const checkoutContext = prepareCheckoutContext();
+    if (!checkoutContext) {
+      return;
+    }
+
+    router.push(`/checkout/success?flow=${checkoutContext.checkoutFlow}&bypass_payment=1`);
   };
 
   const flowLabel =
@@ -263,12 +289,31 @@ export default function PricingPage() {
         </Card>
       )}
 
-      <div className="flex gap-4 mt-8">
+      <div className="mt-8 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-soft)] px-5 py-4">
+        <p className="text-sm font-semibold text-[var(--foreground)]">Test versie</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Gebruik deze route als je de flow wilt controleren zonder Stripe-betaling. De gekozen productvariant blijft wel actief.
+        </p>
+      </div>
+
+      <div className="mt-8 flex flex-col gap-3 md:flex-row">
         <Button variant="secondary" onClick={() => router.back()} className="flex-1">
           Terug
         </Button>
-        <Button onClick={handleContinue} disabled={!selectedProduct || !activeFlow} className="flex-1">
+        <Button
+          onClick={handleContinueToPayment}
+          disabled={!selectedProduct || !activeFlow}
+          className="flex-1"
+        >
           Ga naar betaling
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={handleContinueToTestVersion}
+          disabled={!selectedProduct || !activeFlow}
+          className="flex-1"
+        >
+          Verder naar test versie
         </Button>
       </div>
     </div>
