@@ -4,6 +4,7 @@ export const TEST_AUTH_COOKIE_NAME = "briefkompas_test_auth";
 export const TEST_AUTH_COOKIE_VALUE = "briefkompas_test_mode";
 export const TEST_AUTH_USERNAME = "briefkompas";
 export const TEST_AUTH_PASSWORD = "briefkompas";
+export const TEST_AUTH_DEFAULT_PATH = "/start-brief";
 
 export const testAuthCookieOptions: Partial<ResponseCookie> = {
   httpOnly: true,
@@ -33,4 +34,9 @@ export function normalizeNextPath(value: FormDataEntryValue | string | null | un
   }
 
   return path;
+}
+
+export function resolveAuthenticatedPath(value: FormDataEntryValue | string | null | undefined) {
+  const nextPath = normalizeNextPath(value);
+  return nextPath === "/" ? TEST_AUTH_DEFAULT_PATH : nextPath;
 }

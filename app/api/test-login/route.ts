@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   isValidTestLogin,
   normalizeNextPath,
+  resolveAuthenticatedPath,
   TEST_AUTH_COOKIE_NAME,
   TEST_AUTH_COOKIE_VALUE,
   testAuthCookieOptions,
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
     return NextResponse.redirect(errorUrl);
   }
 
-  const response = NextResponse.redirect(new URL(nextPath, request.url));
+  const response = NextResponse.redirect(new URL(resolveAuthenticatedPath(nextPath), request.url));
   response.cookies.set(TEST_AUTH_COOKIE_NAME, TEST_AUTH_COOKIE_VALUE, testAuthCookieOptions);
   return response;
 }
