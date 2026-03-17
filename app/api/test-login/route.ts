@@ -18,10 +18,13 @@ export async function POST(request: Request) {
     const errorUrl = new URL("/login", request.url);
     errorUrl.searchParams.set("error", "1");
     errorUrl.searchParams.set("next", nextPath);
-    return NextResponse.redirect(errorUrl);
+    return NextResponse.redirect(errorUrl, 303);
   }
 
-  const response = NextResponse.redirect(new URL(resolveAuthenticatedPath(nextPath), request.url));
+  const response = NextResponse.redirect(
+    new URL(resolveAuthenticatedPath(nextPath), request.url),
+    303,
+  );
   response.cookies.set(TEST_AUTH_COOKIE_NAME, TEST_AUTH_COOKIE_VALUE, testAuthCookieOptions);
   return response;
 }
