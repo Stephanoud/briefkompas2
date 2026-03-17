@@ -38,7 +38,9 @@ test.describe("Intake chat validation", () => {
     await nextButton.click();
 
     await expect(page.getByText("Stap 3 van 5")).toBeVisible();
-    await expect(page.getByText("Wat wil je bereiken met dit bezwaar?")).toBeVisible();
+    await expect(
+      page.getByText("Wat wil je met je bezwaar bereiken: alsnog verlening van de vergunning of een nieuw besluit?")
+    ).toBeVisible();
     await expect(page.getByText("Kies een categorie: boete, uitkering, belasting, vergunning of overig.")).toHaveCount(0);
   });
 

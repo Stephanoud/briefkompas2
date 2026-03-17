@@ -12,6 +12,15 @@ import {
 } from "@/lib/intake-flow";
 import { getAnswerSuggestions, grondenFallbackOptions } from "@/lib/intake/answerSuggestions";
 import { filterBestuursorganen } from "@/lib/intake/bestuursorganen";
+import {
+  createInitialIntakeInterpretation,
+  findNextUnansweredStepIndex,
+  getContextualQuestion,
+  getContextualValidationMessage,
+  getSuggestedStepId,
+  interpretIntakeTurn,
+  type IntakeInterpretationState,
+} from "@/lib/intake/interpretation";
 import { ChatMessage, DecisionExtractionResult, Flow, IntakeFormData } from "@/types";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
@@ -23,6 +32,47 @@ import { StepHeader, Alert } from "@/components";
 const shortGrondenThreshold = 120;
 const confirmYesValues = new Set(["ja", "ja, doorgaan", "ja doorgaan", "doorgaan", "ok", "oke", "prima"]);
 const confirmNoValues = new Set(["nee", "nee, ik wil meer toelichten", "nee ik wil meer toelichten", "meer toelichten"]);
+
+function hasMeaningfulValue(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().length > 0;
+  if (typeof value === "boolean") return true;
+  return Boolean(value);
+}
+
+function isChatStepSatisfied(step: ReturnType<typeof getStepsByFlow>[number] | undefined, data: Partial<IntakeFormData>): boolean {
+  if (!step) return false;
+
+  const value = data[step.field as keyof IntakeFormData];
+  if (!hasMeaningfulValue(value)) return false;
+  if (!step.validation || typeof value !== "string") return true;
+  return step.validation(value);
+}
+
+function buildCurrentStepPatch(
+  step: ReturnType<typeof getStepsByFlow>[number] | undefined,
+  answer: string,
+  interpretedPatch: Partial<IntakeFormData>
+): Partial<IntakeFormData> {
+  if (!step) return {};
+
+  switch (step.id) {
+    case "bestuursorgaan":
+      return interpretedPatch.bestuursorgaan ? { [step.field]: interpretedPatch.bestuursorgaan } : {};
+    case "categorie": {
+      const normalizedCategory = normalizeBezwaarCategorie(answer);
+      return normalizedCategory ? { [step.field]: normalizedCategory } : {};
+    }
+    case "digitale_verstrekking":
+    case "spoed":
+      return {
+        [step.field]: ["ja", "yes", "j"].includes(answer.toLowerCase()),
+      };
+    default:
+      return {
+        [step.field]: answer,
+      };
+  }
+}
 
 function truncatePreview(value: string, maxLength = 220): string {
   if (value.length <= maxLength) {
@@ -69,6 +119,11 @@ export default function IntakePage() {
   const params = useParams<{ flow: Flow }>();
   const rawFlow = params?.flow;
   const flow = (Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) as Flow;
+  const steps = getStepsByFlow(flow);
+  const initialInterpretation = useMemo<IntakeInterpretationState>(
+    () => createInitialIntakeInterpretation(flow),
+    [flow]
+  );
   const appStore = useAppStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const submitInFlightRef = useRef(false);
@@ -80,33 +135,44 @@ export default function IntakePage() {
       content: `Hallo! Ik ben de BriefKompas chatbot. Ik help je bij het opstellen van je ${
         flow === "bezwaar" ? "bezwaarschrift" : "WOO-verzoek"
       }. ${
-        flow === "bezwaar"
-          ? "Tegen welk bestuursorgaan richt je het bezwaar?"
-          : "Aan welk bestuursorgaan stel je het WOO-verzoek?"
+        getContextualQuestion({
+          flow,
+          step: steps[0],
+          interpretation: initialInterpretation,
+          intakeData: { flow },
+        })
       }`,
       timestamp: new Date(),
     }),
-    [flow]
+    [flow, initialInterpretation, steps]
   );
 
   const [messages, setMessages] = useState<ChatMessage[]>([initialAssistantMessage]);
   const [currentInput, setCurrentInput] = useState("");
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [intakeData, setIntakeData] = useState<Partial<IntakeFormData>>({ flow });
+  const [interpretationState, setInterpretationState] =
+    useState<IntakeInterpretationState>(initialInterpretation);
   const [isLoading, setIsLoading] = useState(false);
   const [validationError, setValidationError] = useState("");
   const [pendingGrondenConfirmation, setPendingGrondenConfirmation] = useState<string | null>(null);
   const [isAnalyzingDocument, setIsAnalyzingDocument] = useState(false);
   const [documentAnalysisMessage, setDocumentAnalysisMessage] = useState("");
-
-  const steps = getStepsByFlow(flow);
   const currentStep = steps[currentStepIndex];
+  const currentQuestionText = currentStep
+    ? getContextualQuestion({
+        flow,
+        step: currentStep,
+        interpretation: interpretationState,
+        intakeData,
+      })
+    : null;
   const bestuursorgaanOptions =
     currentStep?.field === "bestuursorgaan"
       ? filterBestuursorganen(currentInput)
       : [];
   const genericStepOptions = currentStep?.field !== "bestuursorgaan"
-    ? getAnswerSuggestions(currentStep?.id, currentInput)
+    ? getAnswerSuggestions(getSuggestedStepId(currentStep, interpretationState), currentInput)
     : [];
   const activeOptions = currentStep?.field === "bestuursorgaan" ? bestuursorgaanOptions : genericStepOptions;
   const inputListId = currentStep?.field === "bestuursorgaan"
@@ -115,6 +181,7 @@ export default function IntakePage() {
       ? `step-options-${currentStep.id}`
       : undefined;
   const questionsCompleted = currentStepIndex >= steps.length;
+  const visibleStepNumber = questionsCompleted ? steps.length : Math.min(currentStepIndex + 1, steps.length);
   const hasRequiredBezwaarFile = flow !== "bezwaar" || Boolean(intakeData.files?.besluit);
   const isIntakeReady = questionsCompleted && hasRequiredBezwaarFile;
 
@@ -139,7 +206,14 @@ export default function IntakePage() {
     setPendingGrondenConfirmation(null);
     setValidationError("");
     setCurrentStepIndex(previousIndex);
-    addAssistantMessage(`Terug naar vorige vraag: ${steps[previousIndex].question}`);
+    addAssistantMessage(
+      `Terug naar vorige vraag: ${getContextualQuestion({
+        flow,
+        step: steps[previousIndex],
+        interpretation: interpretationState,
+        intakeData,
+      })}`
+    );
   };
 
   const buildUserMessage = (content: string): ChatMessage => ({
@@ -151,21 +225,43 @@ export default function IntakePage() {
 
   const processStepAnswer = (answer: string) => {
     if (!currentStep) return;
-
-    const fieldName = currentStep.field;
-    const normalizedCategory =
-      currentStep.id === "categorie"
-        ? normalizeBezwaarCategorie(answer) ?? answer
-        : answer;
-    const normalizedValue =
-      fieldName === "digitaleVerstrekking" || fieldName === "spoed"
-        ? ["ja", "yes", "j"].includes(answer.toLowerCase())
-        : normalizedCategory;
+    const interpretedTurn = interpretIntakeTurn({
+      flow,
+      latestUserMessage: answer,
+      currentStep,
+      intakeData,
+      previousState: interpretationState,
+    });
+    const currentStepPatch = buildCurrentStepPatch(currentStep, answer, interpretedTurn.patch);
 
     const updatedData = {
       ...intakeData,
-      [fieldName]: normalizedValue,
+      ...interpretedTurn.patch,
+      ...currentStepPatch,
     } as Partial<IntakeFormData>;
+    const currentFieldSatisfied = isChatStepSatisfied(currentStep, updatedData);
+
+    if (!currentFieldSatisfied) {
+      const semanticOnlyData = {
+        ...intakeData,
+        ...interpretedTurn.patch,
+      } as Partial<IntakeFormData>;
+      setInterpretationState(interpretedTurn.state);
+      setIntakeData(semanticOnlyData);
+      setPendingGrondenConfirmation(null);
+      addAssistantMessage(
+        getContextualQuestion({
+          flow,
+          step: currentStep,
+          interpretation: interpretedTurn.state,
+          intakeData: semanticOnlyData,
+        })
+      );
+      setCurrentInput("");
+      return;
+    }
+
+    setInterpretationState(interpretedTurn.state);
     setIntakeData(updatedData);
     setPendingGrondenConfirmation(null);
 
@@ -177,10 +273,19 @@ export default function IntakePage() {
       return;
     }
 
-    if (currentStepIndex < steps.length - 1) {
-      const nextStep = steps[currentStepIndex + 1];
-      setCurrentStepIndex((prev) => prev + 1);
-      addAssistantMessage(nextStep.question);
+    const nextStepIndex = findNextUnansweredStepIndex(steps, updatedData, currentStepIndex + 1);
+
+    if (nextStepIndex < steps.length) {
+      const nextStep = steps[nextStepIndex];
+      setCurrentStepIndex(nextStepIndex);
+      addAssistantMessage(
+        getContextualQuestion({
+          flow,
+          step: nextStep,
+          interpretation: interpretedTurn.state,
+          intakeData: updatedData,
+        })
+      );
       setCurrentInput("");
       return;
     }
@@ -245,11 +350,39 @@ export default function IntakePage() {
       return;
     }
 
-    const validationMessage = getValidationErrorMessage(currentStep, trimmedInput);
+    const interpretedTurn = interpretIntakeTurn({
+      flow,
+      latestUserMessage: trimmedInput,
+      currentStep,
+      intakeData,
+      previousState: interpretationState,
+    });
+    const currentStepPatch = buildCurrentStepPatch(currentStep, trimmedInput, interpretedTurn.patch);
+    const semanticPreviewData = {
+      ...intakeData,
+      ...interpretedTurn.patch,
+      ...currentStepPatch,
+    } as Partial<IntakeFormData>;
+    const isPureClarifyingQuestion = isLikelyClarifyingQuestion(trimmedInput) && !interpretedTurn.hasMeaningfulAdvance;
+    const currentFieldWouldBeSatisfied =
+      !isPureClarifyingQuestion && isChatStepSatisfied(currentStep, semanticPreviewData);
+    const validationMessage =
+      !currentFieldWouldBeSatisfied && !interpretedTurn.hasMeaningfulAdvance
+        ? getContextualValidationMessage({
+            flow,
+            step: currentStep,
+            interpretation: interpretedTurn.state,
+          }) || getValidationErrorMessage(currentStep, trimmedInput)
+        : "";
+
     if (validationMessage) {
       setValidationError(validationMessage);
-      if (isLikelyClarifyingQuestion(trimmedInput)) {
-        addAssistantMessage(`Ik kan pas doorgaan zodra je deze vraag beantwoordt: ${currentStep.question}`);
+      if (isPureClarifyingQuestion) {
+        addAssistantMessage(
+          `Ik kan pas doorgaan zodra je deze vraag beantwoordt: ${
+            currentQuestionText ?? currentStep.question
+          }`
+        );
       }
       return;
     }
@@ -409,7 +542,7 @@ export default function IntakePage() {
     <div className="max-w-2xl mx-auto min-h-[78vh] flex flex-col justify-center">
       <Card>
         <StepHeader
-          currentStep={Math.min(currentStepIndex + 1, steps.length)}
+          currentStep={visibleStepNumber}
           totalSteps={steps.length}
           title="Intake Interview"
         />
