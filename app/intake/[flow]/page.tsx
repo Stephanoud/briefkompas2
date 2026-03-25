@@ -171,9 +171,10 @@ export default function IntakePage() {
     currentStep?.field === "bestuursorgaan"
       ? filterBestuursorganen(currentInput)
       : [];
-  const genericStepOptions = currentStep?.field !== "bestuursorgaan"
-    ? getAnswerSuggestions(getSuggestedStepId(currentStep, interpretationState), currentInput)
-    : [];
+  const genericStepOptions =
+    currentStep && currentStep.field !== "bestuursorgaan"
+      ? getAnswerSuggestions(getSuggestedStepId(currentStep, interpretationState), currentInput)
+      : [];
   const activeOptions = currentStep?.field === "bestuursorgaan" ? bestuursorgaanOptions : genericStepOptions;
   const inputListId = currentStep?.field === "bestuursorgaan"
     ? "bestuursorgaan-options"

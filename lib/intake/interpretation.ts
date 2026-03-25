@@ -571,7 +571,14 @@ export function getResolvedStepCount(steps: ChatStep[], intakeData: Partial<Inta
   }, 0);
 }
 
-export function getSuggestedStepId(step: ChatStep, interpretation: IntakeInterpretationState): string {
+export function getSuggestedStepId(
+  step: ChatStep | undefined,
+  interpretation: IntakeInterpretationState
+): string {
+  if (!step) {
+    return "";
+  }
+
   if (step.id === "categorie" && shouldAskForProcedureObject(interpretation, {})) {
     return "categorie";
   }
