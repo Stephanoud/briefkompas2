@@ -15,6 +15,14 @@ const toFlow = (value: unknown): Flow | null =>
 const toProduct = (value: unknown): Product | null =>
   value === "basis" || value === "uitgebreid" ? value : null;
 
+function getStoredProduct(): Product | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return toProduct(sessionStorage.getItem("briefkompas_product"));
+}
+
 export default function PricingPage() {
   const router = useRouter();
   const routeParams = useParams<{ flow?: string }>();
@@ -24,7 +32,7 @@ export default function PricingPage() {
   const activeFlow = routeFlow || toFlow(appStore.flow);
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(() =>
-    toProduct(appStore.product)
+    toProduct(appStore.product) ?? getStoredProduct()
   );
   const [bijlagen, setBijlagen] = useState<UploadedFileRef[]>([]);
   const [error, setError] = useState("");

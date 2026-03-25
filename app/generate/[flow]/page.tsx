@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { clearStoredGeneratedLetter, writeStoredGeneratedLetter } from "@/lib/generatedLetterSession";
 import { useAppStore } from "@/lib/store";
+import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { LoadingSpinner, Alert } from "@/components/index";
 import { Flow, IntakeFormData, Product } from "@/types";
@@ -19,7 +20,8 @@ export default function GeneratePage() {
   const params = useParams<{ flow: string }>();
   const rawFlow = params?.flow;
   const flow = toFlow(Array.isArray(rawFlow) ? rawFlow[0] : rawFlow);
-  const requestStartedRef = useRef(false);
+  const requestStartedRef = useRef<number | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const intakeData = useAppStore((state) => state.intakeData);
   const product = useAppStore((state) => state.product);
   const error = useAppStore((state) => state.error);
@@ -31,11 +33,11 @@ export default function GeneratePage() {
   const setError = useAppStore((state) => state.setError);
 
   useEffect(() => {
-    if (requestStartedRef.current) {
+    if (requestStartedRef.current === attempt) {
       return;
     }
 
-    requestStartedRef.current = true;
+    requestStartedRef.current = attempt;
 
     const generateLetter = async () => {
       const cachedIntake =
@@ -104,6 +106,7 @@ export default function GeneratePage() {
 
     void generateLetter();
   }, [
+    attempt,
     flow,
     intakeData,
     product,
@@ -123,6 +126,34 @@ export default function GeneratePage() {
           <Alert type="error" title="Fout bij genereren">
             {error}
           </Alert>
+          <p className="mt-4 text-sm text-[var(--muted)]">
+            Je intake en pakketkeuze blijven bewaard in deze sessie. Je kunt dus veilig terug zonder gegevens te verliezen.
+          </p>
+          <div className="mt-6 flex flex-col gap-3 md:flex-row">
+            <Button
+              onClick={() => {
+                setError(null);
+                setAttempt((current) => current + 1);
+              }}
+              className="flex-1"
+            >
+              Opnieuw proberen
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => router.push(flow ? `/review/${flow}` : "/start-brief")}
+              className="flex-1"
+            >
+              Terug naar overzicht
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => router.push(flow ? `/pricing/${flow}` : "/start-brief")}
+              className="flex-1"
+            >
+              Terug naar productkeuze
+            </Button>
+          </div>
         </Card>
       </div>
     );
