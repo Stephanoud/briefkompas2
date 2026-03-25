@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { clearStoredGeneratedLetter, writeStoredGeneratedLetter } from "@/lib/generatedLetterSession";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { LoadingSpinner, Alert } from "@/components/index";
@@ -67,6 +68,7 @@ export default function GeneratePage() {
       try {
         setLoading(true);
         setError(null);
+        clearStoredGeneratedLetter();
 
         const response = await fetch("/api/generate-letter", {
           method: "POST",
@@ -84,7 +86,12 @@ export default function GeneratePage() {
           throw new Error(data.error || "Fout bij genereren brief");
         }
 
+        if (!data.letter?.letterText) {
+          throw new Error("De server gaf geen geldige brief terug.");
+        }
+
         setGeneratedLetter(data.letter);
+        writeStoredGeneratedLetter(flow, data.letter);
         router.push(`/result/${flow}`);
       } catch (generationError) {
         setError(

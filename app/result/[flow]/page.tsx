@@ -1,17 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { readStoredGeneratedLetter } from "@/lib/generatedLetterSession";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
-import { LetterPreview, Textarea } from "@/components";
+import { LetterPreview, Textarea, LoadingSpinner } from "@/components";
 import { Alert } from "@/components/index";
 import { downloadFile, generateDocx, generatePdf } from "@/lib/utils";
 import {
   DecisionAnalysisStatus,
   DecisionAnalysisSummary,
   Flow,
+  GeneratedLetter,
   IntakeFormData,
   LetterGenerationMode,
 } from "@/types";
@@ -117,6 +119,7 @@ export default function ResultPage() {
   const rawFlow = params?.flow;
   const flow = (Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) as Flow;
   const appStore = useAppStore();
+  const setGeneratedLetter = useAppStore((state) => state.setGeneratedLetter);
   const cachedIntake =
     typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_intake") : null;
   let intakeData: IntakeFormData | null = appStore.intakeData;
@@ -129,15 +132,42 @@ export default function ResultPage() {
     }
   }
 
-  const generatedReferences: ReferenceItem[] = appStore.generatedLetter?.references || [];
+  const [resolvedGeneratedLetter, setResolvedGeneratedLetter] = useState<GeneratedLetter | null>(
+    appStore.generatedLetter
+  );
+  const [hasCheckedStoredLetter, setHasCheckedStoredLetter] = useState(Boolean(appStore.generatedLetter));
+
+  useEffect(() => {
+    if (appStore.generatedLetter) {
+      setResolvedGeneratedLetter(appStore.generatedLetter);
+      setHasCheckedStoredLetter(true);
+      return;
+    }
+
+    const storedLetter = readStoredGeneratedLetter(flow);
+    if (storedLetter) {
+      setResolvedGeneratedLetter(storedLetter);
+      setGeneratedLetter(storedLetter);
+    }
+
+    setHasCheckedStoredLetter(true);
+  }, [appStore.generatedLetter, flow, setGeneratedLetter]);
+
+  const generatedReferences: ReferenceItem[] = resolvedGeneratedLetter?.references || [];
   const decisionStatus = getDecisionStatusPresentation(intakeData?.besluitAnalyseStatus);
-  const generationMode = getGenerationModePresentation(appStore.generatedLetter?.generationMode);
+  const generationMode = getGenerationModePresentation(resolvedGeneratedLetter?.generationMode);
 
   const [letterText, setLetterText] = useState(appStore.generatedLetter?.letterText || "");
   const [manualReferences, setManualReferences] = useState("");
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    if (resolvedGeneratedLetter?.letterText && !letterText) {
+      setLetterText(resolvedGeneratedLetter.letterText);
+    }
+  }, [resolvedGeneratedLetter, letterText]);
 
   const getEcliSearchUrl = (ecli: string) =>
     `https://uitspraken.rechtspraak.nl/#zoekresultaten?zoekterm=${encodeURIComponent(ecli)}`;
@@ -168,6 +198,16 @@ export default function ResultPage() {
       setDownloadFormat(null);
     }
   };
+
+  if (!hasCheckedStoredLetter) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <Card>
+          <LoadingSpinner />
+        </Card>
+      </div>
+    );
+  }
 
   if (!letterText) {
     return (

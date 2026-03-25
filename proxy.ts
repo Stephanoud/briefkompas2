@@ -16,14 +16,11 @@ export function proxy(request: NextRequest) {
   }
 
   const isLoginPage = pathname === "/login";
+  const isHomePage = pathname === "/";
   const isAuthenticated = hasValidTestAuthCookie(request.cookies.get(TEST_AUTH_COOKIE_NAME)?.value);
 
-  if (isAuthenticated) {
-    if (pathname === "/") {
-      return NextResponse.redirect(new URL(TEST_AUTH_DEFAULT_PATH, request.url));
-    }
-
-    if (!isLoginPage) {
+  if (isLoginPage) {
+    if (!isAuthenticated) {
       return NextResponse.next();
     }
 
@@ -31,8 +28,12 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (isLoginPage) {
+  if (!isHomePage) {
     return NextResponse.next();
+  }
+
+  if (isAuthenticated) {
+    return NextResponse.redirect(new URL(TEST_AUTH_DEFAULT_PATH, request.url));
   }
 
   const loginUrl = new URL("/login", request.url);
