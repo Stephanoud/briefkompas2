@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
+import { isFlow } from "@/lib/flow";
 import { generateStripeLineItem, isTestBypassDiscountCode } from "@/lib/utils";
 import { Flow, Product } from "@/types";
 
@@ -7,9 +8,6 @@ export const runtime = "nodejs";
 
 const isPlaceholder = (value?: string) =>
   !value || value.includes("YOUR_") || value.includes("YOUR-");
-
-const isFlow = (value: unknown): value is Flow =>
-  value === "bezwaar" || value === "woo";
 
 const isProduct = (value: unknown): value is Product =>
   value === "basis" || value === "uitgebreid";

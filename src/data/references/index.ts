@@ -32,7 +32,12 @@ function getFlowPacks(flow: Flow): ReferencePack[] {
     return [wooCore];
   }
 
-  if (flow === "bezwaar") {
+  if (
+    flow === "bezwaar" ||
+    flow === "zienswijze" ||
+    flow === "beroep_zonder_bezwaar" ||
+    flow === "beroep_na_bezwaar"
+  ) {
     return bezwaarReferencePacks;
   }
 

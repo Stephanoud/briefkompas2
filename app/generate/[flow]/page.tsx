@@ -3,14 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { clearStoredGeneratedLetter, writeStoredGeneratedLetter } from "@/lib/generatedLetterSession";
+import { getFlowDocumentLabel, isFlow } from "@/lib/flow";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { LoadingSpinner, Alert } from "@/components/index";
 import { Flow, IntakeFormData, Product } from "@/types";
 
-const toFlow = (value: string | null | undefined): Flow | null =>
-  value === "bezwaar" || value === "woo" ? value : null;
+const toFlow = (value: string | null | undefined): Flow | null => (isFlow(value) ? value : null);
 
 const toProduct = (value: string | null): Product | null =>
   value === "basis" || value === "uitgebreid" ? value : null;
@@ -165,7 +165,7 @@ export default function GeneratePage() {
         <div className="text-center">
           <LoadingSpinner />
           <h2 className="text-xl font-semibold text-gray-900 mt-4">
-            Je brief wordt gegenereerd...
+            Je {flow ? getFlowDocumentLabel(flow) : "brief"} wordt gegenereerd...
           </h2>
           <p className="text-gray-600 mt-2">
             Dit duurt ongeveer 10-15 seconden. Even geduld alstublieft.

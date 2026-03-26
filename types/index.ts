@@ -1,11 +1,18 @@
 import { ReferenceItem } from "@/src/types/references";
 
-export type Flow = "bezwaar" | "woo";
+export type Flow =
+  | "zienswijze"
+  | "bezwaar"
+  | "beroep_zonder_bezwaar"
+  | "beroep_na_bezwaar"
+  | "woo";
 export type Product = "basis" | "uitgebreid";
 export type DecisionDocumentSource = "pdf" | "image";
 export type DecisionAnalysisStatus = "read" | "partial" | "failed";
 export type DecisionReadability = "high" | "medium" | "low";
 export type LetterGenerationMode = "validated" | "safe_generic_ai" | "static_fallback";
+export type RechtsmiddelenClausule = "bezwaar" | "beroep" | "zienswijze" | "onbekend";
+export type ProcedureAdvice = Flow | "bezwaarfase" | "niet_tijdig_beslissen";
 
 export interface DecisionAnalysisSummary {
   bestuursorgaan?: string | null;
@@ -25,6 +32,18 @@ export interface UploadedFileRef {
 
 export interface IntakeFormData {
   flow: Flow;
+  heeftOfficieelBesluit?: boolean;
+  hadOntwerpbesluit?: boolean;
+  konZienswijzeIndienen?: boolean;
+  heeftZienswijzeIngediend?: boolean;
+  heeftBezwaarGemaakt?: boolean;
+  heeftBeslissingOpBezwaar?: boolean;
+  rechtsmiddelenClausule?: RechtsmiddelenClausule;
+  nietTijdigBeslissen?: boolean;
+  waaromBelanghebbende?: string;
+  procedureAdvies?: ProcedureAdvice;
+  procedureReden?: string;
+  procedureBevestigd?: boolean;
   bestuursorgaan: string;
   datumBesluit?: string;
   kenmerk?: string;
@@ -39,6 +58,7 @@ export interface IntakeFormData {
   doel: string;
   gronden?: string;
   persoonlijkeOmstandigheden?: string;
+  eerdereBezwaargronden?: string;
   wooOnderwerp?: string;
   wooPeriode?: string;
   wooDocumenten?: string;

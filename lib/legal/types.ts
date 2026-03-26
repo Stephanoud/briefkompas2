@@ -10,6 +10,7 @@ import { ReferenceItem } from "@/src/types/references";
 
 export type CaseType =
   | "woo"
+  | "algemeen_bestuursrecht"
   | "omgevingswet_vergunning"
   | "taakstraf"
   | "verkeersboete"
@@ -21,6 +22,10 @@ export type CaseType =
 export type RouteType =
   | "woo_verzoek"
   | "bezwaar_woo_besluit"
+  | "zienswijze_bestuursrecht"
+  | "bezwaar_bestuursrecht"
+  | "beroep_rechtstreeks_bestuursrecht"
+  | "beroep_na_bezwaar_bestuursrecht"
   | "bezwaar_awb"
   | "zienswijze_of_beroep"
   | "administratief_beroep_ovj"

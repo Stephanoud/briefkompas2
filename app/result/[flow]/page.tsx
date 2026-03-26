@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { getFlowDocumentLabel, getFlowLabel, isFlow } from "@/lib/flow";
 import { readStoredGeneratedLetter } from "@/lib/generatedLetterSession";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
@@ -9,6 +10,7 @@ import { Button } from "@/components/Button";
 import { LetterPreview, Textarea, LoadingSpinner } from "@/components";
 import { Alert } from "@/components/index";
 import { downloadFile, generateDocx, generatePdf } from "@/lib/utils";
+import { cleanLetterTextForDelivery } from "@/lib/letter-format";
 import {
   DecisionAnalysisStatus,
   DecisionAnalysisSummary,
@@ -20,6 +22,118 @@ import {
 import { ReferenceItem } from "@/src/types/references";
 
 type DownloadFormat = "docx" | "pdf";
+
+function getLetterChecklist(flow: Flow): string[] {
+  if (flow === "woo") {
+    return [
+      "welk bestuursorgaan je aanspreekt",
+      "welke documenten of informatie je vraagt",
+      "over welke periode het verzoek gaat",
+      "of je digitale verstrekking en een ontvangstbevestiging vraagt",
+    ];
+  }
+
+  if (flow === "zienswijze") {
+    return [
+      "op welk ontwerpbesluit je reageert",
+      "welke belangen jou raken",
+      "welke inhoudelijke zienswijzen je naar voren brengt",
+      "welke aanpassing van het ontwerpbesluit je vraagt",
+    ];
+  }
+
+  if (flow === "beroep_zonder_bezwaar") {
+    return [
+      "welk besluit je aanvecht, inclusief datum en kenmerk",
+      "waarom direct beroep mogelijk is",
+      "waarom het besluit volgens jou onjuist is",
+      "wat je de rechtbank concreet vraagt",
+    ];
+  }
+
+  if (flow === "beroep_na_bezwaar") {
+    return [
+      "tegen welke beslissing op bezwaar je opkomt",
+      "welke bezwaren al eerder zijn aangevoerd",
+      "waarom de beslissing op bezwaar volgens jou tekortschiet",
+      "wat je de rechtbank concreet vraagt",
+    ];
+  }
+
+  return [
+    "welke beslissing je aanvecht, inclusief datum en kenmerk",
+    "waarom je het niet eens bent met die beslissing",
+    "wat volgens jou de juiste uitkomst moet zijn",
+    "eventueel een verzoek om een hoorzitting of om uitvoering op te schorten",
+  ];
+}
+
+function getDeliveryChecklist(flow: Flow): string[] {
+  if (flow === "woo") {
+    return [
+      "controleer bestuursorgaan, onderwerp en periode nog een keer",
+      "voeg alleen extra notities of bijlagen toe als die echt nodig zijn",
+      "bewaar een kopie van je verzoek en de verzendbevestiging",
+      "verstuur het verzoek via het kanaal dat het bestuursorgaan accepteert",
+    ];
+  }
+
+  if (flow === "zienswijze") {
+    return [
+      "controleer de reactietermijn uit de publicatie of begeleidende brief",
+      "voeg relevante stukken toe als die je zienswijze ondersteunen",
+      "bewaar een kopie van je zienswijze en het verzendbewijs",
+      "dien zo mogelijk in via het kanaal dat in de publicatie of brief staat",
+    ];
+  }
+
+  if (flow === "beroep_zonder_bezwaar" || flow === "beroep_na_bezwaar") {
+    return [
+      "voeg een kopie van het besluit of de beslissing op bezwaar toe",
+      "stuur relevante bewijsstukken mee als je die hebt",
+      "bewaar een kopie van het beroepschrift en het verzendbewijs",
+      "controleer altijd de beroepstermijn in het besluit of de beslissing op bezwaar",
+    ];
+  }
+
+  return [
+    "voeg een kopie van de beslissing toe en stuur bewijsstukken mee als je die hebt",
+    "verstuur bij voorkeur aangetekend en per gewone post",
+    "bewaar een kopie van je brief, je verzendbewijs en het ontvangstbewijs",
+    "is het de laatste dag van de termijn, breng de brief dan zelf langs of controleer of online indienen mogelijk is",
+  ];
+}
+
+function getFilenameBase(flow: Flow): string {
+  switch (flow) {
+    case "zienswijze":
+      return "zienswijze";
+    case "beroep_zonder_bezwaar":
+      return "beroepschrift-rechtstreeks";
+    case "beroep_na_bezwaar":
+      return "beroepschrift-na-bezwaar";
+    case "woo":
+      return "woo-verzoek";
+    default:
+      return "bezwaarschrift";
+  }
+}
+
+function getDeadlineHint(flow: Flow): string {
+  if (flow === "woo") {
+    return "Bewaar de ontvangstbevestiging en noteer wanneer het bestuursorgaan moet reageren.";
+  }
+
+  if (flow === "zienswijze") {
+    return "Controleer altijd de reactietermijn die bij het ontwerpbesluit of de publicatie staat.";
+  }
+
+  if (flow === "beroep_zonder_bezwaar" || flow === "beroep_na_bezwaar") {
+    return "Beroepstermijnen zijn strikt. Controleer altijd de termijn in het besluit of de beslissing op bezwaar.";
+  }
+
+  return "De bezwaartermijn is vaak 6 weken. Controleer altijd de termijn in het besluit.";
+}
 
 function getDecisionStatusPresentation(status?: DecisionAnalysisStatus) {
   if (status === "read") {
@@ -115,9 +229,10 @@ function renderAnalysisCard(analysis?: DecisionAnalysisSummary | null) {
 
 export default function ResultPage() {
   const router = useRouter();
-  const params = useParams<{ flow: string }>();
+  const params = useParams<{ flow?: string }>();
   const rawFlow = params?.flow;
-  const flow = (Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) as Flow;
+  const routeFlow = Array.isArray(rawFlow) ? rawFlow[0] : rawFlow;
+  const flow = isFlow(routeFlow) ? routeFlow : null;
   const appStore = useAppStore();
   const setGeneratedLetter = useAppStore((state) => state.setGeneratedLetter);
   const cachedIntake =
@@ -136,8 +251,20 @@ export default function ResultPage() {
     appStore.generatedLetter
   );
   const [hasCheckedStoredLetter, setHasCheckedStoredLetter] = useState(Boolean(appStore.generatedLetter));
+  const [letterText, setLetterText] = useState(
+    cleanLetterTextForDelivery(appStore.generatedLetter?.letterText || "")
+  );
+  const [manualReferences, setManualReferences] = useState("");
+  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
+    if (!flow) {
+      setHasCheckedStoredLetter(true);
+      return;
+    }
+
     if (appStore.generatedLetter) {
       setResolvedGeneratedLetter(appStore.generatedLetter);
       setHasCheckedStoredLetter(true);
@@ -153,21 +280,32 @@ export default function ResultPage() {
     setHasCheckedStoredLetter(true);
   }, [appStore.generatedLetter, flow, setGeneratedLetter]);
 
+  useEffect(() => {
+    if (resolvedGeneratedLetter?.letterText && !letterText) {
+      setLetterText(cleanLetterTextForDelivery(resolvedGeneratedLetter.letterText));
+    }
+  }, [resolvedGeneratedLetter, letterText]);
+
+  if (!flow) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <Alert type="error" title="Fout">
+          Ongeldige route. Start opnieuw vanaf de homepage.
+        </Alert>
+        <Button onClick={() => router.push("/")} className="mt-4">
+          Terug naar start
+        </Button>
+      </div>
+    );
+  }
+
   const generatedReferences: ReferenceItem[] = resolvedGeneratedLetter?.references || [];
   const decisionStatus = getDecisionStatusPresentation(intakeData?.besluitAnalyseStatus);
   const generationMode = getGenerationModePresentation(resolvedGeneratedLetter?.generationMode);
-
-  const [letterText, setLetterText] = useState(appStore.generatedLetter?.letterText || "");
-  const [manualReferences, setManualReferences] = useState("");
-  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat | null>(null);
-  const [confirmed, setConfirmed] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-
-  useEffect(() => {
-    if (resolvedGeneratedLetter?.letterText && !letterText) {
-      setLetterText(resolvedGeneratedLetter.letterText);
-    }
-  }, [resolvedGeneratedLetter, letterText]);
+  const referencesSubtitle =
+    flow === "bezwaar"
+      ? "Deze bronnen blijven alleen zichtbaar in de interface en worden niet als losse restbijlage meegeexporteerd."
+      : `Gevalideerde aanknopingspunten voor ${getFlowLabel(flow)}`;
 
   const getEcliSearchUrl = (ecli: string) =>
     `https://uitspraken.rechtspraak.nl/#zoekresultaten?zoekterm=${encodeURIComponent(ecli)}`;
@@ -176,12 +314,11 @@ export default function ResultPage() {
     try {
       setDownloadFormat(format);
 
-      const filenameBase = `${flow === "bezwaar" ? "bezwaarbrief" : "woo-verzoek"}-${
-        new Date().toISOString().split("T")[0]
-      }`;
+      const filenameBase = `${getFilenameBase(flow)}-${new Date().toISOString().split("T")[0]}`;
 
       const exportPayload = {
-        letterText,
+        flow,
+        letterText: cleanLetterTextForDelivery(letterText),
         generatedReferences,
         manualReferences,
       };
@@ -226,10 +363,10 @@ export default function ResultPage() {
     <div className="mx-auto max-w-6xl">
       <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_18rem]">
         <div className="space-y-6">
-          {flow === "bezwaar" && intakeData && (
+          {flow !== "woo" && intakeData && (
             <Alert type={decisionStatus.type} title={decisionStatus.title}>
               <span>{decisionStatus.description}</span>
-              {intakeData?.besluitBronType && (
+              {intakeData.besluitBronType && (
                 <span className="block pt-2 text-xs opacity-80">
                   Bestandsbron: {intakeData.besluitBronType === "image" ? "afbeelding" : "PDF"}
                 </span>
@@ -245,7 +382,10 @@ export default function ResultPage() {
             </Alert>
           )}
 
-          <Card title="Je brief" subtitle="Standaard zie je een opgemaakte conceptbrief. Schakel alleen naar bewerken als je tekst wilt aanpassen.">
+          <Card
+            title={`Je ${getFlowDocumentLabel(flow)}`}
+            subtitle="Standaard zie je een opgemaakte preview. Schakel alleen naar bewerken als je tekst wilt aanpassen."
+          >
             <div className="mb-5 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -274,7 +414,7 @@ export default function ResultPage() {
             {isEditing ? (
               <Textarea
                 value={letterText}
-                onChange={(e) => setLetterText(e.target.value)}
+                onChange={(e) => setLetterText(cleanLetterTextForDelivery(e.target.value))}
                 className="min-h-[34rem] text-[15px] leading-7 text-[var(--foreground)]"
                 placeholder="Brief content"
               />
@@ -284,7 +424,7 @@ export default function ResultPage() {
           </Card>
 
           {generatedReferences.length > 0 && (
-            <Card title="Juridische aanknopingspunten" subtitle="Gevalideerde wetgeving of jurisprudentie die voor deze brief beschikbaar was">
+            <Card title="Juridische aanknopingspunten" subtitle={referencesSubtitle}>
               <div className="space-y-4">
                 {generatedReferences.map((reference) => (
                   <article
@@ -312,7 +452,7 @@ export default function ResultPage() {
             </Card>
           )}
 
-          {appStore.product === "uitgebreid" && (
+          {appStore.product === "uitgebreid" && flow !== "bezwaar" && (
             <Card title="Eigen toevoegingen" subtitle="Voeg desgewenst eigen notities of aanvullende bronnen toe aan de export">
               <Textarea
                 value={manualReferences}
@@ -324,8 +464,8 @@ export default function ResultPage() {
           )}
 
           <Alert type="warning" title="Aandacht">
-            Dit is een conceptbrief. Controleer alles zorgvuldig voordat je deze verzendt. BriefKompas
-            levert geen juridisch advies. Je bent zelf verantwoordelijk.
+            Dit is een conceptdocument. Controleer feiten, data, bestuursorgaan en uitkomst voordat je
+            het verzendt. BriefKompas levert geen juridisch advies.
           </Alert>
 
           <Card>
@@ -366,28 +506,32 @@ export default function ResultPage() {
               </Button>
 
               <div className="border-t border-[var(--border)] pt-4">
-                <h4 className="mb-2 text-sm font-semibold text-[var(--foreground)]">Volgende stappen</h4>
-                <ol className="space-y-1 text-xs leading-5 text-[var(--muted)]">
-                  <li>1. Download je brief als PDF of DOCX</li>
-                  <li>2. Controleer persoonsgegevens, feiten en juridische onderbouwing</li>
-                  <li>3. Voeg waar nodig handtekening of bijlagen toe</li>
-                  <li>4. Verstuur de brief naar het bestuursorgaan</li>
-                </ol>
+                <h4 className="mb-2 text-sm font-semibold text-[var(--foreground)]">
+                  Controleer of je document bevat
+                </h4>
+                <ul className="space-y-1 text-xs leading-5 text-[var(--muted)]">
+                  {getLetterChecklist(flow).map((item) => (
+                    <li key={item}>- {item}</li>
+                  ))}
+                </ul>
               </div>
 
               <div className="border-t border-[var(--border)] pt-4">
-                <p className="text-xs font-semibold text-[var(--muted-strong)]">
-                  {flow === "bezwaar" ? "Verzenden binnen 6 weken" : "Geen vaste termijn"}
-                </p>
+                <h4 className="mb-2 text-sm font-semibold text-[var(--foreground)]">Voor verzending</h4>
+                <ul className="space-y-1 text-xs leading-5 text-[var(--muted)]">
+                  {getDeliveryChecklist(flow).map((item) => (
+                    <li key={item}>- {item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="border-t border-[var(--border)] pt-4">
+                <p className="text-xs font-semibold text-[var(--muted-strong)]">{getDeadlineHint(flow)}</p>
               </div>
             </div>
           </Card>
 
-          <Button
-            variant="secondary"
-            onClick={() => router.push("/")}
-            className="w-full"
-          >
+          <Button variant="secondary" onClick={() => router.push("/")} className="w-full">
             Terug naar start
           </Button>
         </div>

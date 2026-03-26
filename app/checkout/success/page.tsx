@@ -2,14 +2,14 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { getFlowDocumentLabel, isFlow } from "@/lib/flow";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Alert, LoadingSpinner } from "@/components/Alerts";
 import { Flow, IntakeFormData, Product } from "@/types";
 
-const toFlow = (value: string | null): Flow | null =>
-  value === "bezwaar" || value === "woo" ? value : null;
+const toFlow = (value: string | null): Flow | null => (isFlow(value) ? value : null);
 
 const toProduct = (value: string | null): Product | null =>
   value === "basis" || value === "uitgebreid" ? value : null;
@@ -25,9 +25,9 @@ function CheckoutContent() {
   const sessionId = searchParams.get("session_id");
   const flow = searchParams.get("flow");
   const bypassPayment = searchParams.get("bypass_payment") === "1";
+  const activeFlow = toFlow(flow);
 
   useEffect(() => {
-    const storedFlow = toFlow(flow);
     const storedProduct =
       typeof window !== "undefined" ? toProduct(sessionStorage.getItem("briefkompas_product")) : null;
     const cachedIntake =
@@ -35,8 +35,8 @@ function CheckoutContent() {
 
     setSessionId(sessionId);
 
-    if (storedFlow) {
-      setFlow(storedFlow);
+    if (activeFlow) {
+      setFlow(activeFlow);
     }
 
     if (storedProduct) {
@@ -50,11 +50,11 @@ function CheckoutContent() {
         // Ignore malformed session data and let downstream validation handle it.
       }
     }
-  }, [flow, sessionId, setFlow, setIntakeData, setProduct, setSessionId]);
+  }, [activeFlow, sessionId, setFlow, setIntakeData, setProduct, setSessionId]);
 
   const handleGenerateLetter = () => {
-    if (flow) {
-      router.push(`/generate/${flow}`);
+    if (activeFlow) {
+      router.push(`/generate/${activeFlow}`);
     }
   };
 
@@ -88,7 +88,7 @@ function CheckoutContent() {
         <div className="my-8 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
           <h3 className="font-semibold mb-2">Volgende stap:</h3>
           <p>
-            Klik hieronder om je {flow === "bezwaar" ? "bezwaarbrief" : "WOO-verzoek"} te
+            Klik hieronder om je {activeFlow ? getFlowDocumentLabel(activeFlow) : "brief"} te
             genereren. Dit duurt enkele seconden. Je krijgt daarna een bewerkbare versie die je kunt
             aanpassen.
           </p>

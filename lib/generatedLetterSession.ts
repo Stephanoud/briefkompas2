@@ -1,4 +1,5 @@
 import { Flow, GeneratedLetter } from "@/types";
+import { cleanLetterTextForDelivery } from "@/lib/letter-format";
 
 const GENERATED_LETTER_SESSION_KEY = "briefkompas_generated_letter";
 
@@ -19,13 +20,20 @@ export function readStoredGeneratedLetter(flow: Flow): GeneratedLetter | null {
 
   try {
     const parsed = JSON.parse(rawValue) as StoredGeneratedLetterSession;
+    const cleanedLetter =
+      parsed?.letter && typeof parsed.letter.letterText === "string"
+        ? {
+            ...parsed.letter,
+            letterText: cleanLetterTextForDelivery(parsed.letter.letterText),
+          }
+        : null;
+
     if (
       parsed?.flow === flow &&
-      parsed.letter &&
-      typeof parsed.letter.letterText === "string" &&
-      parsed.letter.letterText.trim().length > 0
+      cleanedLetter &&
+      cleanedLetter.letterText.trim().length > 0
     ) {
-      return parsed.letter;
+      return cleanedLetter;
     }
   } catch {
     return null;
@@ -43,7 +51,10 @@ export function writeStoredGeneratedLetter(flow: Flow, letter: GeneratedLetter) 
     GENERATED_LETTER_SESSION_KEY,
     JSON.stringify({
       flow,
-      letter,
+      letter: {
+        ...letter,
+        letterText: cleanLetterTextForDelivery(letter.letterText),
+      },
     } satisfies StoredGeneratedLetterSession)
   );
 }

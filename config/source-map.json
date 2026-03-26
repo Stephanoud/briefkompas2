@@ -22,6 +22,16 @@
       "primarySources": ["wetten.overheid.nl", "rijksoverheid.nl", "overheid.nl"],
       "useCaseLaw": false
     },
+    "algemeen_bestuursrecht": {
+      "routes": [
+        "zienswijze_bestuursrecht",
+        "bezwaar_bestuursrecht",
+        "beroep_rechtstreeks_bestuursrecht",
+        "beroep_na_bezwaar_bestuursrecht"
+      ],
+      "primarySources": ["wetten.overheid.nl", "overheid.nl", "rijksoverheid.nl", "rechtspraak.nl"],
+      "useCaseLaw": "only_if_validated"
+    },
     "omgevingswet_vergunning": {
       "routes": ["bezwaar_awb", "zienswijze_of_beroep"],
       "primarySources": ["wetten.overheid.nl", "iplo.nl", "rijksoverheid.nl"],

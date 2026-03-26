@@ -1,8 +1,11 @@
 import { AlignmentType, Document, Packer, Paragraph, TextRun } from "docx";
+import { getFlowDocumentLabel } from "@/lib/flow";
 import { parseLetterBlocks, LetterBlock } from "@/lib/letter-format";
+import { Flow } from "@/types";
 import { ReferenceItem } from "@/src/types/references";
 
 export interface LetterExportPayload {
+  flow: Flow;
   letterText: string;
   generatedReferences?: ReferenceItem[];
   manualReferences?: string;
@@ -39,6 +42,10 @@ export function getPriceFormatted(product: "basis" | "uitgebreid"): string {
 }
 
 function buildSupplementBlocks(payload: LetterExportPayload): LetterBlock[] {
+  if (payload.flow === "bezwaar") {
+    return [];
+  }
+
   const blocks: LetterBlock[] = [];
 
   if (payload.generatedReferences && payload.generatedReferences.length > 0) {
@@ -161,20 +168,7 @@ export async function generateDocx(payload: LetterExportPayload): Promise<Blob> 
             },
           },
         },
-        children: [
-          ...paragraphs,
-          new Paragraph({
-            spacing: { before: 240 },
-            children: [
-              new TextRun({
-                text: "Dit is een conceptbrief gegenereerd met BriefKompas.nl. Controleer de inhoud zorgvuldig voordat je deze verzendt.",
-                italics: true,
-                size: 19,
-                font: "Times New Roman",
-              }),
-            ],
-          }),
-        ],
+        children: paragraphs,
       },
     ],
   });
@@ -244,15 +238,6 @@ export async function generatePdf(payload: LetterExportPayload): Promise<Blob> {
     writeLines(block.lines, margin, maxWidth, 2.3);
   });
 
-  doc.setFont("times", "italic");
-  doc.setFontSize(9);
-  writeLines(
-    ["Dit is een conceptbrief gegenereerd met BriefKompas.nl. Controleer de inhoud zorgvuldig voordat je deze verzendt."],
-    margin,
-    maxWidth,
-    0
-  );
-
   const arrayBuffer = doc.output("arraybuffer");
   return new Blob([arrayBuffer], { type: "application/pdf" });
 }
@@ -270,14 +255,11 @@ export function downloadFile(blob: Blob, filename: string): void {
 
 export function generateStripeLineItem(
   product: "basis" | "uitgebreid",
-  flow: "bezwaar" | "woo"
+  flow: Flow
 ) {
   const price = getPriceInCents(product);
   const tier = product === "basis" ? "basis" : "uitgebreid";
-  const name =
-    flow === "bezwaar"
-      ? `Bezwaarbrief - ${tier} (${TEST_PRICING_LABEL})`
-      : `WOO-verzoek - ${tier} (${TEST_PRICING_LABEL})`;
+  const name = `${getFlowDocumentLabel(flow)} - ${tier} (${TEST_PRICING_LABEL})`;
 
   return {
     price_data: {

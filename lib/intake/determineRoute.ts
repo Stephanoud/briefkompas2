@@ -1,4 +1,4 @@
-import { IntakeFormData } from "@/types";
+import { Flow, IntakeFormData } from "@/types";
 import { CaseType, RouteDeterminationResult, RouteType } from "@/lib/legal/types";
 
 function flattenInput(data: IntakeFormData): string {
@@ -22,10 +22,11 @@ function hasAny(text: string, terms: string[]): boolean {
 }
 
 export function determineRoute(input: {
+  flow: Flow;
   caseType: CaseType;
   intakeData: IntakeFormData;
 }): RouteDeterminationResult {
-  const { caseType, intakeData } = input;
+  const { flow, caseType, intakeData } = input;
   const text = flattenInput(intakeData);
 
   const pick = (route: RouteType, confidence: number, reason: string): RouteDeterminationResult => ({
@@ -33,6 +34,30 @@ export function determineRoute(input: {
     confidence,
     reasons: [reason],
   });
+
+  if (flow === "zienswijze") {
+    return pick("zienswijze_bestuursrecht", 0.96, "Procedurecheck wijst op zienswijze.");
+  }
+
+  if (flow === "beroep_zonder_bezwaar") {
+    return pick(
+      "beroep_rechtstreeks_bestuursrecht",
+      0.96,
+      "Procedurecheck wijst op rechtstreeks beroep zonder bezwaar."
+    );
+  }
+
+  if (flow === "beroep_na_bezwaar") {
+    return pick(
+      "beroep_na_bezwaar_bestuursrecht",
+      0.97,
+      "Procedurecheck wijst op beroep tegen een beslissing op bezwaar."
+    );
+  }
+
+  if (flow === "bezwaar" && caseType === "algemeen_bestuursrecht") {
+    return pick("bezwaar_bestuursrecht", 0.95, "Procedurecheck wijst op de standaard bezwaarrroute.");
+  }
 
   switch (caseType) {
     case "woo": {

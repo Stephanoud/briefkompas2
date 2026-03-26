@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { getFlowDocumentLabel, getFlowLabel, isFlow, supportsDecisionUpload } from "@/lib/flow";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
@@ -9,8 +10,7 @@ import { Alert, UploadBox } from "@/components/index";
 import { Flow, IntakeFormData, Product, UploadedFileRef } from "@/types";
 import { getPriceFormatted, TEST_PRICING_LABEL } from "@/lib/utils";
 
-const toFlow = (value: unknown): Flow | null =>
-  value === "bezwaar" || value === "woo" ? value : null;
+const toFlow = (value: unknown): Flow | null => (isFlow(value) ? value : null);
 
 const toProduct = (value: unknown): Product | null =>
   value === "basis" || value === "uitgebreid" ? value : null;
@@ -139,7 +139,7 @@ export default function PricingPage() {
 
       const data = await response.json();
       if (response.ok && data.checkoutUrl) {
-        window.location.href = data.checkoutUrl;
+        window.location.assign(data.checkoutUrl);
       } else {
         setError(data.error || "Fout bij het aanmaken van de checkout sessie");
       }
@@ -157,14 +157,35 @@ export default function PricingPage() {
     router.push(`/checkout/success?flow=${checkoutContext.checkoutFlow}&bypass_payment=1`);
   };
 
-  const flowLabel =
-    activeFlow === "bezwaar" ? "bezwaarbrief" : activeFlow === "woo" ? "WOO-verzoek" : "brief";
+  const flowLabel = activeFlow ? getFlowDocumentLabel(activeFlow) : "brief";
+  const standardLetterLabel =
+    activeFlow === "bezwaar"
+      ? "Bezwaarschrift met dossierbijlage"
+      : activeFlow === "beroep_zonder_bezwaar"
+        ? "Beroepschrift met toelichting op direct beroep"
+        : activeFlow === "beroep_na_bezwaar"
+          ? "Beroepschrift tegen beslissing op bezwaar"
+          : activeFlow === "zienswijze"
+            ? "Zienswijze in formele bestuursrechtelijke structuur"
+            : `Standaard ${flowLabel}`;
+  const expandedFeatureLabel =
+    activeFlow === "bezwaar"
+      ? "Tot 5 extra dossierstukken"
+      : activeFlow === "woo"
+        ? "Bijlagenoverzicht in brief"
+        : "Extra onderbouwing en bijlagenoverzicht";
+  const decisionUploadLabel =
+    activeFlow && supportsDecisionUpload(activeFlow)
+      ? "1 besluit-upload (PDF of foto)"
+      : "Geen besluit-upload vereist";
 
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Kies je pakket</h1>
-        <p className="text-gray-600">Selecteer het pakket dat het beste bij je behoeften past</p>
+        <p className="text-gray-600">
+          Selecteer het pakket dat het beste past bij je {activeFlow ? getFlowLabel(activeFlow) : "traject"}.
+        </p>
       </div>
 
       {!activeFlow && (
@@ -201,11 +222,11 @@ export default function PricingPage() {
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-green-600">&#10003;</span>
-                <span>1 besluit-upload (PDF of foto)</span>
+                <span>{decisionUploadLabel}</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-green-600">&#10003;</span>
-                <span>Standaard {flowLabel}</span>
+                <span>{standardLetterLabel}</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-green-600">&#10003;</span>
@@ -247,7 +268,7 @@ export default function PricingPage() {
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-blue-600">+</span>
-                <span>Bijlagenoverzicht in brief</span>
+                <span>{expandedFeatureLabel}</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-blue-600">+</span>

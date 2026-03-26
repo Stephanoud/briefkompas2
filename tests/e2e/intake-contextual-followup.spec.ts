@@ -19,9 +19,33 @@ async function openAuthenticatedPage(page: Page, path: string) {
   await page.goto(path);
 }
 
+async function completeBezwaarRouteCheck(page: Page) {
+  const answerInput = page.getByPlaceholder("Typ je antwoord...");
+  const nextButton = page.getByRole("button", { name: "Volgende" });
+
+  const answers = [
+    "ja",
+    "nee",
+    "nee",
+    "nee",
+    "nee",
+    "nee",
+    "bezwaar",
+    "nee",
+    "Ik word rechtstreeks geraakt door dit besluit.",
+    "ja",
+  ];
+
+  for (const answer of answers) {
+    await answerInput.fill(answer);
+    await nextButton.click();
+  }
+}
+
 test.describe("Contextual intake follow-up", () => {
   test("bezwaar intake herijkt de bestuursorgaanvraag bij een geweigerde vergunning", async ({ page }) => {
     await openAuthenticatedPage(page, "/intake/bezwaar");
+    await completeBezwaarRouteCheck(page);
 
     const answerInput = page.getByPlaceholder("Typ je antwoord...");
     const nextButton = page.getByRole("button", { name: "Volgende" });
@@ -37,6 +61,7 @@ test.describe("Contextual intake follow-up", () => {
 
   test("bezwaar intake slaat bekende context over en gaat door naar de gronden", async ({ page }) => {
     await openAuthenticatedPage(page, "/intake/bezwaar");
+    await completeBezwaarRouteCheck(page);
 
     const answerInput = page.getByPlaceholder("Typ je antwoord...");
     const nextButton = page.getByRole("button", { name: "Volgende" });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
+import { getFlowActionLabel, getFlowDocumentLabel, getFlowLabel, isFlow } from "@/lib/flow";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
@@ -20,16 +21,21 @@ function getDecisionStatusLabel(status?: IntakeFormData["besluitAnalyseStatus"])
   return "Alleen intake gebruikt";
 }
 
+function getProcedureAdviceLabel(value?: IntakeFormData["procedureAdvies"]): string | null {
+  if (!value) return null;
+  if (value === "bezwaarfase") return "U zit nog in de bezwaarfase";
+  if (value === "niet_tijdig_beslissen") return "Niet tijdig beslissen";
+  return getFlowActionLabel(value);
+}
+
 export default function ReviewPage() {
   const router = useRouter();
-  const params = useParams<{ flow: string }>();
+  const params = useParams<{ flow?: string }>();
   const rawFlow = params?.flow;
-  const flow = (Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) as Flow;
+  const flow = isFlow(Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) ? (Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) : null;
   const appStore = useAppStore();
   const cachedIntake =
-    typeof window !== "undefined"
-      ? sessionStorage.getItem("briefkompas_intake")
-      : null;
+    typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_intake") : null;
   let intakeData: IntakeFormData | null = appStore.intakeData;
 
   if (!intakeData && cachedIntake) {
@@ -40,11 +46,11 @@ export default function ReviewPage() {
     }
   }
 
-  if (!intakeData) {
+  if (!flow || !intakeData) {
     return (
       <div className="mx-auto max-w-2xl">
         <Alert type="error" title="Fout">
-          Geen intake gegevens gevonden. Start opnieuw.
+          Geen intakegegevens gevonden. Start opnieuw.
         </Alert>
         <Button onClick={() => router.push("/")} className="mt-4">
           Terug naar start
@@ -73,105 +79,142 @@ export default function ReviewPage() {
     );
   };
 
+  const renderDecisionSummary = () => {
+    if (flow === "woo") return null;
+
+    return (
+      <>
+        {renderField("Datum besluit", intakeData.datumBesluit)}
+        {renderField("Kenmerk/zaaknummer", intakeData.kenmerk)}
+        {renderField("Bestandsnaam besluit", intakeData.files?.besluit?.name)}
+        {renderField("Status documentuitlezing", getDecisionStatusLabel(intakeData.besluitAnalyseStatus))}
+      </>
+    );
+  };
+
+  const renderFlowFields = (activeFlow: Flow) => {
+    if (activeFlow === "woo") {
+      return (
+        <>
+          {renderField("Bestuursorgaan", intakeData.bestuursorgaan)}
+          {renderField("Onderwerp", intakeData.wooOnderwerp)}
+          {renderField("Periode", intakeData.wooPeriode)}
+          {renderField("Documenten", intakeData.wooDocumenten)}
+          {renderField("Digitale verstrekking", intakeData.digitaleVerstrekking)}
+          {renderField("Spoed", intakeData.spoed)}
+        </>
+      );
+    }
+
+    if (activeFlow === "zienswijze") {
+      return (
+        <>
+          {renderField("Bestuursorgaan", intakeData.bestuursorgaan)}
+          {renderField("Ontwerpbesluit", intakeData.categorie)}
+          {renderField("Belang", intakeData.persoonlijkeOmstandigheden)}
+          {renderField("Verzoek of gewenste aanpassing", intakeData.doel)}
+          {renderField("Argumenten", intakeData.gronden)}
+        </>
+      );
+    }
+
+    if (activeFlow === "beroep_zonder_bezwaar") {
+      return (
+        <>
+          {renderField("Bestuursorgaan", intakeData.bestuursorgaan)}
+          {renderField("Soort besluit", intakeData.categorie)}
+          {renderField("Waarom direct beroep mogelijk is", intakeData.procedureReden)}
+          {renderField("Gewenste uitkomst", intakeData.doel)}
+          {renderField("Beroepsgronden", intakeData.gronden)}
+        </>
+      );
+    }
+
+    if (activeFlow === "beroep_na_bezwaar") {
+      return (
+        <>
+          {renderField("Bestuursorgaan", intakeData.bestuursorgaan)}
+          {renderField("Soort besluit", intakeData.categorie)}
+          {renderField("Eerdere bezwaargronden", intakeData.eerdereBezwaargronden)}
+          {renderField("Gewenste uitkomst", intakeData.doel)}
+          {renderField("Waarom beslissing op bezwaar onjuist is", intakeData.gronden)}
+        </>
+      );
+    }
+
+    return (
+      <>
+        {renderField("Bestuursorgaan", intakeData.bestuursorgaan)}
+        {renderField("Soort besluit", intakeData.categorie)}
+        {renderField("Doel", intakeData.doel)}
+        {renderField("Gronden", intakeData.gronden)}
+        {renderField("Persoonlijke omstandigheden", intakeData.persoonlijkeOmstandigheden)}
+      </>
+    );
+  };
+
   return (
     <div className="mx-auto max-w-2xl">
-      <Card title="Overzicht van je antwoorden" subtitle="Controleer alles en pas aan indien nodig">
+      <Card title="Overzicht van je antwoorden" subtitle={`Controleer je intake voor ${getFlowLabel(flow)}`}>
         <div className="space-y-6">
-          {flow === "bezwaar" && (
-            <div>
-              <h3 className="mb-3 font-semibold text-gray-900">Bezwaardetails</h3>
-              <div className="space-y-2 rounded bg-gray-50 p-4">
-                {renderField("Bestuursorgaan", intakeData.bestuursorgaan)}
-                {renderField("Datum besluit", intakeData.datumBesluit)}
-                {renderField("Kenmerk/zaaknummer", intakeData.kenmerk || "Niet ingevuld")}
-                {renderField("Soort besluit", intakeData.categorie)}
-                {renderField("Doel van bezwaar", intakeData.doel)}
-                {renderField(
-                  "Gronden (samenvatting)",
-                  intakeData.gronden ? `${intakeData.gronden.substring(0, 100)}...` : "Niet ingevuld"
-                )}
-                {renderField(
-                  "Persoonlijke omstandigheden",
-                  intakeData.persoonlijkeOmstandigheden || "Niet ingevuld"
-                )}
-                {renderField("Besluitbestand", intakeData.files?.besluit?.name || "Niet geupload")}
-                {renderField(
-                  "Analysebron",
-                  intakeData.besluitBronType === "image"
-                    ? "Foto"
-                    : intakeData.besluitBronType === "pdf"
-                      ? "PDF"
-                      : "Niet beschikbaar"
-                )}
-                {renderField(
-                  "Gedetecteerd documenttype",
-                  intakeData.besluitDocumentType || "Niet vastgesteld"
-                )}
-                {renderField("Status documentuitlezing", getDecisionStatusLabel(intakeData.besluitAnalyseStatus))}
-                {renderField("Leeskwaliteit", intakeData.besluitLeeskwaliteit || "Niet vastgesteld")}
-              </div>
+          {intakeData.procedureAdvies && (
+            <Alert type="info" title="Procedurecheck">
+              <span className="block font-semibold">{getProcedureAdviceLabel(intakeData.procedureAdvies)}</span>
+              {intakeData.procedureReden && (
+                <span className="block pt-2">{intakeData.procedureReden}</span>
+              )}
+            </Alert>
+          )}
 
-              {(intakeData.besluitSamenvatting || intakeData.besluitTekst || intakeData.besluitAnalyse) && (
-                <div className="mt-4 rounded border border-[var(--border)] bg-white p-4">
-                  <h4 className="text-sm font-semibold text-[var(--foreground)]">Uit het besluit gehaald</h4>
-                  {intakeData.besluitAnalyse?.onderwerp && (
-                    <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                      <span className="font-semibold text-[var(--foreground)]">Onderwerp:</span>{" "}
-                      {intakeData.besluitAnalyse.onderwerp}
-                    </p>
-                  )}
-                  {intakeData.besluitAnalyse?.rechtsgrond && (
-                    <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                      <span className="font-semibold text-[var(--foreground)]">Rechtsgrond:</span>{" "}
-                      {intakeData.besluitAnalyse.rechtsgrond}
-                    </p>
-                  )}
-                  {intakeData.besluitAnalyse?.besluitInhoud && (
-                    <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                      <span className="font-semibold text-[var(--foreground)]">Besluitinhoud:</span>{" "}
-                      {intakeData.besluitAnalyse.besluitInhoud}
-                    </p>
-                  )}
-                  {intakeData.besluitAnalyse?.termijnen && (
-                    <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                      <span className="font-semibold text-[var(--foreground)]">Termijnen:</span>{" "}
-                      {intakeData.besluitAnalyse.termijnen}
-                    </p>
-                  )}
-                  {intakeData.besluitSamenvatting && (
-                    <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                      <span className="font-semibold text-[var(--foreground)]">Samenvatting:</span>{" "}
-                      {intakeData.besluitSamenvatting}
-                    </p>
-                  )}
-                  {intakeData.besluitTekst && (
-                    <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
-                      <span className="font-semibold text-[var(--foreground)]">Tekstfragment:</span>{" "}
-                      {truncatePreview(intakeData.besluitTekst)}
-                    </p>
-                  )}
-                </div>
+          <div>
+            <h3 className="mb-3 font-semibold text-gray-900">
+              Intake voor {getFlowDocumentLabel(flow)}
+            </h3>
+            <div className="space-y-2 rounded bg-gray-50 p-4">
+              {renderFlowFields(flow)}
+              {renderDecisionSummary()}
+            </div>
+          </div>
+
+          {(intakeData.besluitSamenvatting || intakeData.besluitTekst || intakeData.besluitAnalyse) && flow !== "woo" && (
+            <div className="rounded border border-[var(--border)] bg-white p-4">
+              <h4 className="text-sm font-semibold text-[var(--foreground)]">Uit het besluit gehaald</h4>
+              {intakeData.besluitAnalyse?.onderwerp && (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                  <span className="font-semibold text-[var(--foreground)]">Onderwerp:</span>{" "}
+                  {intakeData.besluitAnalyse.onderwerp}
+                </p>
+              )}
+              {intakeData.besluitAnalyse?.rechtsgrond && (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                  <span className="font-semibold text-[var(--foreground)]">Rechtsgrond:</span>{" "}
+                  {intakeData.besluitAnalyse.rechtsgrond}
+                </p>
+              )}
+              {intakeData.besluitAnalyse?.besluitInhoud && (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                  <span className="font-semibold text-[var(--foreground)]">Besluitinhoud:</span>{" "}
+                  {intakeData.besluitAnalyse.besluitInhoud}
+                </p>
+              )}
+              {intakeData.besluitSamenvatting && (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                  <span className="font-semibold text-[var(--foreground)]">Samenvatting:</span>{" "}
+                  {intakeData.besluitSamenvatting}
+                </p>
+              )}
+              {intakeData.besluitTekst && (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
+                  <span className="font-semibold text-[var(--foreground)]">Tekstfragment:</span>{" "}
+                  {truncatePreview(intakeData.besluitTekst)}
+                </p>
               )}
             </div>
           )}
 
-          {flow === "woo" && (
-            <div>
-              <h3 className="mb-3 font-semibold text-gray-900">WOO-verzoek details</h3>
-              <div className="space-y-2 rounded bg-gray-50 p-4">
-                {renderField("Bestuursorgaan", intakeData.bestuursorgaan)}
-                {renderField("Onderwerp", intakeData.wooOnderwerp)}
-                {renderField("Periode", intakeData.wooPeriode)}
-                {renderField("Documenten", intakeData.wooDocumenten)}
-                {renderField("Digitale verstrekking", intakeData.digitaleVerstrekking)}
-                {renderField("Spoedeisend", intakeData.spoed)}
-              </div>
-            </div>
-          )}
-
           <Alert type="info">
-            Klopt alles? Klik op Terug naar intake als je iets wilt wijzigen. Anders ga je door naar
-            de productkeuze.
+            Controleer of feiten, data, bestuursorgaan en gewenste uitkomst kloppen. Daarna ga je door
+            naar de pakketkeuze.
           </Alert>
         </div>
 

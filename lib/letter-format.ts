@@ -3,6 +3,30 @@ export type LetterBlock =
   | { type: "list"; ordered: boolean; items: string[] }
   | { type: "text"; lines: string[] };
 
+const DELIVERY_META_HEADINGS = new Set(
+  [
+    "afzender met placeholders",
+    "adresblok bestuursorgaan",
+    "betreft-regel",
+    "datumregel",
+    "slotformule",
+  ].map((heading) => heading.toLowerCase())
+);
+
+const DELIVERY_EXCLUDED_PATTERNS = [
+  /dit is (een )?conceptbrief/i,
+  /gegenereerd met briefkompas/i,
+  /briefkompas(?:\.nl)?/i,
+  /geen juridisch advies/i,
+  /controleer (?:alle gegevens|de inhoud|alles) zorgvuldig/i,
+  /voordat je (?:deze|dit|de brief) verzendt/i,
+  /\bje bent zelf verantwoordelijk\b/i,
+  /\bik ben zelf verantwoordelijk\b/i,
+  /\bik heb de brief gecontroleerd\b/i,
+  /aansprakelijkheidsmelding/i,
+  /hoe te gebruiken/i,
+];
+
 const KNOWN_HEADINGS = new Set(
   [
     "aan",
@@ -51,6 +75,20 @@ function isHeadingCandidate(line: string): boolean {
   return lettersOnly.length >= 4 && trimmed === trimmed.toUpperCase();
 }
 
+function shouldExcludeLineFromDelivery(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  const normalized = trimmed.replace(/[:.]$/, "").trim().toLowerCase();
+  if (DELIVERY_META_HEADINGS.has(normalized)) {
+    return true;
+  }
+
+  return DELIVERY_EXCLUDED_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
 export function sanitizeLetterText(letterText: string): string {
   const normalized = letterText
     .replace(/\r\n/g, "\n")
@@ -67,6 +105,20 @@ export function sanitizeLetterText(letterText: string): string {
     .trim();
 
   return normalized;
+}
+
+export function cleanLetterTextForDelivery(letterText: string): string {
+  const sanitized = sanitizeLetterText(letterText);
+  if (!sanitized) {
+    return "";
+  }
+
+  return sanitized
+    .split("\n")
+    .filter((line) => !shouldExcludeLineFromDelivery(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function toTextBlock(lines: string[]): LetterBlock | null {
@@ -98,7 +150,7 @@ function toTextBlock(lines: string[]): LetterBlock | null {
 }
 
 export function parseLetterBlocks(letterText: string): LetterBlock[] {
-  const sanitized = sanitizeLetterText(letterText);
+  const sanitized = cleanLetterTextForDelivery(letterText);
   if (!sanitized) {
     return [];
   }

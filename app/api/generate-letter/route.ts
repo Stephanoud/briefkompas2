@@ -9,6 +9,7 @@ import { classifyCase } from "@/lib/intake/classifyCase";
 import { determineRoute } from "@/lib/intake/determineRoute";
 import { getMissingRequiredFields } from "@/lib/intake/requiredFields";
 import { GenerationGuardResult, PromptPayload } from "@/lib/legal/types";
+import { cleanLetterTextForDelivery } from "@/lib/letter-format";
 import { loadSourceSet } from "@/lib/sources/loadSourceSet";
 import { validateAuthorities } from "@/lib/sources/validateAuthorities";
 import { validateSourceSet } from "@/lib/sources/validateSourceSet";
@@ -57,6 +58,8 @@ function buildReferenceKeywords(data: IntakeFormData, flow: Flow): string[] {
           data.categorie,
           data.doel,
           data.gronden,
+          data.procedureReden,
+          data.eerdereBezwaargronden,
           ...decisionSignals,
         ].join(" ");
 
@@ -77,6 +80,281 @@ function getDecisionStatusLabel(data: IntakeFormData): string {
   return "alleen intake gebruikt";
 }
 
+function hasText(value?: string | null): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function ensureSentence(value: string): string {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) {
+    return "";
+  }
+
+  return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
+}
+
+function shorten(value: string, maxLength = 220): string {
+  const normalized = normalizeWhitespace(value);
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function splitIntoPoints(value?: string | null, maxItems = 5): string[] {
+  if (!hasText(value)) {
+    return [];
+  }
+
+  return [...new Set(
+    value
+      .replace(/\r\n/g, "\n")
+      .split(/\n+|;|(?:\.\s+)/)
+      .map((part) => normalizeWhitespace(part))
+      .filter((part) => part.length >= 8)
+  )].slice(0, maxItems);
+}
+
+function buildBestredenBesluitLabel(data: IntakeFormData): string {
+  const rawType = hasText(data.besluitDocumentType)
+    ? data.besluitDocumentType
+    : hasText(data.categorie)
+      ? `${data.categorie} besluit`
+      : "bestreden besluit";
+  const datePart = hasText(data.datumBesluit) ? ` van ${data.datumBesluit}` : "";
+
+  return `${normalizeWhitespace(rawType)}${datePart}`;
+}
+
+function buildDesiredOutcome(data: IntakeFormData): string {
+  if (hasText(data.doel)) {
+    return ensureSentence(shorten(data.doel, 180));
+  }
+
+  return "[gewenste uitkomst invullen].";
+}
+
+function buildDisputeCore(data: IntakeFormData): string {
+  const lines: string[] = [];
+
+  if (hasText(data.besluitSamenvatting)) {
+    lines.push(ensureSentence(shorten(data.besluitSamenvatting, 200)));
+  } else {
+    lines.push(`Het bezwaar richt zich tegen ${buildBestredenBesluitLabel(data)}.`);
+  }
+
+  if (hasText(data.gronden)) {
+    lines.push(
+      `Volgens de intake is het besluit onjuist of onvolledig omdat ${shorten(data.gronden, 180).replace(/[.!?]+$/, "")}.`
+    );
+  } else {
+    lines.push("Indiener vraagt om een volledige heroverweging van het besluit.");
+  }
+
+  return lines.join(" ");
+}
+
+interface EvidenceEntry {
+  label: string;
+  relevance: string;
+}
+
+function buildEvidenceOverview(data: IntakeFormData): {
+  sent: EvidenceEntry[];
+  mentionedNotSent: EvidenceEntry[];
+} {
+  const sent: EvidenceEntry[] = [];
+  const mentionedNotSent: EvidenceEntry[] = [];
+
+  if (data.files?.besluit?.name) {
+    sent.push({
+      label: `Kopie van het bestreden besluit (${data.files.besluit.name})`,
+      relevance: "Toont welk besluit wordt bestreden en welke datum en kenmerken daarbij horen.",
+    });
+  } else {
+    mentionedNotSent.push({
+      label: hasText(data.datumBesluit) || hasText(data.kenmerk) || hasText(data.besluitDocumentType)
+        ? `Bestreden besluit (${buildBestredenBesluitLabel(data)})`
+        : "Bestreden besluit",
+      relevance: "Vormt het object van dit bezwaar en is in de hoofdbrief en samenvatting beschreven.",
+    });
+  }
+
+  (data.files?.bijlagen ?? []).forEach((file) => {
+    sent.push({
+      label: file.name,
+      relevance: "Door indiener meegestuurd ter onderbouwing van de feiten, gevolgen of context van het bezwaar.",
+    });
+  });
+
+  if (sent.length === 0 && mentionedNotSent.length === 0) {
+    mentionedNotSent.push({
+      label: "Bestreden besluit",
+      relevance: "Vormt het object van dit bezwaar.",
+    });
+  }
+
+  return { sent, mentionedNotSent };
+}
+
+function buildLegalGrounds(data: IntakeFormData): Array<{ title: string; paragraphs: string[] }> {
+  const grounds: Array<{ title: string; paragraphs: string[] }> = [
+    {
+      title: "1. MOTIVERINGSGEBREK",
+      paragraphs: [
+        hasText(data.gronden)
+          ? `Voor zover nu kenbaar maakt het besluit niet voldoende inzichtelijk waarom het bestuursorgaan tot deze uitkomst is gekomen, mede in het licht van het bezwaar dat ${shorten(data.gronden, 180).replace(/[.!?]+$/, "")}.`
+          : "Voor zover nu kenbaar maakt het bestreden besluit niet dragend duidelijk waarom deze uitkomst gerechtvaardigd is.",
+        "Een besluit moet berusten op een kenbare en deugdelijke motivering, zodat controleerbaar is hoe de feiten en belangen zijn gewogen.",
+      ],
+    },
+    {
+      title: "2. ZORGVULDIGHEIDSBEGINSEL",
+      paragraphs: [
+        hasText(data.persoonlijkeOmstandigheden)
+          ? `De intake noemt als relevante feitelijke situatie: ${ensureSentence(shorten(data.persoonlijkeOmstandigheden, 170))}`
+          : "In bezwaar moet het bestuursorgaan nagaan of alle relevante feiten, omstandigheden en stukken volledig in beeld zijn gebracht.",
+        "Als die gegevens niet of onvoldoende in de voorbereiding zijn betrokken, is de besluitvorming niet zorgvuldig geweest.",
+      ],
+    },
+  ];
+
+  if (hasText(data.persoonlijkeOmstandigheden) || hasText(data.doel)) {
+    grounds.push({
+      title: "3. EVENREDIGHEIDSBEGINSEL EN VOLLEDIGE HEROVERWEGING",
+      paragraphs: [
+        hasText(data.persoonlijkeOmstandigheden)
+          ? `De gevolgen van het besluit raken de indiener volgens de intake als volgt: ${ensureSentence(shorten(data.persoonlijkeOmstandigheden, 170))}`
+          : "In bezwaar moet worden beoordeeld of de nadelige gevolgen van het besluit in verhouding staan tot het doel ervan.",
+        `Dat vergt een concrete heroverweging van het verzoek om ${buildDesiredOutcome(data).replace(/[.!?]+$/, "")} en van eventuele minder bezwarende alternatieven.`,
+      ],
+    });
+  }
+
+  return grounds;
+}
+
+function buildBezwaarAppendix(data: IntakeFormData): string {
+  const summaryLines = [
+    `- Bestreden besluit: ${buildBestredenBesluitLabel(data)}.`,
+    `- Bestuursorgaan: ${sanitize(data.bestuursorgaan)}.`,
+    `- Kern van het geschil: ${buildDisputeCore(data)}`,
+    `- Gewenste uitkomst: ${buildDesiredOutcome(data)}`,
+  ];
+
+  const groundPoints = splitIntoPoints(data.gronden, 3);
+  if (groundPoints.length > 0) {
+    groundPoints.forEach((ground, index) => {
+      summaryLines.push(`- Belangrijkste bezwaar ${index + 1}: ${ensureSentence(shorten(ground, 170))}`);
+    });
+  } else {
+    summaryLines.push("- Belangrijkste bezwaren: de motivering, zorgvuldigheid en heroverweging van het besluit worden betwist.");
+  }
+
+  if (hasText(data.persoonlijkeOmstandigheden)) {
+    summaryLines.push(`- Impact: ${ensureSentence(shorten(data.persoonlijkeOmstandigheden, 180))}`);
+  }
+
+  const facts: string[] = [];
+  let factIndex = 1;
+  facts.push(`${factIndex++}. Bestuursorgaan: ${sanitize(data.bestuursorgaan)}.`);
+  facts.push(`${factIndex++}. Bestreden besluit: ${buildBestredenBesluitLabel(data)}.`);
+
+  if (hasText(data.kenmerk)) {
+    facts.push(`${factIndex++}. Kenmerk of dossiernummer: ${data.kenmerk}.`);
+  }
+
+  if (hasText(data.besluitSamenvatting)) {
+    facts.push(`${factIndex++}. Volgens de intake houdt het besluit in: ${ensureSentence(shorten(data.besluitSamenvatting, 220))}`);
+  } else if (hasText(data.besluitAnalyse?.besluitInhoud)) {
+    facts.push(`${factIndex++}. Uit de besluituitlezing volgt als kern van het besluit: ${ensureSentence(shorten(data.besluitAnalyse.besluitInhoud, 220))}`);
+  }
+
+  if (hasText(data.persoonlijkeOmstandigheden)) {
+    facts.push(`${factIndex++}. Feitelijke situatie van indiener: ${ensureSentence(shorten(data.persoonlijkeOmstandigheden, 220))}`);
+  }
+
+  if (hasText(data.besluitAnalyse?.termijnen)) {
+    facts.push(`${factIndex++}. Relevante procedure-informatie uit het besluit: ${ensureSentence(shorten(data.besluitAnalyse.termijnen, 180))}`);
+  }
+
+  if (data.files?.besluit?.name) {
+    facts.push(`${factIndex++}. Een kopie van het bestreden besluit is als bestand beschikbaar gesteld: ${data.files.besluit.name}.`);
+  }
+
+  if ((data.files?.bijlagen ?? []).length > 0) {
+    facts.push(`${factIndex++}. Aanvullende meegestuurde stukken: ${(data.files?.bijlagen ?? []).map((file) => file.name).join(", ")}.`);
+  }
+
+  const evidence = buildEvidenceOverview(data);
+  const evidenceLines: string[] = [];
+
+  if (evidence.sent.length > 0) {
+    evidenceLines.push("MEEGEZONDEN STUKKEN", "");
+    evidence.sent.forEach((item, index) => {
+      evidenceLines.push(`${index + 1}. ${item.label}. Relevantie: ${item.relevance}`);
+    });
+  }
+
+  if (evidence.mentionedNotSent.length > 0) {
+    if (evidenceLines.length > 0) {
+      evidenceLines.push("", "WEL GENOEMD, NIET MEEGEZONDEN", "");
+    } else {
+      evidenceLines.push("WEL GENOEMD, NIET MEEGEZONDEN", "");
+    }
+
+    evidence.mentionedNotSent.forEach((item, index) => {
+      evidenceLines.push(`${index + 1}. ${item.label}. Relevantie: ${item.relevance}`);
+    });
+  }
+
+  const sections = [
+    "",
+    "BIJLAGE A - SAMENVATTING VAN HET GESCHIL",
+    "",
+    ...summaryLines,
+    "",
+    "BIJLAGE B - FEITEN EN CONTEXT",
+    "",
+    ...facts,
+    "",
+    "BIJLAGE C - JURIDISCHE BEZWAREN",
+    "",
+  ];
+
+  buildLegalGrounds(data).forEach((ground, index) => {
+    if (index > 0) {
+      sections.push("");
+    }
+    sections.push(ground.title, "");
+    ground.paragraphs.forEach((paragraph) => {
+      sections.push(paragraph, "");
+    });
+    sections.pop();
+  });
+
+  if (evidenceLines.length > 0) {
+    sections.push("", "BIJLAGE D - OVERZICHT BEWIJSSTUKKEN", "", ...evidenceLines);
+  }
+
+  if (hasText(data.doel)) {
+    sections.push(
+      "",
+      "BIJLAGE E - GEWENSTE OPLOSSING",
+      "",
+      `1. Primair verzoekt indiener om ${buildDesiredOutcome(data).replace(/[.!?]+$/, "")}.`,
+      "2. Subsidiair wordt verzocht om een nieuw besluit na volledige heroverweging, met een draagkrachtige motivering en een kenbare belangenafweging."
+    );
+  }
+
+  return sections.join("\n");
+}
+
 function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
   if (flow === "woo") {
     return [
@@ -91,15 +369,26 @@ function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
 
   const caseFacts = [
     `Bestuursorgaan: ${data.bestuursorgaan}`,
+    `Procedureadvies: ${data.procedureAdvies ?? flow}`,
+    `Proceduretoelichting: ${data.procedureReden ?? "onbekend"}`,
     `Datum besluit: ${data.datumBesluit ?? "onbekend"}`,
     `Kenmerk: ${data.kenmerk ?? "onbekend"}`,
     `Categorie: ${data.categorie ?? "onbekend"}`,
     `Doel: ${data.doel ?? "onbekend"}`,
     `Gronden uit intake: ${data.gronden ?? "onbekend"}`,
     `Persoonlijke omstandigheden: ${data.persoonlijkeOmstandigheden ?? "geen"}`,
+    `Eerdere bezwaargronden: ${data.eerdereBezwaargronden ?? "geen"}`,
     `Status besluituitlezing: ${getDecisionStatusLabel(data)}`,
     `Leeskwaliteit besluitbestand: ${data.besluitLeeskwaliteit ?? "onbekend"}`,
   ];
+
+  if (data.files?.besluit?.name) {
+    caseFacts.push(`Besluitbestand: ${data.files.besluit.name}`);
+  }
+
+  if ((data.files?.bijlagen ?? []).length > 0) {
+    caseFacts.push(`Extra bijlagen: ${(data.files?.bijlagen ?? []).map((file) => file.name).join("; ")}`);
+  }
 
   if (data.besluitDocumentType) {
     caseFacts.push(`Documenttype besluit: ${data.besluitDocumentType}`);
@@ -176,8 +465,128 @@ function buildSafeFallbackLetter(params: {
       "Hoogachtend,",
       "",
       "[Jouw naam]",
+    ].join("\n");
+  }
+
+  if (flow === "zienswijze") {
+    return [
+      "[Jouw naam]",
+      "[Jouw adres]",
+      "[Postcode en woonplaats]",
+      "[E-mailadres]",
+      "[Telefoonnummer]",
       "",
-      "Dit is een conceptbrief. Controleer alle gegevens zorgvuldig voor verzending. BriefKompas.nl geeft geen juridisch advies.",
+      "Aan:",
+      `${intakeData.bestuursorgaan}`,
+      "[Adres bestuursorgaan]",
+      "[Postcode en plaats]",
+      "",
+      `Betreft: Zienswijze over ${intakeData.categorie ?? "het ontwerpbesluit"}`,
+      "Datum: [vandaag invullen]",
+      "",
+      "Geacht bestuursorgaan,",
+      "",
+      "Hierbij dien ik een zienswijze in over het ontwerpbesluit dat op mijn situatie betrekking heeft.",
+      "",
+      `Volgens mijn gegevens gaat het om ${sanitize(intakeData.categorie)}.`,
+      intakeData.besluitSamenvatting
+        ? intakeData.besluitSamenvatting
+        : "De precieze inhoud van het ontwerpbesluit moet nog worden gecontroleerd aan de hand van de stukken.",
+      "",
+      `Mijn belang bij dit ontwerpbesluit is als volgt: ${sanitize(intakeData.persoonlijkeOmstandigheden)}.`,
+      "",
+      `Ik kan mij hiermee niet verenigen omdat ${sanitize(intakeData.gronden)}.`,
+      "",
+      `Ik verzoek u het ontwerpbesluit aan te passen in die zin dat ${sanitize(intakeData.doel)}.`,
+      "",
+      "Hoogachtend,",
+      "",
+      "[Jouw naam]",
+    ].join("\n");
+  }
+
+  if (flow === "beroep_zonder_bezwaar") {
+    return [
+      "[Jouw naam]",
+      "[Jouw adres]",
+      "[Postcode en woonplaats]",
+      "[E-mailadres]",
+      "[Telefoonnummer]",
+      "",
+      "Aan:",
+      "[Bevoegde rechtbank]",
+      "[Adres rechtbank]",
+      "[Postcode en plaats]",
+      "",
+      "Betreft: Beroepschrift",
+      `Kenmerk: ${intakeData.kenmerk ?? "[kenmerk invullen]"}`,
+      `Datum besluit: ${intakeData.datumBesluit ?? "[datum invullen]"}`,
+      "Datum: [vandaag invullen]",
+      "",
+      "Geachte rechtbank,",
+      "",
+      `Hierbij stel ik beroep in tegen het besluit van ${sanitize(intakeData.bestuursorgaan)}.`,
+      "",
+      "Waarom direct beroep mogelijk is",
+      ensureSentence(
+        intakeData.procedureReden ??
+          "Op basis van de beschikbare gegevens lijkt direct beroep open te staan zonder voorafgaande bezwaarprocedure."
+      ),
+      "",
+      "Feiten en besluit",
+      `Volgens mijn gegevens betreft het een ${sanitize(intakeData.categorie)}.`,
+      intakeData.besluitSamenvatting
+        ? intakeData.besluitSamenvatting
+        : "De kern van het primaire besluit moet nog nader worden getoetst aan de hand van het besluit zelf.",
+      "",
+      "Beroepsgronden",
+      `Ik ben het niet eens met het besluit omdat ${sanitize(intakeData.gronden)}.`,
+      "",
+      "Verzoek",
+      `Ik verzoek de rechtbank het besluit te vernietigen en te bepalen dat ${sanitize(intakeData.doel)}.`,
+      "",
+      "Hoogachtend,",
+      "",
+      "[Jouw naam]",
+    ].join("\n");
+  }
+
+  if (flow === "beroep_na_bezwaar") {
+    return [
+      "[Jouw naam]",
+      "[Jouw adres]",
+      "[Postcode en woonplaats]",
+      "[E-mailadres]",
+      "[Telefoonnummer]",
+      "",
+      "Aan:",
+      "[Bevoegde rechtbank]",
+      "[Adres rechtbank]",
+      "[Postcode en plaats]",
+      "",
+      "Betreft: Beroepschrift tegen beslissing op bezwaar",
+      `Kenmerk: ${intakeData.kenmerk ?? "[kenmerk invullen]"}`,
+      `Datum beslissing op bezwaar: ${intakeData.datumBesluit ?? "[datum invullen]"}`,
+      "Datum: [vandaag invullen]",
+      "",
+      "Geachte rechtbank,",
+      "",
+      `Hierbij stel ik beroep in tegen de beslissing op bezwaar van ${sanitize(intakeData.bestuursorgaan)}.`,
+      "",
+      "Voorgeschiedenis",
+      intakeData.eerdereBezwaargronden
+        ? `In bezwaar heb ik onder meer aangevoerd dat ${intakeData.eerdereBezwaargronden}.`
+        : "In bezwaar zijn eerder inhoudelijke gronden aangevoerd tegen het primaire besluit.",
+      "",
+      "Waarom de beslissing op bezwaar onjuist is",
+      `De beslissing op bezwaar blijft volgens mij onjuist omdat ${sanitize(intakeData.gronden)}.`,
+      "",
+      "Verzoek",
+      `Ik verzoek de rechtbank de beslissing op bezwaar te vernietigen en te bepalen dat ${sanitize(intakeData.doel)}.`,
+      "",
+      "Hoogachtend,",
+      "",
+      "[Jouw naam]",
     ].join("\n");
   }
 
@@ -219,14 +628,12 @@ function buildSafeFallbackLetter(params: {
     "Verzoek",
     `Ik verzoek u het besluit te ${sanitize(intakeData.doel)} of daarvoor een nieuw besluit in de plaats te stellen.`,
     "",
-    "Slot",
     "Ik verzoek u mij in de gelegenheid te stellen mijn bezwaar zo nodig nader toe te lichten tijdens een hoorzitting.",
     "",
     "Hoogachtend,",
     "",
     "[Jouw naam]",
-    "",
-    "Dit is een conceptbrief. Controleer alle gegevens zorgvuldig voor verzending. BriefKompas.nl geeft geen juridisch advies.",
+    buildBezwaarAppendix(intakeData),
   ].join("\n");
 }
 
@@ -237,7 +644,7 @@ function buildGuardResult(params: {
 }): GenerationGuardResult {
   const { intakeData, flow, references } = params;
   const classification = classifyCase({ flow, intakeData });
-  const routing = determineRoute({ caseType: classification.caseType, intakeData });
+  const routing = determineRoute({ flow, caseType: classification.caseType, intakeData });
   const sourceSet = loadSourceSet(classification.caseType, routing.route);
   const sourceSetValidation = validateSourceSet(sourceSet);
   const missingFields = getMissingRequiredFields(flow, intakeData);
@@ -331,7 +738,7 @@ export async function POST(req: NextRequest) {
     const references = getReferences({
       flow,
       orgType: detectOrgType(intakeData.bestuursorgaan),
-      decisionType: flow === "bezwaar" ? intakeData.categorie : undefined,
+      decisionType: flow === "woo" ? undefined : intakeData.categorie,
       keywords: buildReferenceKeywords(intakeData, flow),
       limit: 6,
     });
@@ -339,10 +746,10 @@ export async function POST(req: NextRequest) {
     const guard = buildGuardResult({ intakeData, flow, references });
 
     if (guard.generationMode === "static_fallback" || !guard.selectedSourceSet) {
-      const fallbackLetter = buildSafeFallbackLetter({
+      const fallbackLetter = cleanLetterTextForDelivery(buildSafeFallbackLetter({
         flow,
         intakeData,
-      });
+      }));
 
       return NextResponse.json({
         letter: {
@@ -396,12 +803,13 @@ export async function POST(req: NextRequest) {
     });
 
     const letterText = await generateLetter(openai, prompt);
+    const cleanedLetterText = cleanLetterTextForDelivery(letterText);
 
-    if (!letterText.trim()) {
-      const fallbackLetter = buildSafeFallbackLetter({
+    if (!cleanedLetterText.trim()) {
+      const fallbackLetter = cleanLetterTextForDelivery(buildSafeFallbackLetter({
         flow,
         intakeData,
-      });
+      }));
 
       return NextResponse.json({
         letter: {
@@ -423,7 +831,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       letter: {
-        letterText,
+        letterText: cleanedLetterText,
         references: guard.validatedAuthorities,
         generationMode: guard.generationMode,
         guardReasons: guard.reasons,

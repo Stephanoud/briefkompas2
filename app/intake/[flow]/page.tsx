@@ -4,8 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import {
+  WOO_SUBJECT_CLARIFICATION_OPTIONS,
   getStepsByFlow,
   getValidationErrorMessage,
+  interpretWooPeriodAnswer,
+  interpretWooSubjectAnswer,
   isLikelyClarifyingQuestion,
   needsFollowUp,
   normalizeBezwaarCategorie,
@@ -14,13 +17,33 @@ import { getAnswerSuggestions, grondenFallbackOptions } from "@/lib/intake/answe
 import { filterBestuursorganen } from "@/lib/intake/bestuursorganen";
 import {
   createInitialIntakeInterpretation,
-  findNextUnansweredStepIndex,
   getContextualQuestion,
   getContextualValidationMessage,
   getSuggestedStepId,
   interpretIntakeTurn,
   type IntakeInterpretationState,
 } from "@/lib/intake/interpretation";
+import {
+  buildManualProcedureOverrideMessage,
+  buildProcedureCheckPatch,
+  buildProcedureConfirmationMessage,
+  determineProcedureAdvice,
+  getProcedureCheckValidationMessage,
+  getProcedureUploadHint,
+  procedureCheckSteps,
+  type ProcedureRouteResult,
+  validateProcedureCheckStep,
+} from "@/lib/procedure-route";
+import {
+  getFlowActionLabel,
+  getFlowDocumentLabel,
+  getFlowLabel,
+  homepageProcedureOptions,
+  isFlow,
+  requiresDecisionUpload,
+  supportsDecisionUpload,
+  usesProcedureCheck,
+} from "@/lib/flow";
 import { ChatMessage, DecisionExtractionResult, Flow, IntakeFormData } from "@/types";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
@@ -30,8 +53,36 @@ import { ChatBubble } from "@/components/ChatBubble";
 import { StepHeader, Alert } from "@/components";
 
 const shortGrondenThreshold = 120;
-const confirmYesValues = new Set(["ja", "ja, doorgaan", "ja doorgaan", "doorgaan", "ok", "oke", "prima"]);
-const confirmNoValues = new Set(["nee", "nee, ik wil meer toelichten", "nee ik wil meer toelichten", "meer toelichten"]);
+const confirmYesValues = new Set([
+  "ja",
+  "ja, doorgaan",
+  "ja doorgaan",
+  "doorgaan",
+  "ok",
+  "oke",
+  "prima",
+  "klopt",
+  "dat klopt",
+]);
+const confirmNoValues = new Set([
+  "nee",
+  "nee, ik wil meer toelichten",
+  "nee ik wil meer toelichten",
+  "meer toelichten",
+  "klopt niet",
+]);
+
+interface PendingStepConfirmation {
+  stepId: string;
+  value: string;
+}
+
+interface PendingWooSubjectClarification {
+  baseTopic: string;
+  options: string[];
+}
+
+type IntakeStage = "route_check" | "route_confirm" | "route_override" | "substantive";
 
 function hasMeaningfulValue(value: unknown): boolean {
   if (typeof value === "string") return value.trim().length > 0;
@@ -55,6 +106,8 @@ function buildCurrentStepPatch(
 ): Partial<IntakeFormData> {
   if (!step) return {};
 
+  const interpretedFieldValue = interpretedPatch[step.field as keyof IntakeFormData];
+
   switch (step.id) {
     case "bestuursorgaan":
       return interpretedPatch.bestuursorgaan ? { [step.field]: interpretedPatch.bestuursorgaan } : {};
@@ -69,7 +122,7 @@ function buildCurrentStepPatch(
       };
     default:
       return {
-        [step.field]: answer,
+        [step.field]: interpretedFieldValue ?? answer,
       };
   }
 }
@@ -114,77 +167,138 @@ function getDocumentAnalysisPresentation(status?: IntakeFormData["besluitAnalyse
   };
 }
 
+function parseManualFlowOverride(value: string): Flow | null {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes("woo")) return "woo";
+  if (normalized.includes("zienswijze")) return "zienswijze";
+  if (normalized.includes("beroep na bezwaar")) return "beroep_na_bezwaar";
+  if (normalized.includes("beroep zonder bezwaar") || normalized.includes("rechtstreeks beroep")) {
+    return "beroep_zonder_bezwaar";
+  }
+  if (normalized.includes("bezwaar")) return "bezwaar";
+
+  const matchedOption = homepageProcedureOptions.find(
+    (option) => option.title.toLowerCase() === normalized
+  );
+  return matchedOption?.flow ?? null;
+}
+
+function buildIntroMessage(flow: Flow, interpretation: IntakeInterpretationState): string {
+  if (usesProcedureCheck(flow)) {
+    return `Hallo! Ik ben de BriefKompas chatbot. Ik help je bij het opstellen van een ${getFlowDocumentLabel(flow)}. Eerst controleer ik welke bestuursrechtelijke procedure het beste past bij jouw situatie. ${procedureCheckSteps[0].question}`;
+  }
+
+  const steps = getStepsByFlow(flow);
+  return `Hallo! Ik ben de BriefKompas chatbot. Ik help je bij het opstellen van je ${getFlowDocumentLabel(flow)}. ${getContextualQuestion({
+    flow,
+    step: steps[0],
+    interpretation,
+    intakeData: { flow },
+  })}`;
+}
+
 export default function IntakePage() {
   const router = useRouter();
-  const params = useParams<{ flow: Flow }>();
+  const params = useParams<{ flow?: string }>();
   const rawFlow = params?.flow;
-  const flow = (Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) as Flow;
-  const steps = getStepsByFlow(flow);
+  const routeFlowValue = Array.isArray(rawFlow) ? rawFlow[0] : rawFlow;
+  const routeFlow = isFlow(routeFlowValue) ? routeFlowValue : null;
+  const initialFlow = routeFlow ?? "bezwaar";
+  const requiresRouteCheck = usesProcedureCheck(initialFlow);
+  const [resolvedFlow, setResolvedFlow] = useState<Flow>(initialFlow);
+  const activeFlow = resolvedFlow;
+  const steps = getStepsByFlow(activeFlow);
   const initialInterpretation = useMemo<IntakeInterpretationState>(
-    () => createInitialIntakeInterpretation(flow),
-    [flow]
+    () => createInitialIntakeInterpretation(initialFlow),
+    [initialFlow]
   );
   const appStore = useAppStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const submitInFlightRef = useRef(false);
-
-  const initialAssistantMessage = useMemo<ChatMessage>(
-    () => ({
-      id: `intro-${flow}`,
+  const [stage, setStage] = useState<IntakeStage>(requiresRouteCheck ? "route_check" : "substantive");
+  const [routeCheckIndex, setRouteCheckIndex] = useState(0);
+  const [routeCheckResult, setRouteCheckResult] = useState<ProcedureRouteResult | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: `intro-${initialFlow}`,
       role: "assistant",
-      content: `Hallo! Ik ben de BriefKompas chatbot. Ik help je bij het opstellen van je ${
-        flow === "bezwaar" ? "bezwaarschrift" : "WOO-verzoek"
-      }. ${
-        getContextualQuestion({
-          flow,
-          step: steps[0],
-          interpretation: initialInterpretation,
-          intakeData: { flow },
-        })
-      }`,
+      content: buildIntroMessage(initialFlow, initialInterpretation),
       timestamp: new Date(),
-    }),
-    [flow, initialInterpretation, steps]
-  );
-
-  const [messages, setMessages] = useState<ChatMessage[]>([initialAssistantMessage]);
+    },
+  ]);
   const [currentInput, setCurrentInput] = useState("");
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [intakeData, setIntakeData] = useState<Partial<IntakeFormData>>({ flow });
+  const [intakeData, setIntakeData] = useState<Partial<IntakeFormData>>({ flow: initialFlow });
   const [interpretationState, setInterpretationState] =
     useState<IntakeInterpretationState>(initialInterpretation);
   const [isLoading, setIsLoading] = useState(false);
   const [validationError, setValidationError] = useState("");
   const [pendingGrondenConfirmation, setPendingGrondenConfirmation] = useState<string | null>(null);
+  const [pendingStepConfirmation, setPendingStepConfirmation] = useState<PendingStepConfirmation | null>(null);
+  const [pendingWooSubjectClarification, setPendingWooSubjectClarification] =
+    useState<PendingWooSubjectClarification | null>(null);
+  const [stepPromptCounts, setStepPromptCounts] = useState<Record<string, number>>(
+    requiresRouteCheck
+      ? { [procedureCheckSteps[0].id]: 1 }
+      : steps[0]
+        ? { [steps[0].id]: 1 }
+        : {}
+  );
+  const [deferredStepIds, setDeferredStepIds] = useState<string[]>([]);
   const [isAnalyzingDocument, setIsAnalyzingDocument] = useState(false);
   const [documentAnalysisMessage, setDocumentAnalysisMessage] = useState("");
-  const currentStep = steps[currentStepIndex];
-  const currentQuestionText = currentStep
-    ? getContextualQuestion({
-        flow,
-        step: currentStep,
-        interpretation: interpretationState,
-        intakeData,
-      })
-    : null;
+  const currentStep = stage === "substantive" ? steps[currentStepIndex] : undefined;
+  const routeCheckStep = stage === "route_check" ? procedureCheckSteps[routeCheckIndex] : null;
   const bestuursorgaanOptions =
-    currentStep?.field === "bestuursorgaan"
+    stage === "substantive" && currentStep?.field === "bestuursorgaan"
       ? filterBestuursorganen(currentInput)
       : [];
+  const wooSubjectClarificationOptions =
+    activeFlow === "woo" && currentStep?.id === "onderwerp" && pendingWooSubjectClarification
+      ? pendingWooSubjectClarification.options
+      : [];
   const genericStepOptions =
-    currentStep && currentStep.field !== "bestuursorgaan"
+    stage === "substantive" && currentStep && currentStep.field !== "bestuursorgaan"
       ? getAnswerSuggestions(getSuggestedStepId(currentStep, interpretationState), currentInput)
       : [];
-  const activeOptions = currentStep?.field === "bestuursorgaan" ? bestuursorgaanOptions : genericStepOptions;
-  const inputListId = currentStep?.field === "bestuursorgaan"
-    ? "bestuursorgaan-options"
-    : currentStep
-      ? `step-options-${currentStep.id}`
-      : undefined;
-  const questionsCompleted = currentStepIndex >= steps.length;
-  const visibleStepNumber = questionsCompleted ? steps.length : Math.min(currentStepIndex + 1, steps.length);
-  const hasRequiredBezwaarFile = flow !== "bezwaar" || Boolean(intakeData.files?.besluit);
-  const isIntakeReady = questionsCompleted && hasRequiredBezwaarFile;
+  const routeConfirmOptions = stage === "route_confirm" ? ["ja", "nee"] : [];
+  const routeOverrideOptions =
+    stage === "route_override" ? homepageProcedureOptions.map((option) => option.title) : [];
+  const activeOptions =
+    routeCheckStep?.options ??
+    (stage === "route_override"
+      ? routeOverrideOptions
+      : stage === "route_confirm"
+        ? routeConfirmOptions
+      : currentStep?.field === "bestuursorgaan"
+        ? bestuursorgaanOptions
+        : wooSubjectClarificationOptions.length > 0
+          ? wooSubjectClarificationOptions
+          : genericStepOptions);
+  const inputListId = routeCheckStep
+    ? `route-check-${routeCheckStep.id}`
+    : stage === "route_override"
+      ? "route-override-options"
+      : stage === "route_confirm"
+        ? "route-confirm-options"
+      : currentStep?.field === "bestuursorgaan"
+        ? "bestuursorgaan-options"
+        : currentStep
+          ? `step-options-${currentStep.id}`
+          : undefined;
+  const questionsCompleted = stage === "substantive" && currentStepIndex >= steps.length;
+  const totalSteps = (requiresRouteCheck ? procedureCheckSteps.length : 0) + steps.length;
+  const visibleStepNumber =
+    stage === "route_check"
+      ? routeCheckIndex + 1
+      : stage === "route_confirm" || stage === "route_override"
+        ? procedureCheckSteps.length
+        : (requiresRouteCheck ? procedureCheckSteps.length : 0) +
+          (questionsCompleted ? steps.length : Math.min(currentStepIndex + 1, steps.length));
+  const hasRequiredDecisionFile =
+    !requiresDecisionUpload(activeFlow) || Boolean(intakeData.files?.besluit);
+  const isIntakeReady = stage === "substantive" && questionsCompleted && hasRequiredDecisionFile;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -200,21 +314,14 @@ export default function IntakePage() {
     setMessages((prev) => [...prev, assistantMessage]);
   };
 
-  const handleBackStep = () => {
-    if (isLoading) return;
-    if (currentStepIndex <= 0) return;
-    const previousIndex = Math.max(0, Math.min(currentStepIndex - 1, steps.length - 1));
-    setPendingGrondenConfirmation(null);
-    setValidationError("");
-    setCurrentStepIndex(previousIndex);
-    addAssistantMessage(
-      `Terug naar vorige vraag: ${getContextualQuestion({
-        flow,
-        step: steps[previousIndex],
-        interpretation: interpretationState,
-        intakeData,
-      })}`
-    );
+  const addUserMessage = (content: string) => {
+    const userMessage: ChatMessage = {
+      id: "user-" + Date.now(),
+      role: "user",
+      content,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
   };
 
   const buildUserMessage = (content: string): ChatMessage => ({
@@ -224,10 +331,347 @@ export default function IntakePage() {
     timestamp: new Date(),
   });
 
+  const incrementStepPromptCount = (stepId: string) => {
+    setStepPromptCounts((prev) => ({
+      ...prev,
+      [stepId]: (prev[stepId] ?? 0) + 1,
+    }));
+  };
+
+  const getActiveDeferredStepIds = (data: Partial<IntakeFormData>, candidateDeferredIds = deferredStepIds) => {
+    return candidateDeferredIds.filter((stepId) => {
+      const deferredStep = steps.find((item) => item.id === stepId);
+      return deferredStep ? !isChatStepSatisfied(deferredStep, data) : false;
+    });
+  };
+
+  const findNextConversationStepIndex = (
+    data: Partial<IntakeFormData>,
+    startIndex: number,
+    candidateDeferredIds = deferredStepIds
+  ) => {
+    const activeDeferredStepIds = getActiveDeferredStepIds(data, candidateDeferredIds);
+
+    for (let index = startIndex; index < steps.length; index += 1) {
+      const step = steps[index];
+      if (!isChatStepSatisfied(step, data) && !activeDeferredStepIds.includes(step.id)) {
+        return index;
+      }
+    }
+
+    for (let index = 0; index < steps.length; index += 1) {
+      const step = steps[index];
+      if (!isChatStepSatisfied(step, data)) {
+        return index;
+      }
+    }
+
+    return steps.length;
+  };
+
+  const askStepQuestion = (params: {
+    stepIndex: number;
+    data: Partial<IntakeFormData>;
+    interpretation: IntakeInterpretationState;
+    prefix?: string;
+  }) => {
+    const step = steps[params.stepIndex];
+    if (!step) {
+      return;
+    }
+
+    const question = getContextualQuestion({
+      flow: activeFlow,
+      step,
+      interpretation: params.interpretation,
+      intakeData: params.data,
+    });
+
+    setCurrentStepIndex(params.stepIndex);
+    incrementStepPromptCount(step.id);
+    addAssistantMessage(params.prefix ? `${params.prefix}${question}` : question);
+  };
+
+  const startSubstantiveFlow = (nextFlow: Flow, nextData: Partial<IntakeFormData>) => {
+    const nextInterpretation = createInitialIntakeInterpretation(nextFlow);
+    const nextSteps = getStepsByFlow(nextFlow);
+    setResolvedFlow(nextFlow);
+    setStage("substantive");
+    setCurrentStepIndex(0);
+    setDeferredStepIds([]);
+    setPendingGrondenConfirmation(null);
+    setPendingStepConfirmation(null);
+    setPendingWooSubjectClarification(null);
+    setValidationError("");
+    setCurrentInput("");
+    setStepPromptCounts(nextSteps[0] ? { [nextSteps[0].id]: 1 } : {});
+    setInterpretationState(nextInterpretation);
+    setIntakeData({
+      ...nextData,
+      flow: nextFlow,
+      procedureAdvies: nextFlow,
+      procedureBevestigd: true,
+    });
+
+    const firstQuestion = getContextualQuestion({
+      flow: nextFlow,
+      step: nextSteps[0],
+      interpretation: nextInterpretation,
+      intakeData: { ...nextData, flow: nextFlow },
+    });
+
+    addAssistantMessage(
+      `Helder. We gaan verder met ${getFlowActionLabel(nextFlow).toLowerCase()}. ${firstQuestion}`
+    );
+  };
+
+  const finalizeIntake = (data: Partial<IntakeFormData>) => {
+    setCurrentStepIndex(steps.length);
+
+    if (requiresDecisionUpload(activeFlow) && !data.files?.besluit) {
+      addAssistantMessage(getProcedureUploadHint(activeFlow));
+      return;
+    }
+
+    addAssistantMessage("Dank je! Je intake is voltooid. Klik op 'Naar Overzicht'.");
+  };
+
+  const continueToNextRelevantStep = (params: {
+    data: Partial<IntakeFormData>;
+    interpretation: IntakeInterpretationState;
+    startIndex: number;
+    prefix?: string;
+    candidateDeferredIds?: string[];
+  }) => {
+    const activeDeferredStepIds = getActiveDeferredStepIds(
+      params.data,
+      params.candidateDeferredIds ?? deferredStepIds
+    );
+    setDeferredStepIds(activeDeferredStepIds);
+
+    const nextStepIndex = findNextConversationStepIndex(
+      params.data,
+      params.startIndex,
+      activeDeferredStepIds
+    );
+
+    if (nextStepIndex < steps.length) {
+      const nextStep = steps[nextStepIndex];
+      if (activeDeferredStepIds.includes(nextStep.id)) {
+        setCurrentStepIndex(nextStepIndex);
+        incrementStepPromptCount(nextStep.id);
+        addAssistantMessage(
+          params.prefix
+            ? `${params.prefix}${getStepRecoveryPrompt(nextStep, "")}`
+            : `Ik mis nog een open punt. ${getStepRecoveryPrompt(nextStep, "")}`
+        );
+        return;
+      }
+
+      askStepQuestion({
+        stepIndex: nextStepIndex,
+        data: params.data,
+        interpretation: params.interpretation,
+        prefix: params.prefix,
+      });
+      return;
+    }
+
+    finalizeIntake(params.data);
+  };
+
+  const processRouteCheckAnswer = (answer: string) => {
+    if (!routeCheckStep) return;
+
+    const currentPromptCount = stepPromptCounts[routeCheckStep.id] ?? 1;
+    if (!validateProcedureCheckStep(routeCheckStep, answer)) {
+      if (currentPromptCount >= 2) {
+        setValidationError("");
+        addAssistantMessage(`Ik kan hier nog niet veilig op door. ${routeCheckStep.question}`);
+      } else {
+        setValidationError(getProcedureCheckValidationMessage(routeCheckStep));
+        incrementStepPromptCount(routeCheckStep.id);
+        addAssistantMessage(getProcedureCheckValidationMessage(routeCheckStep));
+      }
+      setCurrentInput("");
+      return;
+    }
+
+    addUserMessage(answer);
+    const updatedData = {
+      ...intakeData,
+      ...buildProcedureCheckPatch(routeCheckStep, answer),
+    } as Partial<IntakeFormData>;
+    setIntakeData(updatedData);
+    setValidationError("");
+    setCurrentInput("");
+
+    if (routeCheckIndex >= procedureCheckSteps.length - 1) {
+      const result = determineProcedureAdvice(updatedData);
+      setRouteCheckResult(result);
+      setStage("route_confirm");
+      setIntakeData({
+        ...updatedData,
+        procedureAdvies: result.advice,
+        procedureReden: result.explanation,
+        procedureBevestigd: false,
+      });
+      addAssistantMessage(buildProcedureConfirmationMessage(result));
+      return;
+    }
+
+    const nextIndex = routeCheckIndex + 1;
+    setRouteCheckIndex(nextIndex);
+    incrementStepPromptCount(procedureCheckSteps[nextIndex].id);
+    addAssistantMessage(procedureCheckSteps[nextIndex].question);
+  };
+
+  const processRouteConfirmation = (answer: string) => {
+    if (!routeCheckResult) return;
+
+    const normalized = answer.trim().toLowerCase();
+    addUserMessage(answer);
+    setCurrentInput("");
+    setValidationError("");
+
+    if (confirmYesValues.has(normalized)) {
+      if (routeCheckResult.advice === "bezwaarfase" || routeCheckResult.advice === "niet_tijdig_beslissen") {
+        setStage("route_override");
+        addAssistantMessage(
+          `${routeCheckResult.explanation} Voor deze situatie is geen standaardmodule beschikbaar. ${buildManualProcedureOverrideMessage()}`
+        );
+        return;
+      }
+
+      startSubstantiveFlow(routeCheckResult.advice, {
+        ...intakeData,
+        procedureAdvies: routeCheckResult.advice,
+        procedureReden: routeCheckResult.explanation,
+        procedureBevestigd: true,
+      });
+      return;
+    }
+
+    if (confirmNoValues.has(normalized)) {
+      setStage("route_override");
+      addAssistantMessage(buildManualProcedureOverrideMessage());
+      return;
+    }
+
+    setValidationError("Antwoord met 'ja' of 'nee'.");
+    addAssistantMessage("Laat even weten of dit klopt. Antwoord met 'ja' of 'nee'.");
+  };
+
+  const processManualRouteOverride = (answer: string) => {
+    const manualFlow = parseManualFlowOverride(answer);
+    if (!manualFlow) {
+      setValidationError(
+        "Kies zienswijze, bezwaar, beroep zonder bezwaar, beroep na bezwaar of WOO-verzoek."
+      );
+      addAssistantMessage(buildManualProcedureOverrideMessage());
+      setCurrentInput("");
+      return;
+    }
+
+    addUserMessage(answer);
+    const overrideReason = `Gebruiker heeft handmatig gekozen voor ${getFlowLabel(manualFlow)} na de procedurecheck.`;
+    setRouteCheckResult({
+      advice: manualFlow,
+      explanation: overrideReason,
+    });
+    startSubstantiveFlow(manualFlow, {
+      ...intakeData,
+      procedureAdvies: manualFlow,
+      procedureReden: overrideReason,
+      procedureBevestigd: true,
+    });
+  };
+
+  const getStepRecoveryPrompt = (
+    step: ReturnType<typeof getStepsByFlow>[number],
+    answer: string
+  ) => {
+    if (activeFlow === "woo" && step.id === "onderwerp") {
+      if (pendingWooSubjectClarification?.baseTopic) {
+        return `Ik wil eerst scherper krijgen wat je precies zoekt over ${pendingWooSubjectClarification.baseTopic}. Kies bijvoorbeeld uit besluiten en onderbouwing, interne e-mails en afstemming, beleidskeuzes en notities, of uitvoering en financiele informatie.`;
+      }
+
+      return "Omschrijf eerst wat je inhoudelijk wilt achterhalen. Gaat het bijvoorbeeld om besluiten en onderbouwing, interne e-mails en afstemming, beleidskeuzes en notities, of uitvoering en financiele informatie?";
+    }
+
+    if (step.id === "periode") {
+      const interpretation = interpretWooPeriodAnswer(answer);
+      if (interpretation.status === "ambiguous" && interpretation.clarificationPrompt) {
+        return interpretation.clarificationPrompt;
+      }
+
+      return "Ik mis nog een bruikbare periode. Je mag bijvoorbeeld antwoorden met 'laatste twee jaar', 'januari 2023 tot januari 2024' of 'sinds 2020'.";
+    }
+
+    switch (step.id) {
+      case "bestuursorgaan":
+        return "Ik mis nog het bestuursorgaan. Noem bijvoorbeeld 'gemeente Utrecht', 'Belastingdienst' of 'UWV'.";
+      case "categorie":
+        return "Ik heb nog niet scherp om wat voor besluit het gaat. Is het een vergunning, uitkering, boete, belastingzaak of iets anders?";
+      case "doel":
+        return "Ik hoor nog niet precies wat je wilt bereiken. Gaat het je om intrekking, herziening, aanpassing, verlaging of een nieuw besluit?";
+      case "gronden":
+        return "Ik mis nog waarom het besluit volgens jou niet klopt. Noem bijvoorbeeld wat onjuist is, wat niet is meegewogen of waarom de gevolgen te zwaar zijn.";
+      case "documenten":
+        return "Ik mis nog welke stukken je zoekt. Denk aan e-mails, memo's, rapporten, notulen of besluiten.";
+      case "digitale_verstrekking":
+        return "Laat even weten of je digitale verstrekking wilt: antwoord met 'ja' of 'nee'.";
+      case "spoed":
+        return "Laat even weten of er spoed is: antwoord met 'ja' of 'nee'.";
+      default:
+        return `Ik kan nog niet door op basis van dit antwoord. ${step.question}`;
+    }
+  };
+
+  const handleBackStep = () => {
+    if (isLoading) return;
+    setPendingGrondenConfirmation(null);
+    setPendingStepConfirmation(null);
+    setPendingWooSubjectClarification(null);
+    setValidationError("");
+
+    if (stage === "route_check") {
+      if (routeCheckIndex <= 0) return;
+      const previousIndex = routeCheckIndex - 1;
+      setRouteCheckIndex(previousIndex);
+      incrementStepPromptCount(procedureCheckSteps[previousIndex].id);
+      addAssistantMessage(`Terug naar vorige vraag: ${procedureCheckSteps[previousIndex].question}`);
+      return;
+    }
+
+    if (stage === "route_confirm" || stage === "route_override") {
+      setStage("route_check");
+      setRouteCheckIndex(Math.max(0, procedureCheckSteps.length - 1));
+      incrementStepPromptCount(procedureCheckSteps[procedureCheckSteps.length - 1].id);
+      addAssistantMessage(
+        `Terug naar vorige vraag: ${procedureCheckSteps[procedureCheckSteps.length - 1].question}`
+      );
+      return;
+    }
+
+    if (currentStepIndex <= 0) return;
+    const previousIndex = Math.max(0, Math.min(currentStepIndex - 1, steps.length - 1));
+    setCurrentStepIndex(previousIndex);
+    incrementStepPromptCount(steps[previousIndex].id);
+    addAssistantMessage(
+      `Terug naar vorige vraag: ${getContextualQuestion({
+        flow: activeFlow,
+        step: steps[previousIndex],
+        interpretation: interpretationState,
+        intakeData,
+      })}`
+    );
+  };
+
   const processStepAnswer = (answer: string) => {
     if (!currentStep) return;
     const interpretedTurn = interpretIntakeTurn({
-      flow,
+      flow: activeFlow,
       latestUserMessage: answer,
       currentStep,
       intakeData,
@@ -239,24 +683,47 @@ export default function IntakePage() {
       ...intakeData,
       ...interpretedTurn.patch,
       ...currentStepPatch,
+      flow: activeFlow,
     } as Partial<IntakeFormData>;
     const currentFieldSatisfied = isChatStepSatisfied(currentStep, updatedData);
 
     if (!currentFieldSatisfied) {
+      const currentPromptCount = stepPromptCounts[currentStep.id] ?? 1;
       const semanticOnlyData = {
         ...intakeData,
         ...interpretedTurn.patch,
+        flow: activeFlow,
       } as Partial<IntakeFormData>;
       setInterpretationState(interpretedTurn.state);
       setIntakeData(semanticOnlyData);
       setPendingGrondenConfirmation(null);
-      addAssistantMessage(
-        getContextualQuestion({
-          flow,
-          step: currentStep,
+      setPendingStepConfirmation(null);
+      setPendingWooSubjectClarification(null);
+
+      if (currentPromptCount >= 2) {
+        const deferredIds = Array.from(new Set([...deferredStepIds, currentStep.id]));
+        continueToNextRelevantStep({
+          data: semanticOnlyData,
           interpretation: interpretedTurn.state,
-          intakeData: semanticOnlyData,
-        })
+          startIndex: currentStepIndex + 1,
+          prefix: "Ik laat deze informatie even open en ga door naar het volgende punt. ",
+          candidateDeferredIds: deferredIds,
+        });
+        setDeferredStepIds(getActiveDeferredStepIds(semanticOnlyData, deferredIds));
+        setCurrentInput("");
+        return;
+      }
+
+      incrementStepPromptCount(currentStep.id);
+      addAssistantMessage(
+        interpretedTurn.hasMeaningfulAdvance
+          ? getContextualQuestion({
+              flow: activeFlow,
+              step: currentStep,
+              interpretation: interpretedTurn.state,
+              intakeData: semanticOnlyData,
+            })
+          : getStepRecoveryPrompt(currentStep, answer)
       );
       setCurrentInput("");
       return;
@@ -265,6 +732,8 @@ export default function IntakePage() {
     setInterpretationState(interpretedTurn.state);
     setIntakeData(updatedData);
     setPendingGrondenConfirmation(null);
+    setPendingStepConfirmation(null);
+    setPendingWooSubjectClarification(null);
 
     const followUp = needsFollowUp(updatedData as IntakeFormData, currentStep.id);
 
@@ -274,37 +743,11 @@ export default function IntakePage() {
       return;
     }
 
-    const nextStepIndex = findNextUnansweredStepIndex(steps, updatedData, currentStepIndex + 1);
-
-    if (nextStepIndex < steps.length) {
-      const nextStep = steps[nextStepIndex];
-      setCurrentStepIndex(nextStepIndex);
-      addAssistantMessage(
-        getContextualQuestion({
-          flow,
-          step: nextStep,
-          interpretation: interpretedTurn.state,
-          intakeData: updatedData,
-        })
-      );
-      setCurrentInput("");
-      return;
-    }
-
-    if (flow === "bezwaar") {
-      setCurrentStepIndex(steps.length);
-      if (updatedData.files?.besluit) {
-        addAssistantMessage("Dank je! Je intake is voltooid. Klik op 'Naar Overzicht'.");
-      } else {
-        addAssistantMessage(
-          "Prima! Upload nu je besluit als PDF of maak met je telefoon een foto. Datum, kenmerk en een korte samenvatting halen we daar automatisch uit."
-        );
-      }
-    } else {
-      setCurrentStepIndex(steps.length);
-      addAssistantMessage("Dank je! Je intake is voltooid. Klik op 'Naar Overzicht'.");
-    }
-
+    continueToNextRelevantStep({
+      data: updatedData,
+      interpretation: interpretedTurn.state,
+      startIndex: currentStepIndex + 1,
+    });
     setCurrentInput("");
   };
 
@@ -312,8 +755,88 @@ export default function IntakePage() {
     if (submitInFlightRef.current) return;
 
     const trimmedInput = currentInput.trim();
-    if (!trimmedInput || !currentStep) {
+    if (!trimmedInput) {
       setValidationError("Vul een antwoord in");
+      return;
+    }
+
+    if (stage === "route_check") {
+      processRouteCheckAnswer(trimmedInput);
+      return;
+    }
+
+    if (stage === "route_confirm") {
+      processRouteConfirmation(trimmedInput);
+      return;
+    }
+
+    if (stage === "route_override") {
+      processManualRouteOverride(trimmedInput);
+      return;
+    }
+
+    if (!currentStep) {
+      setValidationError("Er is geen actieve vraag om te beantwoorden.");
+      return;
+    }
+
+    if (pendingStepConfirmation) {
+      const normalizedConfirmation = trimmedInput.toLowerCase();
+
+      if (confirmYesValues.has(normalizedConfirmation)) {
+        const userMessage = buildUserMessage(trimmedInput);
+        setMessages((prev) => [...prev, userMessage]);
+        setPendingStepConfirmation(null);
+        setValidationError("");
+        processStepAnswer(pendingStepConfirmation.value);
+        return;
+      }
+
+      if (confirmNoValues.has(normalizedConfirmation)) {
+        const userMessage = buildUserMessage(trimmedInput);
+        setMessages((prev) => [...prev, userMessage]);
+        setPendingStepConfirmation(null);
+        setValidationError("");
+        incrementStepPromptCount(currentStep.id);
+        addAssistantMessage(getStepRecoveryPrompt(currentStep, trimmedInput));
+        setCurrentInput("");
+        return;
+      }
+
+      setPendingStepConfirmation(null);
+    }
+
+    if (activeFlow === "woo" && currentStep.id === "onderwerp" && pendingWooSubjectClarification) {
+      const userMessage = buildUserMessage(trimmedInput);
+      setMessages((prev) => [...prev, userMessage]);
+
+      const clarificationInterpretation = interpretWooSubjectAnswer(
+        trimmedInput,
+        pendingWooSubjectClarification.baseTopic
+      );
+
+      if (
+        clarificationInterpretation.status === "valid" &&
+        clarificationInterpretation.normalizedValue
+      ) {
+        setPendingWooSubjectClarification(null);
+        setValidationError("");
+        processStepAnswer(clarificationInterpretation.normalizedValue);
+        return;
+      }
+
+      setValidationError(getValidationErrorMessage(currentStep, trimmedInput));
+      incrementStepPromptCount(currentStep.id);
+      setPendingWooSubjectClarification({
+        baseTopic: pendingWooSubjectClarification.baseTopic,
+        options: clarificationInterpretation.clarificationOptions
+          ? [...clarificationInterpretation.clarificationOptions]
+          : [...WOO_SUBJECT_CLARIFICATION_OPTIONS],
+      });
+      addAssistantMessage(
+        clarificationInterpretation.clarificationPrompt ?? getStepRecoveryPrompt(currentStep, trimmedInput)
+      );
+      setCurrentInput("");
       return;
     }
 
@@ -351,8 +874,30 @@ export default function IntakePage() {
       return;
     }
 
+    if (activeFlow === "woo" && currentStep.id === "onderwerp") {
+      const subjectInterpretation = interpretWooSubjectAnswer(trimmedInput);
+      if (
+        subjectInterpretation.status === "needs_clarification" &&
+        subjectInterpretation.clarificationPrompt
+      ) {
+        const userMessage = buildUserMessage(trimmedInput);
+        setMessages((prev) => [...prev, userMessage]);
+        setPendingWooSubjectClarification({
+          baseTopic: trimmedInput,
+          options: subjectInterpretation.clarificationOptions
+            ? [...subjectInterpretation.clarificationOptions]
+            : [...WOO_SUBJECT_CLARIFICATION_OPTIONS],
+        });
+        setValidationError("");
+        incrementStepPromptCount(currentStep.id);
+        addAssistantMessage(subjectInterpretation.clarificationPrompt);
+        setCurrentInput("");
+        return;
+      }
+    }
+
     const interpretedTurn = interpretIntakeTurn({
-      flow,
+      flow: activeFlow,
       latestUserMessage: trimmedInput,
       currentStep,
       intakeData,
@@ -363,29 +908,73 @@ export default function IntakePage() {
       ...intakeData,
       ...interpretedTurn.patch,
       ...currentStepPatch,
+      flow: activeFlow,
     } as Partial<IntakeFormData>;
-    const isPureClarifyingQuestion = isLikelyClarifyingQuestion(trimmedInput) && !interpretedTurn.hasMeaningfulAdvance;
+    const isPureClarifyingQuestion =
+      isLikelyClarifyingQuestion(trimmedInput) && !interpretedTurn.hasMeaningfulAdvance;
     const currentFieldWouldBeSatisfied =
       !isPureClarifyingQuestion && isChatStepSatisfied(currentStep, semanticPreviewData);
     const validationMessage =
       !currentFieldWouldBeSatisfied && !interpretedTurn.hasMeaningfulAdvance
         ? getContextualValidationMessage({
-            flow,
+            flow: activeFlow,
             step: currentStep,
             interpretation: interpretedTurn.state,
           }) || getValidationErrorMessage(currentStep, trimmedInput)
         : "";
 
     if (validationMessage) {
-      setValidationError(validationMessage);
-      if (isPureClarifyingQuestion) {
-        addAssistantMessage(
-          `Ik kan pas doorgaan zodra je deze vraag beantwoordt: ${
-            currentQuestionText ?? currentStep.question
-          }`
-        );
+      const currentPromptCount = stepPromptCounts[currentStep.id] ?? 1;
+
+      if (currentPromptCount >= 2) {
+        setValidationError("");
+        const deferredIds = Array.from(new Set([...deferredStepIds, currentStep.id]));
+        setInterpretationState(interpretedTurn.state);
+        setIntakeData({
+          ...intakeData,
+          ...interpretedTurn.patch,
+          flow: activeFlow,
+        } as Partial<IntakeFormData>);
+        continueToNextRelevantStep({
+          data: {
+            ...intakeData,
+            ...interpretedTurn.patch,
+            flow: activeFlow,
+          } as Partial<IntakeFormData>,
+          interpretation: interpretedTurn.state,
+          startIndex: currentStepIndex + 1,
+          prefix: "Ik laat dit punt heel even open en pak eerst het volgende onderdeel. ",
+          candidateDeferredIds: deferredIds,
+        });
+        setCurrentInput("");
+      } else {
+        setValidationError(validationMessage);
+        incrementStepPromptCount(currentStep.id);
+        addAssistantMessage(getStepRecoveryPrompt(currentStep, trimmedInput));
+        setCurrentInput("");
       }
       return;
+    }
+
+    if (currentStep.id === "periode") {
+      const periodInterpretation = interpretWooPeriodAnswer(trimmedInput);
+      if (
+        periodInterpretation.status === "valid" &&
+        periodInterpretation.normalizedValue &&
+        periodInterpretation.confirmationPrompt
+      ) {
+        const userMessage = buildUserMessage(trimmedInput);
+        setMessages((prev) => [...prev, userMessage]);
+        setPendingStepConfirmation({
+          stepId: currentStep.id,
+          value: periodInterpretation.normalizedValue,
+        });
+        setCurrentInput("");
+        setValidationError("");
+        incrementStepPromptCount(currentStep.id);
+        addAssistantMessage(periodInterpretation.confirmationPrompt);
+        return;
+      }
     }
 
     if (currentStep.id === "gronden" && trimmedInput.length < shortGrondenThreshold) {
@@ -488,7 +1077,7 @@ export default function IntakePage() {
 
     setIntakeData(updatedData);
 
-    if (flow === "bezwaar") {
+    if (supportsDecisionUpload(activeFlow)) {
       const extractionNotes: string[] = [];
       if (updatedData.datumBesluit) extractionNotes.push(`datum: ${updatedData.datumBesluit}`);
       if (updatedData.kenmerk) extractionNotes.push(`kenmerk: ${updatedData.kenmerk}`);
@@ -533,20 +1122,41 @@ export default function IntakePage() {
 
   const handleContinue = () => {
     if (!isIntakeReady) return;
-    const finalizedData = { ...intakeData, flow } as IntakeFormData;
+    const finalizedData = { ...intakeData, flow: activeFlow } as IntakeFormData;
     appStore.setIntakeData(finalizedData);
     sessionStorage.setItem("briefkompas_intake", JSON.stringify(finalizedData));
-    router.push(`/review/${flow}`);
+    router.push(`/review/${activeFlow}`);
   };
+
+  const procedureSummaryLabel =
+    routeCheckResult?.advice === "bezwaarfase"
+      ? "U zit nog in de bezwaarfase"
+      : routeCheckResult?.advice === "niet_tijdig_beslissen"
+        ? "Niet tijdig beslissen"
+        : routeCheckResult
+          ? getFlowActionLabel(routeCheckResult.advice)
+          : null;
 
   return (
     <div className="max-w-2xl mx-auto min-h-[78vh] flex flex-col justify-center">
       <Card>
         <StepHeader
           currentStep={visibleStepNumber}
-          totalSteps={steps.length}
+          totalSteps={totalSteps}
           title="Intake Interview"
         />
+
+        {routeCheckResult && (
+          <Alert type="info" title="Voorgestelde procedure">
+            <span className="block font-semibold text-[var(--foreground)]">
+              Wij gaan uit van: {procedureSummaryLabel}
+            </span>
+            <span className="block pt-2">{routeCheckResult.explanation}</span>
+            <span className="block pt-2 text-xs opacity-80">
+              Je kunt dit in de chat bevestigen of corrigeren.
+            </span>
+          </Alert>
+        )}
 
         <div className="bg-white rounded-xl border border-[var(--border)] p-4 mb-4 h-96 overflow-y-auto chat-container">
           {messages.map((msg) => (
@@ -555,7 +1165,7 @@ export default function IntakePage() {
           <div ref={messagesEndRef} />
         </div>
 
-        {!isIntakeReady && currentStepIndex < steps.length && (
+        {(!isIntakeReady && stage !== "substantive") || (!isIntakeReady && currentStepIndex < steps.length) ? (
           <div className="space-y-3 mb-4">
             <Input
               placeholder="Typ je antwoord..."
@@ -588,7 +1198,44 @@ export default function IntakePage() {
                     Je kunt ook korte doelen gebruiken, zoals: intrekken, herzien of aanpassen.
                   </p>
                 )}
+                {stage === "route_check" && routeCheckStep && (
+                  <p className="text-xs text-[var(--muted)]">
+                    Beantwoord eerst deze procedurevraag. Daarna bepaal ik welke route het best past.
+                  </p>
+                )}
+                {stage === "route_confirm" && (
+                  <p className="text-xs text-[var(--muted)]">
+                    Bevestig of corrigeer de voorgestelde procedure.
+                  </p>
+                )}
+                {stage === "route_override" && (
+                  <p className="text-xs text-[var(--muted)]">
+                    Kies handmatig welke module je wilt gebruiken.
+                  </p>
+                )}
+                {activeFlow === "woo" && currentStep?.id === "onderwerp" && pendingWooSubjectClarification && (
+                  <p className="text-xs text-[var(--muted)]">
+                    Kies wat het beste past, of typ zelf specifieker wat je inhoudelijk wilt achterhalen.
+                  </p>
+                )}
               </>
+            )}
+            {activeFlow === "woo" && currentStep?.id === "onderwerp" && pendingWooSubjectClarification && (
+              <div className="flex flex-wrap gap-2">
+                {pendingWooSubjectClarification.options.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => {
+                      setCurrentInput(option);
+                      setValidationError("");
+                    }}
+                    className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs text-[var(--foreground)] hover:bg-[var(--surface-soft)]"
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
             )}
             {currentStep?.id === "gronden" && (
               <div className="flex flex-wrap gap-2">
@@ -616,12 +1263,16 @@ export default function IntakePage() {
               Volgende
             </Button>
           </div>
-        )}
+        ) : null}
 
-        {flow === "bezwaar" && !isIntakeReady && (
+        {supportsDecisionUpload(activeFlow) && !isIntakeReady && stage === "substantive" && (
           <div className="space-y-4">
             <UploadBox
-              label="Upload of fotografeer je besluit (verplicht)"
+              label={
+                requiresDecisionUpload(activeFlow)
+                  ? "Upload of fotografeer je besluit (verplicht)"
+                  : "Upload of fotografeer je besluit of ontwerpbesluit (optioneel)"
+              }
               accept="application/pdf,image/jpeg,image/png,image/webp"
               descriptionText="Sleep je besluit hier of"
               actionText="maak een foto of kies een bestand"
@@ -630,7 +1281,7 @@ export default function IntakePage() {
               disabled={isAnalyzingDocument}
               onFileSelect={handleFileSelect}
               uploadedFiles={intakeData.files?.besluit ? [intakeData.files.besluit] : []}
-              required
+              required={requiresDecisionUpload(activeFlow)}
             />
 
             {isAnalyzingDocument && (
@@ -707,7 +1358,12 @@ export default function IntakePage() {
           <Button
             variant="secondary"
             onClick={handleBackStep}
-            disabled={isLoading || currentStepIndex === 0}
+            disabled={
+              isLoading ||
+              (stage === "route_check" && routeCheckIndex === 0) ||
+              ((stage === "route_confirm" || stage === "route_override") && procedureCheckSteps.length === 0) ||
+              (stage === "substantive" && currentStepIndex === 0)
+            }
             className="flex-1"
           >
             Vorige vraag

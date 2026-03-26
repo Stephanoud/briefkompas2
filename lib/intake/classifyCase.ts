@@ -122,6 +122,15 @@ export function classifyCase(input: {
     };
   }
 
+  if (flow === "zienswijze" || flow === "beroep_zonder_bezwaar" || flow === "beroep_na_bezwaar") {
+    return {
+      caseType: "algemeen_bestuursrecht",
+      confidence: 0.95,
+      reasons: [`Flow '${flow}' geselecteerd na procedurecheck.`],
+      needsClarification: false,
+    };
+  }
+
   const haystack = combineSignals(intakeData);
   const categorie = normalizeText(intakeData.categorie);
   const scored = scoreCaseType(haystack, categorie).sort((a, b) => b.score - a.score);

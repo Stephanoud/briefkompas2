@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { getStepsByFlow } from "@/lib/intake-flow";
+import { getStepsByFlow, interpretWooPeriodAnswer, interpretWooSubjectAnswer } from "@/lib/intake-flow";
+import { determineProcedureAdvice } from "@/lib/procedure-route";
 import {
   createInitialIntakeInterpretation,
   findNextUnansweredStepIndex,
@@ -230,5 +231,116 @@ test.describe("Contextual intake interpretation", () => {
     expect(turn.hasMeaningfulAdvance).toBeFalsy();
     expect(turn.patch.wooPeriode).toBeUndefined();
     expect(turn.state.missingFacts).toContain("woo_periode");
+  });
+
+  test("11. laatste twee jaar telt als geldige woo-periode", () => {
+    const interpretation = interpretWooPeriodAnswer("laatste twee jaar");
+
+    expect(interpretation.status).toBe("valid");
+    expect(interpretation.normalizedValue).toBe("laatste twee jaar");
+
+    const turn = interpretIntakeTurn({
+      flow: "woo",
+      latestUserMessage: "laatste twee jaar",
+      currentStep: wooSteps[2],
+      intakeData: {
+        flow: "woo",
+        bestuursorgaan: "Gemeente Amsterdam",
+        wooOnderwerp: "Subsidies en communicatie over wijkprojecten in Amsterdam-Zuid.",
+      },
+      previousState: createInitialIntakeInterpretation("woo"),
+    });
+
+    expect(turn.patch.wooPeriode).toBe("laatste twee jaar");
+    expect(turn.state.missingFacts).not.toContain("woo_periode");
+  });
+
+  test("12. sinds corona wordt geïnterpreteerd als circa 2020 tot heden met bevestiging", () => {
+    const interpretation = interpretWooPeriodAnswer("ongeveer sinds corona");
+
+    expect(interpretation.status).toBe("valid");
+    expect(interpretation.normalizedValue).toBe("ongeveer sinds 2020 tot heden");
+    expect(interpretation.confirmationPrompt).toContain("2020 tot heden");
+  });
+
+  test("13. recent blijft ambigu en vraagt om concretisering", () => {
+    const interpretation = interpretWooPeriodAnswer("recent");
+
+    expect(interpretation.status).toBe("ambiguous");
+    expect(interpretation.clarificationPrompt).toContain("concretiseren");
+  });
+
+  test("14. summier woo-onderwerp vraagt eerst om inhoudelijke concretisering", () => {
+    const interpretation = interpretWooSubjectAnswer("subsidies");
+
+    expect(interpretation.status).toBe("needs_clarification");
+    expect(interpretation.clarificationPrompt).toContain("wat je precies zoekt");
+    expect(interpretation.clarificationOptions).toHaveLength(4);
+  });
+
+  test("15. keuze-optie maakt een summier woo-onderwerp voldoende scherp", () => {
+    const interpretation = interpretWooSubjectAnswer("interne e-mails en afstemming", "subsidies");
+
+    expect(interpretation.status).toBe("valid");
+    expect(interpretation.normalizedValue).toContain("subsidies");
+    expect(interpretation.normalizedValue).toContain("interne e-mails en afstemming");
+  });
+
+  test("16. procedurecheck routeert beslissing op bezwaar naar beroep na bezwaar", () => {
+    const result = determineProcedureAdvice({
+      flow: "bezwaar",
+      heeftOfficieelBesluit: true,
+      heeftBeslissingOpBezwaar: true,
+      heeftBezwaarGemaakt: true,
+      bestuursorgaan: "Gemeente Amsterdam",
+      doel: "vernietiging",
+      files: {},
+    });
+
+    expect(result.advice).toBe("beroep_na_bezwaar");
+  });
+
+  test("17. procedurecheck routeert ontwerpbesluit met zienswijzemogelijkheid naar beroep zonder bezwaar", () => {
+    const result = determineProcedureAdvice({
+      flow: "bezwaar",
+      heeftOfficieelBesluit: true,
+      hadOntwerpbesluit: true,
+      konZienswijzeIndienen: true,
+      heeftZienswijzeIngediend: true,
+      bestuursorgaan: "Gemeente Amsterdam",
+      doel: "vernietiging",
+      files: {},
+    });
+
+    expect(result.advice).toBe("beroep_zonder_bezwaar");
+  });
+
+  test("18. procedurecheck routeert alleen een besluit naar bezwaar", () => {
+    const result = determineProcedureAdvice({
+      flow: "bezwaar",
+      heeftOfficieelBesluit: true,
+      hadOntwerpbesluit: false,
+      konZienswijzeIndienen: false,
+      heeftBezwaarGemaakt: false,
+      bestuursorgaan: "Gemeente Amsterdam",
+      doel: "herziening",
+      files: {},
+    });
+
+    expect(result.advice).toBe("bezwaar");
+  });
+
+  test("19. procedurecheck routeert reactie op ontwerp naar zienswijze", () => {
+    const result = determineProcedureAdvice({
+      flow: "bezwaar",
+      heeftOfficieelBesluit: false,
+      hadOntwerpbesluit: true,
+      konZienswijzeIndienen: true,
+      bestuursorgaan: "Gemeente Amsterdam",
+      doel: "aanpassing",
+      files: {},
+    });
+
+    expect(result.advice).toBe("zienswijze");
   });
 });

@@ -1,6 +1,6 @@
 import { ChatStep, Flow, IntakeFormData } from "@/types";
 import { bestuursorgaanSuggestions } from "@/lib/intake/bestuursorganen";
-import { isLikelyClarifyingQuestion } from "@/lib/intake-flow";
+import { interpretWooPeriodAnswer, interpretWooSubjectAnswer, isLikelyClarifyingQuestion } from "@/lib/intake-flow";
 
 export type IntakeMainIntent =
   | "besluit_aanvechten"
@@ -281,6 +281,14 @@ function buildMissingFacts(flow: Flow, intakeData: Partial<IntakeFormData>, stat
     return missing;
   }
 
+  if (flow === "zienswijze") {
+    const missing: MissingFactKey[] = [];
+    if (!hasValue(intakeData.bestuursorgaan)) missing.push("bestuursorgaan");
+    if (!hasValue(intakeData.doel)) missing.push("doel");
+    if (!hasValue(intakeData.gronden)) missing.push("gronden");
+    return missing;
+  }
+
   const missing: MissingFactKey[] = [];
   if (!hasValue(intakeData.bestuursorgaan)) missing.push("bestuursorgaan");
   if (!hasValue(intakeData.categorie) && state.procedureObject === "besluit") missing.push("procedure_object");
@@ -326,15 +334,22 @@ function changedPatchKeys(previous: Partial<IntakeFormData>, patch: Partial<Inta
 
 export function createInitialIntakeInterpretation(flow: Flow): IntakeInterpretationState {
   return {
-    mainIntent: flow === "woo" ? "woo_verzoek" : "orientatie",
+    mainIntent: flow === "woo" ? "woo_verzoek" : flow === "zienswijze" ? "besluit_aanvechten" : "orientatie",
     procedureObject: flow === "woo" ? "woo_verzoek" : "ander_bestuursrechtelijk_object",
-    processPhase: "orientatie",
+    processPhase:
+      flow === "beroep_zonder_bezwaar" || flow === "beroep_na_bezwaar"
+        ? "beroep"
+        : flow === "bezwaar"
+          ? "bezwaar"
+          : "orientatie",
     desiredOutcome: null,
     knownFacts: {},
     missingFacts:
       flow === "woo"
         ? ["bestuursorgaan", "woo_onderwerp", "woo_periode", "woo_documenten"]
-        : ["bestuursorgaan", "procedure_object", "doel", "gronden"],
+        : flow === "zienswijze"
+          ? ["bestuursorgaan", "doel", "gronden"]
+          : ["bestuursorgaan", "procedure_object", "doel", "gronden"],
     excludedPaths: [],
     lastUserMessage: "",
     reasoning: [],
@@ -392,11 +407,24 @@ export function interpretIntakeTurn(params: {
   }
 
   if (flow === "woo") {
-    if (!pureClarifyingQuestion && currentStep?.id === "onderwerp" && !hasValue(intakeData.wooOnderwerp) && normalized.length > 8) {
-      patch.wooOnderwerp = text;
+    const subjectInterpretation = interpretWooSubjectAnswer(text);
+    if (
+      !pureClarifyingQuestion &&
+      currentStep?.id === "onderwerp" &&
+      !hasValue(intakeData.wooOnderwerp) &&
+      subjectInterpretation.status === "valid" &&
+      subjectInterpretation.normalizedValue
+    ) {
+      patch.wooOnderwerp = subjectInterpretation.normalizedValue;
     }
-    if (!pureClarifyingQuestion && currentStep?.id === "periode" && !hasValue(intakeData.wooPeriode) && normalized.length > 5) {
-      patch.wooPeriode = text;
+    const periodInterpretation = interpretWooPeriodAnswer(text);
+    if (
+      !pureClarifyingQuestion &&
+      !hasValue(intakeData.wooPeriode) &&
+      periodInterpretation.status === "valid" &&
+      periodInterpretation.normalizedValue
+    ) {
+      patch.wooPeriode = periodInterpretation.normalizedValue;
     }
     if (!pureClarifyingQuestion && currentStep?.id === "documenten" && !hasValue(intakeData.wooDocumenten) && normalized.length > 5) {
       patch.wooDocumenten = text;
@@ -479,6 +507,30 @@ export function getContextualQuestion(params: {
       return step.question;
     }
 
+    return step.question;
+  }
+
+  if (flow === "zienswijze") {
+    if (step.id === "gronden" && interpretation.knownFacts.grounds?.toLowerCase().includes("geluid")) {
+      return "Welke concrete bezwaren wil je in je zienswijze noemen, bijvoorbeeld over geluid, verkeer, privacy of leefomgeving?";
+    }
+    return step.question;
+  }
+
+  if (flow === "beroep_zonder_bezwaar") {
+    if (step.id === "gronden" && interpretation.procedureObject === "vergunning") {
+      return "Waarom is dit primaire vergunningbesluit volgens jou onjuist en waarom wil je dat de rechtbank ingrijpt?";
+    }
+    return step.question;
+  }
+
+  if (flow === "beroep_na_bezwaar") {
+    if (step.id === "gronden") {
+      return "Wat heeft het bestuursorgaan in de beslissing op bezwaar volgens jou nog steeds niet goed uitgelegd of meegewogen?";
+    }
+    if (step.id === "doel") {
+      return "Wat wil je dat de rechtbank doet met de beslissing op bezwaar?";
+    }
     return step.question;
   }
 
