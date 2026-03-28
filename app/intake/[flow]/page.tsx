@@ -16,6 +16,12 @@ import {
 import { getAnswerSuggestions, grondenFallbackOptions } from "@/lib/intake/answerSuggestions";
 import { filterBestuursorganen } from "@/lib/intake/bestuursorganen";
 import {
+  buildIntakeAssistantFallbackReply,
+  IntakeAssistantReason,
+  IntakeAssistantRequest,
+  IntakeAssistantResponse,
+} from "@/lib/intake/assistant-guidance";
+import {
   createInitialIntakeInterpretation,
   getContextualQuestion,
   getContextualValidationMessage,
@@ -156,6 +162,19 @@ function hasReadableDecisionExtraction(data: Partial<IntakeFormData>): boolean {
       data.besluitAnalyse ||
       data.besluitDocumentType
   );
+}
+
+function shouldTreatAsClarifyingQuestion(
+  value: string,
+  hasMeaningfulAdvance: boolean,
+  currentFieldWouldBeSatisfied: boolean
+): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed.includes("?")) return true;
+  if (!isLikelyClarifyingQuestion(trimmed)) return false;
+  if (!currentFieldWouldBeSatisfied) return true;
+  return /^(wat|hoe|waarom|welke|wanneer|wie|mag|moet)\b/i.test(trimmed) && !hasMeaningfulAdvance;
 }
 
 function getDocumentSourceLabel(source?: IntakeFormData["besluitBronType"]): string | null {
@@ -458,6 +477,113 @@ export default function IntakePage() {
     addAssistantMessage(prefix ? `${prefix}${question}` : question);
   };
 
+  const buildResumePrompt = (
+    answer: string,
+    nextInterpretation: IntakeInterpretationState,
+    nextData: Partial<IntakeFormData>
+  ) => {
+    if (!currentStep) return "";
+
+    if (pendingStepConfirmation) {
+      return "Laat even weten of dit klopt. Antwoord met 'ja' of 'nee'.";
+    }
+
+    if (currentStep.id === "gronden" && pendingGrondenConfirmation) {
+      return "Als dit alles is, typ dan 'ja, doorgaan'. Wil je nog aanvullen, typ dan verder.";
+    }
+
+    if (activeFlow === "woo" && currentStep.id === "onderwerp" && pendingWooSubjectClarification) {
+      return getStepRecoveryPrompt(currentStep, answer);
+    }
+
+    return getContextualQuestion({
+      flow: activeFlow,
+      step: currentStep,
+      interpretation: nextInterpretation,
+      intakeData: nextData,
+    });
+  };
+
+  const requestAssistantGuidance = async (params: {
+    userMessage: string;
+    reason: IntakeAssistantReason;
+    interpretedTurn: ReturnType<typeof interpretIntakeTurn>;
+    semanticPreviewData: Partial<IntakeFormData>;
+  }) => {
+    const requestBody: IntakeAssistantRequest = {
+      flow: activeFlow,
+      reason: params.reason,
+      userMessage: params.userMessage,
+      currentStepId: currentStep?.id,
+      currentStepQuestion: currentStep?.question,
+      intakeData: params.semanticPreviewData,
+      missingFacts: params.interpretedTurn.state.missingFacts,
+      routeExplanation: routeCheckResult?.explanation,
+      documentAnalysisMessage,
+    };
+
+    try {
+      const response = await fetch("/api/intake-assistant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+      const payload = (await response.json()) as Partial<IntakeAssistantResponse>;
+      if (response.ok && typeof payload.reply === "string" && payload.reply.trim()) {
+        return payload.reply.trim();
+      }
+    } catch {
+      // Fall through to deterministic fallback below.
+    }
+
+    return buildIntakeAssistantFallbackReply(requestBody);
+  };
+
+  const respondWithAssistantGuidance = async (params: {
+    userMessage: string;
+    reason: IntakeAssistantReason;
+    interpretedTurn: ReturnType<typeof interpretIntakeTurn>;
+    semanticPreviewData: Partial<IntakeFormData>;
+    currentFieldWouldBeSatisfied: boolean;
+  }) => {
+    const userMessage = buildUserMessage(params.userMessage);
+    setMessages((prev) => [...prev, userMessage]);
+    setCurrentInput("");
+    setValidationError("");
+
+    const reply = await requestAssistantGuidance(params);
+    if (reply) {
+      addAssistantMessage(reply);
+    }
+
+    if (params.currentFieldWouldBeSatisfied) {
+      processStepAnswer(params.userMessage);
+      return;
+    }
+
+    if (params.interpretedTurn.hasMeaningfulAdvance) {
+      setInterpretationState(params.interpretedTurn.state);
+      setIntakeData({
+        ...intakeData,
+        ...params.interpretedTurn.patch,
+        flow: activeFlow,
+      } as Partial<IntakeFormData>);
+    }
+
+    if (currentStep) {
+      incrementStepPromptCount(currentStep.id);
+      addAssistantMessage(
+        buildResumePrompt(
+          params.userMessage,
+          params.interpretedTurn.state,
+          params.semanticPreviewData
+        )
+      );
+    }
+  };
+
   const finalizeIntake = (data: Partial<IntakeFormData>) => {
     setCurrentStepIndex(steps.length);
 
@@ -704,7 +830,7 @@ export default function IntakePage() {
     setCurrentInput("");
   };
 
-  const handleSubmitAnswer = () => {
+  const handleSubmitAnswer = async () => {
     if (submitInFlightRef.current) return;
 
     const trimmedInput = currentInput.trim();
@@ -720,6 +846,45 @@ export default function IntakePage() {
 
     if (!currentStep) {
       setValidationError("Er is geen actieve vraag om te beantwoorden.");
+      return;
+    }
+
+    const interpretedTurn = interpretIntakeTurn({
+      flow: activeFlow,
+      latestUserMessage: trimmedInput,
+      currentStep,
+      intakeData,
+      previousState: interpretationState,
+    });
+    const currentStepPatch = buildCurrentStepPatch(currentStep, trimmedInput, interpretedTurn.patch);
+    const semanticPreviewData = {
+      ...intakeData,
+      ...interpretedTurn.patch,
+      ...currentStepPatch,
+      flow: activeFlow,
+    } as Partial<IntakeFormData>;
+    const currentFieldWouldBeSatisfied = isChatStepSatisfied(currentStep, semanticPreviewData);
+    const wantsAssistantGuidance = shouldTreatAsClarifyingQuestion(
+      trimmedInput,
+      interpretedTurn.hasMeaningfulAdvance,
+      currentFieldWouldBeSatisfied
+    );
+
+    if (wantsAssistantGuidance) {
+      submitInFlightRef.current = true;
+      setIsLoading(true);
+      try {
+        await respondWithAssistantGuidance({
+          userMessage: trimmedInput,
+          reason: "clarifying_question",
+          interpretedTurn,
+          semanticPreviewData,
+          currentFieldWouldBeSatisfied,
+        });
+      } finally {
+        submitInFlightRef.current = false;
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -839,24 +1004,6 @@ export default function IntakePage() {
       }
     }
 
-    const interpretedTurn = interpretIntakeTurn({
-      flow: activeFlow,
-      latestUserMessage: trimmedInput,
-      currentStep,
-      intakeData,
-      previousState: interpretationState,
-    });
-    const currentStepPatch = buildCurrentStepPatch(currentStep, trimmedInput, interpretedTurn.patch);
-    const semanticPreviewData = {
-      ...intakeData,
-      ...interpretedTurn.patch,
-      ...currentStepPatch,
-      flow: activeFlow,
-    } as Partial<IntakeFormData>;
-    const isPureClarifyingQuestion =
-      isLikelyClarifyingQuestion(trimmedInput) && !interpretedTurn.hasMeaningfulAdvance;
-    const currentFieldWouldBeSatisfied =
-      !isPureClarifyingQuestion && isChatStepSatisfied(currentStep, semanticPreviewData);
     const validationMessage =
       !currentFieldWouldBeSatisfied && !interpretedTurn.hasMeaningfulAdvance
         ? getContextualValidationMessage({
@@ -891,10 +1038,20 @@ export default function IntakePage() {
         });
         setCurrentInput("");
       } else {
-        setValidationError(validationMessage);
-        incrementStepPromptCount(currentStep.id);
-        addAssistantMessage(getStepRecoveryPrompt(currentStep, trimmedInput));
-        setCurrentInput("");
+        submitInFlightRef.current = true;
+        setIsLoading(true);
+        try {
+          await respondWithAssistantGuidance({
+            userMessage: trimmedInput,
+            reason: "stuck_answer",
+            interpretedTurn,
+            semanticPreviewData,
+            currentFieldWouldBeSatisfied: false,
+          });
+        } finally {
+          submitInFlightRef.current = false;
+          setIsLoading(false);
+        }
       }
       return;
     }
