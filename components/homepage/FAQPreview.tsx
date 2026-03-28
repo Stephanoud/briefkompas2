@@ -17,7 +17,7 @@ export function FAQPreview(props: FAQPreviewProps) {
         <div>
           <h2 className="text-lg font-semibold text-[var(--foreground)]">Veelgestelde vragen</h2>
           <p className="mt-2 text-sm leading-7 text-[var(--muted-strong)]">
-            Korte uitleg voor als je nog twijfelt over de juiste route.
+            Korte uitleg over procedurekeuze en hoe de documentcontrole werkt.
           </p>
         </div>
         <Link

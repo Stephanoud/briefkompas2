@@ -24,25 +24,16 @@ import {
   type IntakeInterpretationState,
 } from "@/lib/intake/interpretation";
 import {
-  buildManualProcedureOverrideMessage,
-  buildProcedureCheckPatch,
-  buildProcedureConfirmationMessage,
-  determineProcedureAdvice,
-  getProcedureCheckValidationMessage,
-  getProcedureUploadHint,
-  procedureCheckSteps,
-  type ProcedureRouteResult,
-  validateProcedureCheckStep,
-} from "@/lib/procedure-route";
+  assessDecisionProcedure,
+  buildDecisionProcedureSwitchPrompt,
+  type DecisionProcedureAssessment,
+} from "@/lib/decision-procedure";
 import {
   getFlowActionLabel,
   getFlowDocumentLabel,
-  getFlowLabel,
-  homepageProcedureOptions,
-  isFlow,
   requiresDecisionUpload,
   supportsDecisionUpload,
-  usesProcedureCheck,
+  resolveFlowFromRoute,
 } from "@/lib/flow";
 import { ChatMessage, DecisionExtractionResult, Flow, IntakeFormData } from "@/types";
 import { Card } from "@/components/Card";
@@ -82,7 +73,7 @@ interface PendingWooSubjectClarification {
   options: string[];
 }
 
-type IntakeStage = "route_check" | "route_confirm" | "route_override" | "substantive";
+type IntakeStage = "route_confirm" | "substantive";
 
 function hasMeaningfulValue(value: unknown): boolean {
   if (typeof value === "string") return value.trim().length > 0;
@@ -97,6 +88,19 @@ function isChatStepSatisfied(step: ReturnType<typeof getStepsByFlow>[number] | u
   if (!hasMeaningfulValue(value)) return false;
   if (!step.validation || typeof value !== "string") return true;
   return step.validation(value);
+}
+
+function findNextUnsatisfiedStepIndex(
+  stepList: ReturnType<typeof getStepsByFlow>,
+  data: Partial<IntakeFormData>
+): number {
+  for (let index = 0; index < stepList.length; index += 1) {
+    if (!isChatStepSatisfied(stepList[index], data)) {
+      return index;
+    }
+  }
+
+  return stepList.length;
 }
 
 function buildCurrentStepPatch(
@@ -167,26 +171,21 @@ function getDocumentAnalysisPresentation(status?: IntakeFormData["besluitAnalyse
   };
 }
 
-function parseManualFlowOverride(value: string): Flow | null {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return null;
-  if (normalized.includes("woo")) return "woo";
-  if (normalized.includes("zienswijze")) return "zienswijze";
-  if (normalized.includes("beroep na bezwaar")) return "beroep_na_bezwaar";
-  if (normalized.includes("beroep zonder bezwaar") || normalized.includes("rechtstreeks beroep")) {
-    return "beroep_zonder_bezwaar";
-  }
-  if (normalized.includes("bezwaar")) return "bezwaar";
-
-  const matchedOption = homepageProcedureOptions.find(
-    (option) => option.title.toLowerCase() === normalized
-  );
-  return matchedOption?.flow ?? null;
-}
-
-function buildIntroMessage(flow: Flow, interpretation: IntakeInterpretationState): string {
-  if (usesProcedureCheck(flow)) {
-    return `Hallo! Ik ben de BriefKompas chatbot. Ik help je bij het opstellen van een ${getFlowDocumentLabel(flow)}. Eerst controleer ik welke bestuursrechtelijke procedure het beste past bij jouw situatie. ${procedureCheckSteps[0].question}`;
+function buildIntroMessage(
+  flow: Flow,
+  interpretation: IntakeInterpretationState,
+  requestedFlowValue?: string
+): string {
+  if (supportsDecisionUpload(flow)) {
+    const routeLabel =
+      requestedFlowValue === "beroep"
+        ? "beroep"
+        : flow === "zienswijze"
+          ? "zienswijze"
+          : getFlowActionLabel(flow).toLowerCase();
+    return `Hallo! Ik ben de BriefKompas chatbot. Upload eerst je besluit of ontwerpbesluit. Daarna controleer ik of ${routeLabel} waarschijnlijk de juiste route is en stel ik een paar korte vragen voor je ${getFlowDocumentLabel(
+      flow
+    )}.`;
   }
 
   const steps = getStepsByFlow(flow);
@@ -203,9 +202,8 @@ export default function IntakePage() {
   const params = useParams<{ flow?: string }>();
   const rawFlow = params?.flow;
   const routeFlowValue = Array.isArray(rawFlow) ? rawFlow[0] : rawFlow;
-  const routeFlow = isFlow(routeFlowValue) ? routeFlowValue : null;
+  const routeFlow = resolveFlowFromRoute(routeFlowValue);
   const initialFlow = routeFlow ?? "bezwaar";
-  const requiresRouteCheck = usesProcedureCheck(initialFlow);
   const [resolvedFlow, setResolvedFlow] = useState<Flow>(initialFlow);
   const activeFlow = resolvedFlow;
   const steps = getStepsByFlow(activeFlow);
@@ -216,14 +214,13 @@ export default function IntakePage() {
   const appStore = useAppStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const submitInFlightRef = useRef(false);
-  const [stage, setStage] = useState<IntakeStage>(requiresRouteCheck ? "route_check" : "substantive");
-  const [routeCheckIndex, setRouteCheckIndex] = useState(0);
-  const [routeCheckResult, setRouteCheckResult] = useState<ProcedureRouteResult | null>(null);
+  const [stage, setStage] = useState<IntakeStage>("substantive");
+  const [routeCheckResult, setRouteCheckResult] = useState<DecisionProcedureAssessment | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: `intro-${initialFlow}`,
       role: "assistant",
-      content: buildIntroMessage(initialFlow, initialInterpretation),
+      content: buildIntroMessage(initialFlow, initialInterpretation, routeFlowValue),
       timestamp: new Date(),
     },
   ]);
@@ -239,8 +236,8 @@ export default function IntakePage() {
   const [pendingWooSubjectClarification, setPendingWooSubjectClarification] =
     useState<PendingWooSubjectClarification | null>(null);
   const [stepPromptCounts, setStepPromptCounts] = useState<Record<string, number>>(
-    requiresRouteCheck
-      ? { [procedureCheckSteps[0].id]: 1 }
+    supportsDecisionUpload(initialFlow)
+      ? {}
       : steps[0]
         ? { [steps[0].id]: 1 }
         : {}
@@ -249,7 +246,6 @@ export default function IntakePage() {
   const [isAnalyzingDocument, setIsAnalyzingDocument] = useState(false);
   const [documentAnalysisMessage, setDocumentAnalysisMessage] = useState("");
   const currentStep = stage === "substantive" ? steps[currentStepIndex] : undefined;
-  const routeCheckStep = stage === "route_check" ? procedureCheckSteps[routeCheckIndex] : null;
   const bestuursorgaanOptions =
     stage === "substantive" && currentStep?.field === "bestuursorgaan"
       ? filterBestuursorganen(currentInput)
@@ -263,42 +259,31 @@ export default function IntakePage() {
       ? getAnswerSuggestions(getSuggestedStepId(currentStep, interpretationState), currentInput)
       : [];
   const routeConfirmOptions = stage === "route_confirm" ? ["ja", "nee"] : [];
-  const routeOverrideOptions =
-    stage === "route_override" ? homepageProcedureOptions.map((option) => option.title) : [];
   const activeOptions =
-    routeCheckStep?.options ??
-    (stage === "route_override"
-      ? routeOverrideOptions
-      : stage === "route_confirm"
-        ? routeConfirmOptions
+    stage === "route_confirm"
+      ? routeConfirmOptions
       : currentStep?.field === "bestuursorgaan"
         ? bestuursorgaanOptions
         : wooSubjectClarificationOptions.length > 0
           ? wooSubjectClarificationOptions
-          : genericStepOptions);
-  const inputListId = routeCheckStep
-    ? `route-check-${routeCheckStep.id}`
-    : stage === "route_override"
-      ? "route-override-options"
-      : stage === "route_confirm"
+          : genericStepOptions;
+  const inputListId =
+    stage === "route_confirm"
         ? "route-confirm-options"
       : currentStep?.field === "bestuursorgaan"
         ? "bestuursorgaan-options"
         : currentStep
           ? `step-options-${currentStep.id}`
           : undefined;
-  const questionsCompleted = stage === "substantive" && currentStepIndex >= steps.length;
-  const totalSteps = (requiresRouteCheck ? procedureCheckSteps.length : 0) + steps.length;
+  const hasDecisionFile = !supportsDecisionUpload(activeFlow) || Boolean(intakeData.files?.besluit);
+  const questionsCompleted = stage === "substantive" && hasDecisionFile && currentStepIndex >= steps.length;
+  const totalSteps = steps.length + (supportsDecisionUpload(activeFlow) ? 1 : 0);
   const visibleStepNumber =
-    stage === "route_check"
-      ? routeCheckIndex + 1
-      : stage === "route_confirm" || stage === "route_override"
-        ? procedureCheckSteps.length
-        : (requiresRouteCheck ? procedureCheckSteps.length : 0) +
-          (questionsCompleted ? steps.length : Math.min(currentStepIndex + 1, steps.length));
-  const hasRequiredDecisionFile =
-    !requiresDecisionUpload(activeFlow) || Boolean(intakeData.files?.besluit);
-  const isIntakeReady = stage === "substantive" && questionsCompleted && hasRequiredDecisionFile;
+    supportsDecisionUpload(activeFlow) && !hasDecisionFile
+      ? 1
+      : (supportsDecisionUpload(activeFlow) ? 1 : 0) +
+        (questionsCompleted ? steps.length : Math.min(currentStepIndex + 1, steps.length));
+  const isIntakeReady = stage === "substantive" && questionsCompleted;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -395,16 +380,18 @@ export default function IntakePage() {
   const startSubstantiveFlow = (nextFlow: Flow, nextData: Partial<IntakeFormData>) => {
     const nextInterpretation = createInitialIntakeInterpretation(nextFlow);
     const nextSteps = getStepsByFlow(nextFlow);
+    const nextStepIndex = findNextUnsatisfiedStepIndex(nextSteps, { ...nextData, flow: nextFlow });
+    const nextStep = nextSteps[nextStepIndex];
     setResolvedFlow(nextFlow);
     setStage("substantive");
-    setCurrentStepIndex(0);
+    setCurrentStepIndex(nextStepIndex);
     setDeferredStepIds([]);
     setPendingGrondenConfirmation(null);
     setPendingStepConfirmation(null);
     setPendingWooSubjectClarification(null);
     setValidationError("");
     setCurrentInput("");
-    setStepPromptCounts(nextSteps[0] ? { [nextSteps[0].id]: 1 } : {});
+    setStepPromptCounts(nextStep ? { [nextStep.id]: 1 } : {});
     setInterpretationState(nextInterpretation);
     setIntakeData({
       ...nextData,
@@ -413,9 +400,16 @@ export default function IntakePage() {
       procedureBevestigd: true,
     });
 
+    if (!nextStep) {
+      addAssistantMessage(
+        `Helder. We gaan verder met ${getFlowActionLabel(nextFlow).toLowerCase()}. Je intake is inhoudelijk al compleet.`
+      );
+      return;
+    }
+
     const firstQuestion = getContextualQuestion({
       flow: nextFlow,
-      step: nextSteps[0],
+      step: nextStep,
       interpretation: nextInterpretation,
       intakeData: { ...nextData, flow: nextFlow },
     });
@@ -425,11 +419,34 @@ export default function IntakePage() {
     );
   };
 
+  const askFirstQuestionForCurrentFlow = (data: Partial<IntakeFormData>, prefix?: string) => {
+    const nextStepIndex = findNextUnsatisfiedStepIndex(steps, data);
+    const firstStep = steps[nextStepIndex];
+    if (!firstStep || (stepPromptCounts[firstStep.id] ?? 0) > 0) {
+      return;
+    }
+
+    const question = getContextualQuestion({
+      flow: activeFlow,
+      step: firstStep,
+      interpretation: interpretationState,
+      intakeData: data,
+    });
+
+    setCurrentStepIndex(nextStepIndex);
+    incrementStepPromptCount(firstStep.id);
+    addAssistantMessage(prefix ? `${prefix}${question}` : question);
+  };
+
   const finalizeIntake = (data: Partial<IntakeFormData>) => {
     setCurrentStepIndex(steps.length);
 
     if (requiresDecisionUpload(activeFlow) && !data.files?.besluit) {
-      addAssistantMessage(getProcedureUploadHint(activeFlow));
+      addAssistantMessage(
+        activeFlow === "zienswijze"
+          ? "Upload eerst het ontwerpbesluit voordat je verdergaat."
+          : "Upload eerst het besluit voordat je verdergaat."
+      );
       return;
     }
 
@@ -480,52 +497,6 @@ export default function IntakePage() {
     finalizeIntake(params.data);
   };
 
-  const processRouteCheckAnswer = (answer: string) => {
-    if (!routeCheckStep) return;
-
-    const currentPromptCount = stepPromptCounts[routeCheckStep.id] ?? 1;
-    if (!validateProcedureCheckStep(routeCheckStep, answer)) {
-      if (currentPromptCount >= 2) {
-        setValidationError("");
-        addAssistantMessage(`Ik kan hier nog niet veilig op door. ${routeCheckStep.question}`);
-      } else {
-        setValidationError(getProcedureCheckValidationMessage(routeCheckStep));
-        incrementStepPromptCount(routeCheckStep.id);
-        addAssistantMessage(getProcedureCheckValidationMessage(routeCheckStep));
-      }
-      setCurrentInput("");
-      return;
-    }
-
-    addUserMessage(answer);
-    const updatedData = {
-      ...intakeData,
-      ...buildProcedureCheckPatch(routeCheckStep, answer),
-    } as Partial<IntakeFormData>;
-    setIntakeData(updatedData);
-    setValidationError("");
-    setCurrentInput("");
-
-    if (routeCheckIndex >= procedureCheckSteps.length - 1) {
-      const result = determineProcedureAdvice(updatedData);
-      setRouteCheckResult(result);
-      setStage("route_confirm");
-      setIntakeData({
-        ...updatedData,
-        procedureAdvies: result.advice,
-        procedureReden: result.explanation,
-        procedureBevestigd: false,
-      });
-      addAssistantMessage(buildProcedureConfirmationMessage(result));
-      return;
-    }
-
-    const nextIndex = routeCheckIndex + 1;
-    setRouteCheckIndex(nextIndex);
-    incrementStepPromptCount(procedureCheckSteps[nextIndex].id);
-    addAssistantMessage(procedureCheckSteps[nextIndex].question);
-  };
-
   const processRouteConfirmation = (answer: string) => {
     if (!routeCheckResult) return;
 
@@ -534,18 +505,10 @@ export default function IntakePage() {
     setCurrentInput("");
     setValidationError("");
 
-    if (confirmYesValues.has(normalized)) {
-      if (routeCheckResult.advice === "bezwaarfase" || routeCheckResult.advice === "niet_tijdig_beslissen") {
-        setStage("route_override");
-        addAssistantMessage(
-          `${routeCheckResult.explanation} Voor deze situatie is geen standaardmodule beschikbaar. ${buildManualProcedureOverrideMessage()}`
-        );
-        return;
-      }
-
-      startSubstantiveFlow(routeCheckResult.advice, {
+    if (confirmYesValues.has(normalized) && routeCheckResult.suggestedFlow) {
+      startSubstantiveFlow(routeCheckResult.suggestedFlow, {
         ...intakeData,
-        procedureAdvies: routeCheckResult.advice,
+        procedureAdvies: routeCheckResult.suggestedFlow,
         procedureReden: routeCheckResult.explanation,
         procedureBevestigd: true,
       });
@@ -553,38 +516,21 @@ export default function IntakePage() {
     }
 
     if (confirmNoValues.has(normalized)) {
-      setStage("route_override");
-      addAssistantMessage(buildManualProcedureOverrideMessage());
+      const continuedData = {
+        ...intakeData,
+        procedureAdvies: activeFlow,
+        procedureReden: routeCheckResult.explanation,
+        procedureBevestigd: false,
+      } as Partial<IntakeFormData>;
+      setStage("substantive");
+      setIntakeData(continuedData);
+      addAssistantMessage("Helder. We gaan verder met de gekozen route.");
+      askFirstQuestionForCurrentFlow(continuedData, "Nog een korte vraag om je brief goed op te bouwen: ");
       return;
     }
 
     setValidationError("Antwoord met 'ja' of 'nee'.");
     addAssistantMessage("Laat even weten of dit klopt. Antwoord met 'ja' of 'nee'.");
-  };
-
-  const processManualRouteOverride = (answer: string) => {
-    const manualFlow = parseManualFlowOverride(answer);
-    if (!manualFlow) {
-      setValidationError(
-        "Kies zienswijze, bezwaar, beroep zonder bezwaar, beroep na bezwaar of WOO-verzoek."
-      );
-      addAssistantMessage(buildManualProcedureOverrideMessage());
-      setCurrentInput("");
-      return;
-    }
-
-    addUserMessage(answer);
-    const overrideReason = `Gebruiker heeft handmatig gekozen voor ${getFlowLabel(manualFlow)} na de procedurecheck.`;
-    setRouteCheckResult({
-      advice: manualFlow,
-      explanation: overrideReason,
-    });
-    startSubstantiveFlow(manualFlow, {
-      ...intakeData,
-      procedureAdvies: manualFlow,
-      procedureReden: overrideReason,
-      procedureBevestigd: true,
-    });
   };
 
   const getStepRecoveryPrompt = (
@@ -635,22 +581,9 @@ export default function IntakePage() {
     setPendingWooSubjectClarification(null);
     setValidationError("");
 
-    if (stage === "route_check") {
-      if (routeCheckIndex <= 0) return;
-      const previousIndex = routeCheckIndex - 1;
-      setRouteCheckIndex(previousIndex);
-      incrementStepPromptCount(procedureCheckSteps[previousIndex].id);
-      addAssistantMessage(`Terug naar vorige vraag: ${procedureCheckSteps[previousIndex].question}`);
-      return;
-    }
-
-    if (stage === "route_confirm" || stage === "route_override") {
-      setStage("route_check");
-      setRouteCheckIndex(Math.max(0, procedureCheckSteps.length - 1));
-      incrementStepPromptCount(procedureCheckSteps[procedureCheckSteps.length - 1].id);
-      addAssistantMessage(
-        `Terug naar vorige vraag: ${procedureCheckSteps[procedureCheckSteps.length - 1].question}`
-      );
+    if (stage === "route_confirm") {
+      setStage("substantive");
+      addAssistantMessage("We laten de routecontrole staan. Je kunt doorgaan met de gekozen route.");
       return;
     }
 
@@ -760,18 +693,8 @@ export default function IntakePage() {
       return;
     }
 
-    if (stage === "route_check") {
-      processRouteCheckAnswer(trimmedInput);
-      return;
-    }
-
     if (stage === "route_confirm") {
       processRouteConfirmation(trimmedInput);
-      return;
-    }
-
-    if (stage === "route_override") {
-      processManualRouteOverride(trimmedInput);
       return;
     }
 
@@ -1075,9 +998,23 @@ export default function IntakePage() {
       },
     } as Partial<IntakeFormData>;
 
-    setIntakeData(updatedData);
-
     if (supportsDecisionUpload(activeFlow)) {
+      const assessment = assessDecisionProcedure({
+        selectedFlow: activeFlow,
+        extraction: {
+          datumBesluit: updatedData.datumBesluit ?? null,
+          kenmerk: updatedData.kenmerk ?? null,
+          samenvatting: updatedData.besluitSamenvatting ?? null,
+          extractedText: updatedData.besluitTekst ?? null,
+          analysisSource: updatedData.besluitBronType ?? null,
+          documentType: updatedData.besluitDocumentType ?? null,
+          decisionAnalysis: updatedData.besluitAnalyse ?? null,
+          analysisStatus: updatedData.besluitAnalyseStatus,
+          readability: updatedData.besluitLeeskwaliteit ?? null,
+          extracted: true,
+          warning: analysisNote || null,
+        },
+      });
       const extractionNotes: string[] = [];
       if (updatedData.datumBesluit) extractionNotes.push(`datum: ${updatedData.datumBesluit}`);
       if (updatedData.kenmerk) extractionNotes.push(`kenmerk: ${updatedData.kenmerk}`);
@@ -1094,26 +1031,64 @@ export default function IntakePage() {
         : "";
       const noteLine = analysisNote ? ` ${analysisNote}` : "";
       const sourceLine = sourceLabel ? ` via ${sourceLabel}` : "";
+      const extractionLine =
+        extractionNotes.length > 0
+          ? ` Ik heb alvast ${extractionNotes.join(" en ")} uit het besluit gehaald.`
+          : " Ik kon datum en kenmerk nog niet betrouwbaar uitlezen.";
+      const procedureLine = ` ${assessment.explanation}`;
+
+      setRouteCheckResult(assessment);
+
+      if (assessment.shouldAutoSwitch && assessment.suggestedFlow) {
+        addAssistantMessage(
+          `Bestand ontvangen${sourceLine} (${selectedFile.name}).${statusLine}${extractionLine}${summaryLine}${noteLine}${procedureLine}`
+        );
+        startSubstantiveFlow(assessment.suggestedFlow, {
+          ...updatedData,
+          procedureAdvies: assessment.suggestedFlow,
+          procedureReden: assessment.explanation,
+          procedureBevestigd: true,
+        });
+        return;
+      }
+
+      const nextData = {
+        ...updatedData,
+        procedureAdvies: assessment.suggestedFlow ?? activeFlow,
+        procedureReden: assessment.explanation,
+        procedureBevestigd: assessment.matchedSelectedFlow,
+      } as Partial<IntakeFormData>;
+      setIntakeData(nextData);
 
       if (questionsCompleted) {
-        const extractionLine =
+        const completedExtractionLine =
           extractionNotes.length > 0
             ? ` Gevonden in het besluit: ${extractionNotes.join(", ")}.`
             : " Datum en kenmerk konden niet betrouwbaar uit het bestand worden gehaald.";
         addAssistantMessage(
-          `Bestand ontvangen${sourceLine} (${selectedFile.name}). Je intake is voltooid. Klik op 'Naar Overzicht'.${statusLine}${extractionLine}${summaryLine}${noteLine}`
+          `Bestand ontvangen${sourceLine} (${selectedFile.name}). Je intake is voltooid. Klik op 'Naar Overzicht'.${statusLine}${completedExtractionLine}${summaryLine}${noteLine}${procedureLine}`
         );
-      } else {
-        const extractionLine =
-          extractionNotes.length > 0
-            ? ` Ik heb alvast ${extractionNotes.join(" en ")} uit het besluit gehaald.`
-            : " Ik kon datum en kenmerk nog niet betrouwbaar uitlezen.";
-        addAssistantMessage(
-          `Bestand ontvangen${sourceLine} (${selectedFile.name}).${statusLine}${extractionLine}${summaryLine}${noteLine} Ga verder met de intakevragen.`
-        );
+        return;
       }
+
+      if (assessment.shouldConfirmSwitch) {
+        setStage("route_confirm");
+        addAssistantMessage(
+          `Bestand ontvangen${sourceLine} (${selectedFile.name}).${statusLine}${extractionLine}${summaryLine}${noteLine}`
+        );
+        addAssistantMessage(buildDecisionProcedureSwitchPrompt(assessment));
+        return;
+      }
+
+      setStage("substantive");
+      addAssistantMessage(
+        `Bestand ontvangen${sourceLine} (${selectedFile.name}).${statusLine}${extractionLine}${summaryLine}${noteLine}${procedureLine}`
+      );
+      askFirstQuestionForCurrentFlow(nextData, "Nog een korte vraag om je brief op te bouwen: ");
       return;
     }
+
+    setIntakeData(updatedData);
 
     if (questionsCompleted) {
       addAssistantMessage(`Bestand ontvangen (${selectedFile.name}). Je intake is voltooid. Klik op 'Naar Overzicht'.`);
@@ -1129,13 +1104,10 @@ export default function IntakePage() {
   };
 
   const procedureSummaryLabel =
-    routeCheckResult?.advice === "bezwaarfase"
-      ? "U zit nog in de bezwaarfase"
-      : routeCheckResult?.advice === "niet_tijdig_beslissen"
-        ? "Niet tijdig beslissen"
-        : routeCheckResult
-          ? getFlowActionLabel(routeCheckResult.advice)
-          : null;
+    routeCheckResult?.suggestedFlow ? getFlowActionLabel(routeCheckResult.suggestedFlow) : null;
+  const shouldShowAnswerInput =
+    stage === "route_confirm" ||
+    (stage === "substantive" && hasDecisionFile && !questionsCompleted && currentStepIndex < steps.length);
 
   return (
     <div className="max-w-2xl mx-auto min-h-[78vh] flex flex-col justify-center">
@@ -1143,140 +1115,21 @@ export default function IntakePage() {
         <StepHeader
           currentStep={visibleStepNumber}
           totalSteps={totalSteps}
-          title="Intake Interview"
+          title="Intake"
         />
 
-        {routeCheckResult && (
-          <Alert type="info" title="Voorgestelde procedure">
-            <span className="block font-semibold text-[var(--foreground)]">
-              Wij gaan uit van: {procedureSummaryLabel}
-            </span>
-            <span className="block pt-2">{routeCheckResult.explanation}</span>
-            <span className="block pt-2 text-xs opacity-80">
-              Je kunt dit in de chat bevestigen of corrigeren.
-            </span>
-          </Alert>
-        )}
-
-        <div className="bg-white rounded-xl border border-[var(--border)] p-4 mb-4 h-96 overflow-y-auto chat-container">
-          {messages.map((msg) => (
-            <ChatBubble key={msg.id} message={msg} />
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {(!isIntakeReady && stage !== "substantive") || (!isIntakeReady && currentStepIndex < steps.length) ? (
-          <div className="space-y-3 mb-4">
-            <Input
-              placeholder="Typ je antwoord..."
-              value={currentInput}
-              list={activeOptions.length > 0 ? inputListId : undefined}
-              onChange={(e) => {
-                setCurrentInput(e.target.value);
-                setValidationError("");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSubmitAnswer();
-              }}
-              error={validationError}
-              disabled={isLoading}
-            />
-            {activeOptions.length > 0 && inputListId && (
-              <>
-                <datalist id={inputListId}>
-                  {activeOptions.map((option) => (
-                    <option key={option} value={option} />
-                  ))}
-                </datalist>
-                {currentStep?.field === "bestuursorgaan" && (
-                  <p className="text-xs text-[var(--muted)]">
-                    Begin met typen en kies een bestuursorgaan uit de suggesties.
-                  </p>
-                )}
-                {currentStep?.id === "doel" && (
-                  <p className="text-xs text-[var(--muted)]">
-                    Je kunt ook korte doelen gebruiken, zoals: intrekken, herzien of aanpassen.
-                  </p>
-                )}
-                {stage === "route_check" && routeCheckStep && (
-                  <p className="text-xs text-[var(--muted)]">
-                    Beantwoord eerst deze procedurevraag. Daarna bepaal ik welke route het best past.
-                  </p>
-                )}
-                {stage === "route_confirm" && (
-                  <p className="text-xs text-[var(--muted)]">
-                    Bevestig of corrigeer de voorgestelde procedure.
-                  </p>
-                )}
-                {stage === "route_override" && (
-                  <p className="text-xs text-[var(--muted)]">
-                    Kies handmatig welke module je wilt gebruiken.
-                  </p>
-                )}
-                {activeFlow === "woo" && currentStep?.id === "onderwerp" && pendingWooSubjectClarification && (
-                  <p className="text-xs text-[var(--muted)]">
-                    Kies wat het beste past, of typ zelf specifieker wat je inhoudelijk wilt achterhalen.
-                  </p>
-                )}
-              </>
-            )}
-            {activeFlow === "woo" && currentStep?.id === "onderwerp" && pendingWooSubjectClarification && (
-              <div className="flex flex-wrap gap-2">
-                {pendingWooSubjectClarification.options.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => {
-                      setCurrentInput(option);
-                      setValidationError("");
-                    }}
-                    className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs text-[var(--foreground)] hover:bg-[var(--surface-soft)]"
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
-            )}
-            {currentStep?.id === "gronden" && (
-              <div className="flex flex-wrap gap-2">
-                {grondenFallbackOptions.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => {
-                      setCurrentInput(option);
-                      setValidationError("");
-                    }}
-                    className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs text-[var(--foreground)] hover:bg-[var(--surface-soft)]"
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
-            )}
-            <Button
-              onClick={handleSubmitAnswer}
-              disabled={!currentInput.trim() || isLoading}
-              isLoading={isLoading}
-              className="w-full"
-            >
-              Volgende
-            </Button>
-          </div>
-        ) : null}
-
-        {supportsDecisionUpload(activeFlow) && !isIntakeReady && stage === "substantive" && (
+        {supportsDecisionUpload(activeFlow) && !isIntakeReady && (
           <div className="space-y-4">
             <UploadBox
               label={
-                requiresDecisionUpload(activeFlow)
-                  ? "Upload of fotografeer je besluit (verplicht)"
-                  : "Upload of fotografeer je besluit of ontwerpbesluit (optioneel)"
+                activeFlow === "zienswijze"
+                  ? "Upload of fotografeer het ontwerpbesluit (verplicht)"
+                  : "Upload of fotografeer je besluit (verplicht)"
               }
               accept="application/pdf,image/jpeg,image/png,image/webp"
-              descriptionText="Sleep je besluit hier of"
+              descriptionText={activeFlow === "zienswijze" ? "Sleep het ontwerpbesluit hier of" : "Sleep je besluit hier of"}
               actionText="maak een foto of kies een bestand"
-              helperText="Op telefoon kun je direct een foto maken. Ondersteund: PDF, JPG, PNG en WEBP."
+              helperText="Op telefoon kun je direct een foto maken. Ondersteund: PDF, JPG, PNG en WEBP. Na upload controleert de tool eerst of de gekozen route waarschijnlijk klopt."
               capture="environment"
               disabled={isAnalyzingDocument}
               onFileSelect={handleFileSelect}
@@ -1284,9 +1137,15 @@ export default function IntakePage() {
               required={requiresDecisionUpload(activeFlow)}
             />
 
+            {!hasDecisionFile && !isAnalyzingDocument && (
+              <Alert type="info" title="Eerst het document, daarna de vragen">
+                Upload eerst het besluit of ontwerpbesluit. Daarna controleert de tool de route en gaat de intake verder.
+              </Alert>
+            )}
+
             {isAnalyzingDocument && (
               <Alert type="info" title="Besluit wordt geanalyseerd">
-                We lezen datum, kenmerk en relevante tekst uit je bestand. Dit duurt meestal enkele seconden.
+                We lezen datum, kenmerk en relevante tekst uit je bestand en controleren of bezwaar, beroep of zienswijze waarschijnlijk past.
               </Alert>
             )}
 
@@ -1345,6 +1204,119 @@ export default function IntakePage() {
           </div>
         )}
 
+        {routeCheckResult && (
+          <Alert type={routeCheckResult.alertType} title={routeCheckResult.title}>
+            {procedureSummaryLabel && (
+              <span className="block font-semibold text-[var(--foreground)]">
+                Waarschijnlijke route: {procedureSummaryLabel}
+              </span>
+            )}
+            <span className="block pt-2">{routeCheckResult.explanation}</span>
+            {routeCheckResult.shouldConfirmSwitch && (
+              <span className="block pt-2 text-xs opacity-80">
+                Bevestig hieronder of je wilt wisselen van route.
+              </span>
+            )}
+          </Alert>
+        )}
+
+        <div className="bg-white rounded-xl border border-[var(--border)] p-4 mb-4 h-96 overflow-y-auto chat-container">
+          {messages.map((msg) => (
+            <ChatBubble key={msg.id} message={msg} />
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {shouldShowAnswerInput ? (
+          <div className="space-y-3 mb-4">
+            <Input
+              placeholder="Typ je antwoord..."
+              value={currentInput}
+              list={activeOptions.length > 0 ? inputListId : undefined}
+              onChange={(e) => {
+                setCurrentInput(e.target.value);
+                setValidationError("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSubmitAnswer();
+              }}
+              error={validationError}
+              disabled={isLoading}
+            />
+            {activeOptions.length > 0 && inputListId && (
+              <>
+                <datalist id={inputListId}>
+                  {activeOptions.map((option) => (
+                    <option key={option} value={option} />
+                  ))}
+                </datalist>
+                {currentStep?.field === "bestuursorgaan" && (
+                  <p className="text-xs text-[var(--muted)]">
+                    Begin met typen en kies een bestuursorgaan uit de suggesties.
+                  </p>
+                )}
+                {currentStep?.id === "doel" && (
+                  <p className="text-xs text-[var(--muted)]">
+                    Je kunt ook korte doelen gebruiken, zoals: intrekken, herzien of aanpassen.
+                  </p>
+                )}
+                {stage === "route_confirm" && (
+                  <p className="text-xs text-[var(--muted)]">
+                    Bevestig of je wilt overschakelen naar de voorgestelde route.
+                  </p>
+                )}
+                {activeFlow === "woo" && currentStep?.id === "onderwerp" && pendingWooSubjectClarification && (
+                  <p className="text-xs text-[var(--muted)]">
+                    Kies wat het beste past, of typ zelf specifieker wat je inhoudelijk wilt achterhalen.
+                  </p>
+                )}
+              </>
+            )}
+            {activeFlow === "woo" && currentStep?.id === "onderwerp" && pendingWooSubjectClarification && (
+              <div className="flex flex-wrap gap-2">
+                {pendingWooSubjectClarification.options.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => {
+                      setCurrentInput(option);
+                      setValidationError("");
+                    }}
+                    className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs text-[var(--foreground)] hover:bg-[var(--surface-soft)]"
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            )}
+            {currentStep?.id === "gronden" && (
+              <div className="flex flex-wrap gap-2">
+                {grondenFallbackOptions.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => {
+                      setCurrentInput(option);
+                      setValidationError("");
+                    }}
+                    className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-xs text-[var(--foreground)] hover:bg-[var(--surface-soft)]"
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            )}
+            <Button
+              onClick={handleSubmitAnswer}
+              disabled={!currentInput.trim() || isLoading}
+              isLoading={isLoading}
+              className="w-full"
+            >
+              Volgende
+            </Button>
+          </div>
+        ) : null}
+
         {isIntakeReady && (
           <Alert type="success" title="Intake voltooid">
             Je intake is voltooid. Klik op Naar Overzicht om je antwoorden te controleren.
@@ -1360,8 +1332,7 @@ export default function IntakePage() {
             onClick={handleBackStep}
             disabled={
               isLoading ||
-              (stage === "route_check" && routeCheckIndex === 0) ||
-              ((stage === "route_confirm" || stage === "route_override") && procedureCheckSteps.length === 0) ||
+              (!hasDecisionFile && stage === "substantive") ||
               (stage === "substantive" && currentStepIndex === 0)
             }
             className="flex-1"

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { getStepsByFlow, interpretWooPeriodAnswer, interpretWooSubjectAnswer } from "@/lib/intake-flow";
 import { determineProcedureAdvice } from "@/lib/procedure-route";
+import { assessDecisionProcedure } from "@/lib/decision-procedure";
 import {
   createInitialIntakeInterpretation,
   findNextUnansweredStepIndex,
@@ -342,5 +343,48 @@ test.describe("Contextual intake interpretation", () => {
     });
 
     expect(result.advice).toBe("zienswijze");
+  });
+
+  test("20. documentcontrole stuurt beroep terug naar bezwaar als bezwaar openstaat", () => {
+    const assessment = assessDecisionProcedure({
+      selectedFlow: "beroep_zonder_bezwaar",
+      extraction: {
+        extracted: true,
+        extractedText:
+          "Tegen dit besluit kunt u binnen zes weken na dagtekening een bezwaarschrift indienen bij het college van burgemeester en wethouders.",
+      },
+    });
+
+    expect(assessment.suggestedFlow).toBe("bezwaar");
+    expect(assessment.shouldAutoSwitch).toBeTruthy();
+  });
+
+  test("21. documentcontrole stuurt bezwaar door naar beroep na beslissing op bezwaar", () => {
+    const assessment = assessDecisionProcedure({
+      selectedFlow: "bezwaar",
+      extraction: {
+        extracted: true,
+        extractedText:
+          "Beslissing op bezwaar. Uw bezwaar is ongegrond. Tegen deze beslissing op bezwaar kunt u beroep instellen bij de rechtbank.",
+      },
+    });
+
+    expect(assessment.suggestedFlow).toBe("beroep_na_bezwaar");
+    expect(assessment.confidence).toBe("high");
+  });
+
+  test("22. documentcontrole herkent ontwerpbesluit als zienswijzeroute", () => {
+    const assessment = assessDecisionProcedure({
+      selectedFlow: "bezwaar",
+      extraction: {
+        extracted: true,
+        documentType: "ontwerpbesluit",
+        extractedText:
+          "Ontwerpbesluit. Een ieder kan gedurende zes weken een zienswijze naar voren brengen tegen dit ontwerpbesluit.",
+      },
+    });
+
+    expect(assessment.suggestedFlow).toBe("zienswijze");
+    expect(assessment.confidence).toBe("high");
   });
 });

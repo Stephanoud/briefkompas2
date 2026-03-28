@@ -282,6 +282,8 @@ export function buildManualProcedureOverrideMessage(): string {
 
 export function getProcedureUploadHint(flow: Flow): string {
   switch (flow) {
+    case "zienswijze":
+      return "Upload of fotografeer het ontwerpbesluit.";
     case "bezwaar":
       return "Upload of fotografeer het primaire besluit.";
     case "beroep_zonder_bezwaar":

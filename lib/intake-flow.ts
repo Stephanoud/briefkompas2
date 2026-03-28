@@ -613,7 +613,8 @@ export function isIntakeZienswijzeComplete(formData: IntakeFormData): boolean {
     formData.besluitSamenvatting &&
     formData.persoonlijkeOmstandigheden &&
     formData.gronden &&
-    formData.doel
+    formData.doel &&
+    formData.files?.besluit
   );
 }
 

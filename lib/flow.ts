@@ -20,11 +20,12 @@ export function isWooFlow(flow: Flow): boolean {
 }
 
 export function usesProcedureCheck(flow: Flow): boolean {
-  return flow !== "woo";
+  void flow;
+  return false;
 }
 
 export function requiresDecisionUpload(flow: Flow): boolean {
-  return flow === "bezwaar" || flow === "beroep_zonder_bezwaar" || flow === "beroep_na_bezwaar";
+  return flow !== "woo";
 }
 
 export function supportsDecisionUpload(flow: Flow): boolean {
@@ -109,3 +110,42 @@ export const homepageProcedureOptions = ALL_FLOWS.map((flow) => ({
   description: getFlowShortDescription(flow),
   href: getFlowPath(flow),
 }));
+
+export const homepageEntryOptions = [
+  {
+    title: "Zienswijze indienen",
+    description: "Reageer op een ontwerpbesluit voordat een definitief besluit wordt genomen.",
+    href: "/intake/zienswijze",
+    flow: "zienswijze" as const,
+  },
+  {
+    title: "Bezwaar maken",
+    description: "Maak bezwaar tegen een besluit van een bestuursorgaan.",
+    href: "/intake/bezwaar",
+    flow: "bezwaar" as const,
+  },
+  {
+    title: "Beroep instellen",
+    description: "Ga naar de rechter als beroep openstaat of na een beslissing op bezwaar.",
+    href: "/intake/beroep",
+    flow: "beroep_zonder_bezwaar" as const,
+  },
+  {
+    title: "WOO-verzoek doen",
+    description: "Vraag documenten op bij een bestuursorgaan via de Wet open overheid.",
+    href: "/intake/woo",
+    flow: "woo" as const,
+  },
+];
+
+export function resolveFlowFromRoute(value: string | null | undefined): Flow | null {
+  if (!value) {
+    return null;
+  }
+
+  if (value === "beroep") {
+    return "beroep_zonder_bezwaar";
+  }
+
+  return isFlow(value) ? value : null;
+}
