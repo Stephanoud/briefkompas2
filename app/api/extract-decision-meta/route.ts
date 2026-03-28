@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createRequire } from "node:module";
 import OpenAI from "openai";
-import { PDFParse } from "pdf-parse";
 import {
   DecisionAnalysisStatus,
   DecisionAnalysisSummary,
@@ -10,6 +10,8 @@ import {
 } from "@/types";
 
 export const runtime = "nodejs";
+
+const require = createRequire(import.meta.url);
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const IMAGE_ANALYSIS_MODEL = "gpt-4.1";
@@ -392,6 +394,19 @@ function parseJsonResponse(content: string): LlmDecisionAnalysis | null {
   }
 }
 
+function normalizePdfJsExtractedText(value: string): string {
+  return value
+    .replace(/\u0000/g, " ")
+    .replace(/\b(?:[\p{L}\d]\s+){2,}[\p{L}\d]\b/gu, (match) => match.replace(/\s+/g, ""))
+    .replace(/\b([\p{L}])\s+([\p{Ll}]{4,})\b/gu, "$1$2")
+    .replace(/(\d)(\p{L})/gu, "$1 $2")
+    .replace(/(\p{L})(\d)/gu, "$1 $2")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 function isPdfFile(file: File): boolean {
   return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 }
@@ -609,13 +624,71 @@ async function extractKeyFieldsFromImageWithOpenAI(
   return parseJsonResponse(responseContent);
 }
 
-async function extractTextFromPdf(buffer: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: buffer });
+async function extractTextFromPdfWithPdfParse(buffer: Buffer): Promise<string> {
+  const pdfParseModule = require("pdf-parse") as {
+    PDFParse?: new (params: { data: Buffer }) => {
+      getText: () => Promise<{ text?: string | null }>;
+      destroy: () => Promise<void>;
+    };
+    default?: {
+      PDFParse?: new (params: { data: Buffer }) => {
+        getText: () => Promise<{ text?: string | null }>;
+        destroy: () => Promise<void>;
+      };
+    };
+  };
+  const PDFParseConstructor = pdfParseModule.PDFParse ?? pdfParseModule.default?.PDFParse;
+  if (!PDFParseConstructor) {
+    throw new Error("PDFParse constructor not available");
+  }
+
+  const parser = new PDFParseConstructor({ data: buffer });
   try {
     const parsed = await parser.getText();
     return parsed.text ?? "";
   } finally {
     await parser.destroy();
+  }
+}
+
+async function extractTextFromPdfWithPdfJs(buffer: Buffer): Promise<string> {
+  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const pdf = await pdfjsLib.getDocument({
+    data: new Uint8Array(buffer),
+    disableWorker: true,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    verbosity: pdfjsLib.VerbosityLevel?.ERRORS,
+  } as Record<string, unknown>).promise;
+
+  const pageTexts: string[] = [];
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent();
+    const pageText = content.items
+      .map((item) => ("str" in item ? item.str : ""))
+      .join(" ");
+    pageTexts.push(pageText);
+  }
+
+  return normalizePdfJsExtractedText(pageTexts.join("\n\n"));
+}
+
+async function extractTextFromPdf(buffer: Buffer): Promise<string> {
+  try {
+    const extracted = await extractTextFromPdfWithPdfParse(buffer);
+    if (normalizeWhitespace(extracted).length >= 80) {
+      return extracted;
+    }
+  } catch (error) {
+    console.error("Primary PDF extraction via pdf-parse failed, falling back to pdfjs-dist", error);
+  }
+
+  try {
+    return await extractTextFromPdfWithPdfJs(buffer);
+  } catch (fallbackError) {
+    console.error("Fallback PDF extraction via pdfjs-dist failed", fallbackError);
+    throw fallbackError;
   }
 }
 

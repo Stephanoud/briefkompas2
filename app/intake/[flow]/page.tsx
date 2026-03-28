@@ -970,7 +970,8 @@ export default function IntakePage() {
         analysisNote = payload.error;
       }
     } catch {
-      analysisNote = "Automatische analyse van het besluit is niet gelukt. Controleer datum en kenmerk handmatig.";
+      analysisNote =
+        "Het besluit kon technisch niet goed worden verwerkt. Dit ligt niet per se aan uw PDF. Probeer het opnieuw of upload een foto als dit blijft gebeuren.";
     } finally {
       setIsAnalyzingDocument(false);
       setDocumentAnalysisMessage(analysisNote);
@@ -999,22 +1000,32 @@ export default function IntakePage() {
     } as Partial<IntakeFormData>;
 
     if (supportsDecisionUpload(activeFlow)) {
-      const assessment = assessDecisionProcedure({
-        selectedFlow: activeFlow,
-        extraction: {
-          datumBesluit: updatedData.datumBesluit ?? null,
-          kenmerk: updatedData.kenmerk ?? null,
-          samenvatting: updatedData.besluitSamenvatting ?? null,
-          extractedText: updatedData.besluitTekst ?? null,
-          analysisSource: updatedData.besluitBronType ?? null,
-          documentType: updatedData.besluitDocumentType ?? null,
-          decisionAnalysis: updatedData.besluitAnalyse ?? null,
-          analysisStatus: updatedData.besluitAnalyseStatus,
-          readability: updatedData.besluitLeeskwaliteit ?? null,
-          extracted: true,
-          warning: analysisNote || null,
-        },
-      });
+      const hasReadableExtraction = Boolean(
+        updatedData.datumBesluit ||
+          updatedData.kenmerk ||
+          updatedData.besluitSamenvatting ||
+          updatedData.besluitTekst ||
+          updatedData.besluitAnalyse ||
+          updatedData.besluitDocumentType
+      );
+      const assessment = hasReadableExtraction
+        ? assessDecisionProcedure({
+            selectedFlow: activeFlow,
+            extraction: {
+              datumBesluit: updatedData.datumBesluit ?? null,
+              kenmerk: updatedData.kenmerk ?? null,
+              samenvatting: updatedData.besluitSamenvatting ?? null,
+              extractedText: updatedData.besluitTekst ?? null,
+              analysisSource: updatedData.besluitBronType ?? null,
+              documentType: updatedData.besluitDocumentType ?? null,
+              decisionAnalysis: updatedData.besluitAnalyse ?? null,
+              analysisStatus: updatedData.besluitAnalyseStatus,
+              readability: updatedData.besluitLeeskwaliteit ?? null,
+              extracted: hasReadableExtraction,
+              warning: analysisNote || null,
+            },
+          })
+        : null;
       const extractionNotes: string[] = [];
       if (updatedData.datumBesluit) extractionNotes.push(`datum: ${updatedData.datumBesluit}`);
       if (updatedData.kenmerk) extractionNotes.push(`kenmerk: ${updatedData.kenmerk}`);
@@ -1035,9 +1046,18 @@ export default function IntakePage() {
         extractionNotes.length > 0
           ? ` Ik heb alvast ${extractionNotes.join(" en ")} uit het besluit gehaald.`
           : " Ik kon datum en kenmerk nog niet betrouwbaar uitlezen.";
-      const procedureLine = ` ${assessment.explanation}`;
+      const procedureLine = assessment ? ` ${assessment.explanation}` : "";
 
       setRouteCheckResult(assessment);
+
+      if (!assessment) {
+        setIntakeData(updatedData);
+        setStage("substantive");
+        addAssistantMessage(
+          `Bestand ontvangen${sourceLine} (${selectedFile.name}).${statusLine}${extractionLine}${summaryLine}${noteLine}`
+        );
+        return;
+      }
 
       if (assessment.shouldAutoSwitch && assessment.suggestedFlow) {
         addAssistantMessage(
