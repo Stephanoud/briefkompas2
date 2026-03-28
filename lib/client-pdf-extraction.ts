@@ -60,6 +60,8 @@ const STRUCTURED_FIELD_STOP_LABELS = [
   "namens",
 ];
 
+let browserPdfWorkerConfigured = false;
+
 export interface ClientPdfExtractionResult {
   extractedText: string;
   datumBesluit: string | null;
@@ -268,11 +270,18 @@ function determineAnalysisStatus(extractedText: string): DecisionAnalysisStatus 
 }
 
 export async function extractTextFromPdfInBrowser(file: File): Promise<ClientPdfExtractionResult> {
-  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const pdfjsLib = await import("pdfjs-dist/build/pdf.mjs");
+  if (!browserPdfWorkerConfigured) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      "pdfjs-dist/build/pdf.worker.min.mjs",
+      import.meta.url
+    ).toString();
+    browserPdfWorkerConfigured = true;
+  }
+
   const data = new Uint8Array(await file.arrayBuffer());
   const pdf = await pdfjsLib.getDocument({
     data,
-    disableWorker: true,
     useWorkerFetch: false,
     isEvalSupported: false,
     verbosity: pdfjsLib.VerbosityLevel?.ERRORS,

@@ -139,6 +139,10 @@ function truncatePreview(value: string, maxLength = 220): string {
   return `${value.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
+function createMessageId(prefix: "assistant" | "user"): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function isPdfFile(file: File): boolean {
   return file.type === "application/pdf" || /\.pdf$/i.test(file.name);
 }
@@ -307,7 +311,7 @@ export default function IntakePage() {
 
   const addAssistantMessage = (content: string) => {
     const assistantMessage: ChatMessage = {
-      id: "assistant-" + Date.now(),
+      id: createMessageId("assistant"),
       role: "assistant",
       content,
       timestamp: new Date(),
@@ -317,7 +321,7 @@ export default function IntakePage() {
 
   const addUserMessage = (content: string) => {
     const userMessage: ChatMessage = {
-      id: "user-" + Date.now(),
+      id: createMessageId("user"),
       role: "user",
       content,
       timestamp: new Date(),
@@ -326,7 +330,7 @@ export default function IntakePage() {
   };
 
   const buildUserMessage = (content: string): ChatMessage => ({
-    id: "user-" + Date.now(),
+    id: createMessageId("user"),
     role: "user",
     content,
     timestamp: new Date(),
