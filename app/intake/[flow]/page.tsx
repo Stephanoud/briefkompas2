@@ -35,6 +35,7 @@ import {
   supportsDecisionUpload,
   resolveFlowFromRoute,
 } from "@/lib/flow";
+import { extractTextFromPdfInBrowser } from "@/lib/client-pdf-extraction";
 import { ChatMessage, DecisionExtractionResult, Flow, IntakeFormData } from "@/types";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
@@ -136,6 +137,21 @@ function truncatePreview(value: string, maxLength = 220): string {
     return value;
   }
   return `${value.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function isPdfFile(file: File): boolean {
+  return file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+}
+
+function hasReadableDecisionExtraction(data: Partial<IntakeFormData>): boolean {
+  return Boolean(
+    data.datumBesluit ||
+      data.kenmerk ||
+      data.besluitSamenvatting ||
+      data.besluitTekst ||
+      data.besluitAnalyse ||
+      data.besluitDocumentType
+  );
 }
 
 function getDocumentSourceLabel(source?: IntakeFormData["besluitBronType"]): string | null {
@@ -929,6 +945,7 @@ export default function IntakePage() {
     if (files.length === 0) return;
 
     const selectedFile = files[0];
+    const selectedFileIsPdf = isPdfFile(selectedFile);
     let extractedDatumBesluit = intakeData.datumBesluit;
     let extractedKenmerk = intakeData.kenmerk;
     let extractedSummary = intakeData.besluitSamenvatting;
@@ -939,9 +956,11 @@ export default function IntakePage() {
     let extractedAnalysisStatus = intakeData.besluitAnalyseStatus;
     let extractedReadability = intakeData.besluitLeeskwaliteit;
     let analysisNote = "";
+    let serverExtractionFailed = false;
 
     setIsAnalyzingDocument(true);
     setDocumentAnalysisMessage("");
+    setRouteCheckResult(null);
 
     try {
       const formData = new FormData();
@@ -952,9 +971,12 @@ export default function IntakePage() {
         body: formData,
       });
 
-      const payload = (await response.json()) as DecisionExtractionResult | { error?: string };
+      const contentType = response.headers.get("content-type") ?? "";
+      const payload = contentType.includes("application/json")
+        ? ((await response.json()) as DecisionExtractionResult | { error?: string })
+        : null;
 
-      if (response.ok && "extracted" in payload) {
+      if (response.ok && payload && "extracted" in payload) {
         const extraction = payload as DecisionExtractionResult;
         extractedDatumBesluit = extraction.datumBesluit ?? extractedDatumBesluit;
         extractedKenmerk = extraction.kenmerk ?? extractedKenmerk;
@@ -966,16 +988,61 @@ export default function IntakePage() {
         extractedAnalysisStatus = extraction.analysisStatus ?? extractedAnalysisStatus;
         extractedReadability = extraction.readability ?? extractedReadability;
         analysisNote = extraction.warning ?? "";
-      } else if ("error" in payload && payload.error) {
+      } else if (payload && "error" in payload && payload.error) {
+        serverExtractionFailed = true;
         analysisNote = payload.error;
+      } else if (!response.ok) {
+        serverExtractionFailed = true;
+        analysisNote =
+          "Het besluit kon op de server niet goed worden verwerkt. Dit ligt niet per se aan uw PDF.";
       }
     } catch {
+      serverExtractionFailed = true;
       analysisNote =
-        "Het besluit kon technisch niet goed worden verwerkt. Dit ligt niet per se aan uw PDF. Probeer het opnieuw of upload een foto als dit blijft gebeuren.";
-    } finally {
-      setIsAnalyzingDocument(false);
-      setDocumentAnalysisMessage(analysisNote);
+        "Het besluit kon technisch niet goed worden verwerkt. Dit ligt niet per se aan uw PDF.";
     }
+
+    const hasServerReadableExtraction = hasReadableDecisionExtraction({
+      datumBesluit: extractedDatumBesluit,
+      kenmerk: extractedKenmerk,
+      besluitSamenvatting: extractedSummary,
+      besluitTekst: extractedText,
+      besluitAnalyse: extractedAnalysis,
+      besluitDocumentType: extractedDocumentType,
+    });
+
+    if (selectedFileIsPdf && !hasServerReadableExtraction) {
+      try {
+        const browserExtraction = await extractTextFromPdfInBrowser(selectedFile);
+        extractedDatumBesluit = browserExtraction.datumBesluit ?? extractedDatumBesluit;
+        extractedKenmerk = browserExtraction.kenmerk ?? extractedKenmerk;
+        extractedText = browserExtraction.extractedText ?? extractedText;
+        extractedSource = "pdf";
+        extractedAnalysisStatus = browserExtraction.analysisStatus ?? extractedAnalysisStatus;
+        extractedReadability = browserExtraction.readability ?? extractedReadability;
+
+        if (browserExtraction.analysisStatus === "read") {
+          analysisNote = serverExtractionFailed
+            ? "De serveranalyse liep vast, maar de tekst is wel rechtstreeks uit uw PDF uitgelezen."
+            : "";
+        } else if (browserExtraction.analysisStatus === "partial") {
+          analysisNote = serverExtractionFailed
+            ? "De serveranalyse liep vast, maar ik kon wel een deel van de tekst rechtstreeks uit uw PDF lezen. Controleer de overgenomen gegevens goed."
+            : "Ik kon wel een deel van de tekst rechtstreeks uit uw PDF lezen. Controleer de overgenomen gegevens goed.";
+        } else if (!analysisNote) {
+          analysisNote =
+            "Deze PDF lijkt technisch lastig uitleesbaar. Upload zo nodig een scherpe foto of een doorzoekbare PDF.";
+        }
+      } catch {
+        if (!analysisNote) {
+          analysisNote =
+            "Deze PDF kon niet automatisch worden uitgelezen. Upload zo nodig een scherpe foto of een doorzoekbare PDF.";
+        }
+      }
+    }
+
+    setIsAnalyzingDocument(false);
+    setDocumentAnalysisMessage(analysisNote);
 
     const updatedData = {
       ...intakeData,
@@ -1000,14 +1067,7 @@ export default function IntakePage() {
     } as Partial<IntakeFormData>;
 
     if (supportsDecisionUpload(activeFlow)) {
-      const hasReadableExtraction = Boolean(
-        updatedData.datumBesluit ||
-          updatedData.kenmerk ||
-          updatedData.besluitSamenvatting ||
-          updatedData.besluitTekst ||
-          updatedData.besluitAnalyse ||
-          updatedData.besluitDocumentType
-      );
+      const hasReadableExtraction = hasReadableDecisionExtraction(updatedData);
       const assessment = hasReadableExtraction
         ? assessDecisionProcedure({
             selectedFlow: activeFlow,
