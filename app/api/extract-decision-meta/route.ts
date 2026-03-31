@@ -12,6 +12,7 @@ import {
 export const runtime = "nodejs";
 
 const require = createRequire(import.meta.url);
+let pdfParseWorkerConfigured = false;
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const IMAGE_ANALYSIS_MODEL = "gpt-4.1";
@@ -626,20 +627,36 @@ async function extractKeyFieldsFromImageWithOpenAI(
 
 async function extractTextFromPdfWithPdfParse(buffer: Buffer): Promise<string> {
   const pdfParseModule = require("pdf-parse") as {
-    PDFParse?: new (params: { data: Buffer }) => {
+    PDFParse?: (new (params: { data: Buffer }) => {
       getText: () => Promise<{ text?: string | null }>;
       destroy: () => Promise<void>;
+    }) & {
+      setWorker?: (workerSrc?: string) => string;
     };
     default?: {
-      PDFParse?: new (params: { data: Buffer }) => {
+      PDFParse?: (new (params: { data: Buffer }) => {
         getText: () => Promise<{ text?: string | null }>;
         destroy: () => Promise<void>;
+      }) & {
+        setWorker?: (workerSrc?: string) => string;
       };
     };
   };
   const PDFParseConstructor = pdfParseModule.PDFParse ?? pdfParseModule.default?.PDFParse;
   if (!PDFParseConstructor) {
     throw new Error("PDFParse constructor not available");
+  }
+
+  if (!pdfParseWorkerConfigured) {
+    const pdfParseWorkerModule = require("pdf-parse/worker") as {
+      getData?: () => string;
+    };
+    const embeddedWorkerData = pdfParseWorkerModule.getData?.();
+    if (!embeddedWorkerData) {
+      throw new Error("Embedded pdf-parse worker data not available");
+    }
+    PDFParseConstructor.setWorker?.(embeddedWorkerData);
+    pdfParseWorkerConfigured = true;
   }
 
   const parser = new PDFParseConstructor({ data: buffer });
