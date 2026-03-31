@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Flow, GeneratedLetter, IntakeFormData, Product } from "@/types";
 import { buildSavedLetterDocumentPayload, buildSavedLetterResearchPayload } from "@/lib/saved-letters/payload";
-import { saveLetterRecord } from "@/lib/saved-letters/store";
+import {
+  getSavedLetterStorageMode,
+  SAVED_LETTER_STORAGE_UNAVAILABLE_MESSAGE,
+  saveLetterRecord,
+} from "@/lib/saved-letters/store";
 import { isFlow } from "@/lib/flow";
 
 export const runtime = "nodejs";
@@ -27,6 +31,16 @@ function hasValidGeneratedLetter(value: unknown): value is GeneratedLetter {
     typeof (value as GeneratedLetter).letterText === "string" &&
     (value as GeneratedLetter).letterText.trim().length > 0
   );
+}
+
+export async function GET() {
+  const storageMode = getSavedLetterStorageMode();
+
+  return NextResponse.json({
+    available: storageMode !== "unavailable",
+    storageMode,
+    message: storageMode === "unavailable" ? SAVED_LETTER_STORAGE_UNAVAILABLE_MESSAGE : null,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -87,14 +101,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Failed to save letter", error);
+    const message =
+      error instanceof Error && error.message ? error.message : "Het opslaan van de brief is niet gelukt.";
+    const status = message === SAVED_LETTER_STORAGE_UNAVAILABLE_MESSAGE ? 503 : 500;
+
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error && error.message
-            ? error.message
-            : "Het opslaan van de brief is niet gelukt.",
-      },
-      { status: 500 }
+      { error: message },
+      { status }
     );
   }
 }

@@ -14,6 +14,8 @@ import { generateRecoveryToken, hashRecoveryToken, hashesMatch } from "@/lib/sav
 const STORAGE_TTL_DAYS = 30;
 const DEV_STORE_PATH = path.join(process.cwd(), "tmp", "saved-letters.dev.json");
 const EXPIRED_DELETE_GRACE_DAYS = 7;
+export const SAVED_LETTER_STORAGE_UNAVAILABLE_MESSAGE =
+  "Tijdelijke opslag is op dit moment niet beschikbaar.";
 
 let sqlClient: Sql | null | undefined;
 let ensureTablePromise: Promise<void> | null = null;
@@ -33,6 +35,10 @@ function getStorageMode(): CleanupSavedLettersResult["storageMode"] {
   }
 
   return process.env.NODE_ENV === "production" ? "unavailable" : "file";
+}
+
+export function getSavedLetterStorageMode() {
+  return getStorageMode();
 }
 
 function getSqlClient() {
@@ -250,7 +256,7 @@ export async function saveLetterRecord(input: SaveLetterRecordInput): Promise<Sa
 
   const storageMode = getStorageMode();
   if (storageMode === "unavailable") {
-    throw new Error("Tijdelijke opslag is op dit moment niet beschikbaar.");
+    throw new Error(SAVED_LETTER_STORAGE_UNAVAILABLE_MESSAGE);
   }
 
   const createdAt = new Date();
