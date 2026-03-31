@@ -18,6 +18,7 @@
     "openai": "^6.25.0",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^5.5.207",
+    "postgres": "^3.4.8",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "stripe": "^20.4.0",

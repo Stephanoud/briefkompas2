@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getFlowDocumentLabel, getFlowLabel, isFlow } from "@/lib/flow";
 import { readStoredGeneratedLetter } from "@/lib/generatedLetterSession";
+import { readStoredResultDraft, writeStoredResultDraft } from "@/lib/resultDraftSession";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { LetterPreview, Textarea, LoadingSpinner } from "@/components";
 import { Alert } from "@/components/index";
+import { SaveLetterPanel } from "@/components/SaveLetterPanel";
 import { downloadFile, generateDocx, generatePdf } from "@/lib/utils";
 import { cleanLetterTextForDelivery } from "@/lib/letter-format";
 import {
@@ -235,6 +238,14 @@ export default function ResultPage() {
   const flow = isFlow(routeFlow) ? routeFlow : null;
   const appStore = useAppStore();
   const setGeneratedLetter = useAppStore((state) => state.setGeneratedLetter);
+  const cachedProduct =
+    typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_product") : null;
+  const resolvedProduct =
+    appStore.product === "basis" || appStore.product === "uitgebreid"
+      ? appStore.product
+      : cachedProduct === "basis" || cachedProduct === "uitgebreid"
+        ? cachedProduct
+        : null;
   const cachedIntake =
     typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_intake") : null;
   let intakeData: IntakeFormData | null = appStore.intakeData;
@@ -254,8 +265,9 @@ export default function ResultPage() {
   const [letterText, setLetterText] = useState(
     cleanLetterTextForDelivery(appStore.generatedLetter?.letterText || "")
   );
-  const [manualReferences, setManualReferences] = useState("");
+  const [manualReferences, setManualReferences] = useState(() => (flow ? readStoredResultDraft(flow) : ""));
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat | null>(null);
+  const [copyTextStatus, setCopyTextStatus] = useState<"idle" | "done" | "error">("idle");
   const [confirmed, setConfirmed] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -286,6 +298,14 @@ export default function ResultPage() {
     }
   }, [resolvedGeneratedLetter, letterText]);
 
+  useEffect(() => {
+    if (!flow) {
+      return;
+    }
+
+    writeStoredResultDraft(flow, manualReferences);
+  }, [flow, manualReferences]);
+
   if (!flow) {
     return (
       <div className="mx-auto max-w-2xl">
@@ -302,6 +322,10 @@ export default function ResultPage() {
   const generatedReferences: ReferenceItem[] = resolvedGeneratedLetter?.references || [];
   const decisionStatus = getDecisionStatusPresentation(intakeData?.besluitAnalyseStatus);
   const generationMode = getGenerationModePresentation(resolvedGeneratedLetter?.generationMode);
+  const saveableLetter: GeneratedLetter = {
+    ...(resolvedGeneratedLetter ?? { references: [] }),
+    letterText: cleanLetterTextForDelivery(letterText),
+  };
   const referencesSubtitle =
     flow === "bezwaar"
       ? "Deze bronnen blijven alleen zichtbaar in de interface en worden niet als losse restbijlage meegeexporteerd."
@@ -333,6 +357,16 @@ export default function ResultPage() {
       console.error("Download error:", error);
     } finally {
       setDownloadFormat(null);
+    }
+  };
+
+  const handleCopyLetterText = async () => {
+    try {
+      await navigator.clipboard.writeText(cleanLetterTextForDelivery(letterText));
+      setCopyTextStatus("done");
+      window.setTimeout(() => setCopyTextStatus("idle"), 2200);
+    } catch {
+      setCopyTextStatus("error");
     }
   };
 
@@ -423,6 +457,65 @@ export default function ResultPage() {
             )}
           </Card>
 
+          {intakeData && (
+            <Card
+              title="Bewaren en terugvinden"
+              subtitle="Je gegevens worden standaard niet opgeslagen. Download of kopieer je brief als je deze wilt bewaren."
+            >
+              <div className="space-y-5">
+                <p className="text-sm leading-6 text-[var(--muted-strong)]">
+                  Je gegevens worden standaard niet opgeslagen. Download of kopieer je brief als je deze wilt
+                  bewaren.
+                </p>
+
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    type="button"
+                    onClick={() => handleDownload("docx")}
+                    isLoading={downloadFormat === "docx"}
+                    disabled={downloadFormat !== null}
+                  >
+                    {downloadFormat === "docx" ? "Brief downloaden..." : "Download brief"}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => handleDownload("pdf")}
+                    isLoading={downloadFormat === "pdf"}
+                    disabled={downloadFormat !== null}
+                  >
+                    {downloadFormat === "pdf" ? "PDF maken..." : "Download PDF"}
+                  </Button>
+
+                  <Button type="button" variant="secondary" onClick={handleCopyLetterText}>
+                    {copyTextStatus === "done" ? "Tekst gekopieerd" : "Kopieer tekst"}
+                  </Button>
+                </div>
+
+                {copyTextStatus === "error" && (
+                  <p className="text-sm text-red-700">
+                    Kopiëren lukt in deze browser niet automatisch. Selecteer en kopieer de tekst dan handmatig.
+                  </p>
+                )}
+
+                <SaveLetterPanel
+                  flow={flow}
+                  product={resolvedProduct}
+                  intakeData={intakeData}
+                  generatedLetter={saveableLetter}
+                  manualReferences={manualReferences}
+                />
+
+                <p className="text-xs leading-6 text-[var(--muted)]">
+                  <Link href="/privacy" className="underline underline-offset-4 hover:text-[var(--foreground)]">
+                    Meer weten? Lees hoe we omgaan met privacy en tijdelijke opslag.
+                  </Link>
+                </p>
+              </div>
+            </Card>
+          )}
+
           {generatedReferences.length > 0 && (
             <Card title="Juridische aanknopingspunten" subtitle={referencesSubtitle}>
               <div className="space-y-4">
@@ -452,7 +545,7 @@ export default function ResultPage() {
             </Card>
           )}
 
-          {appStore.product === "uitgebreid" && flow !== "bezwaar" && (
+          {resolvedProduct === "uitgebreid" && flow !== "bezwaar" && (
             <Card title="Eigen toevoegingen" subtitle="Voeg desgewenst eigen notities of aanvullende bronnen toe aan de export">
               <Textarea
                 value={manualReferences}
@@ -486,24 +579,10 @@ export default function ResultPage() {
         <div className="space-y-4">
           <Card title="Verzenden">
             <div className="space-y-3">
-              <Button
-                onClick={() => handleDownload("pdf")}
-                disabled={!confirmed || downloadFormat !== null}
-                isLoading={downloadFormat === "pdf"}
-                className="w-full"
-              >
-                {downloadFormat === "pdf" ? "PDF maken..." : "Download PDF"}
-              </Button>
-
-              <Button
-                variant="secondary"
-                onClick={() => handleDownload("docx")}
-                disabled={!confirmed || downloadFormat !== null}
-                isLoading={downloadFormat === "docx"}
-                className="w-full"
-              >
-                {downloadFormat === "docx" ? "DOCX maken..." : "Download DOCX"}
-              </Button>
+              <p className="text-sm leading-6 text-[var(--muted-strong)]">
+                Gebruik links de download-, kopieer- of herstelopties als je een kopie wilt bewaren. Controleer
+                hieronder vooral of de brief klaar is om te verzenden.
+              </p>
 
               <div className="border-t border-[var(--border)] pt-4">
                 <h4 className="mb-2 text-sm font-semibold text-[var(--foreground)]">

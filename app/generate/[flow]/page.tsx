@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { clearStoredGeneratedLetter, writeStoredGeneratedLetter } from "@/lib/generatedLetterSession";
+import { clearStoredResultDraft } from "@/lib/resultDraftSession";
 import { getFlowDocumentLabel, isFlow } from "@/lib/flow";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/Button";
@@ -71,6 +72,7 @@ export default function GeneratePage() {
         setLoading(true);
         setError(null);
         clearStoredGeneratedLetter();
+        clearStoredResultDraft();
 
         const response = await fetch("/api/generate-letter", {
           method: "POST",

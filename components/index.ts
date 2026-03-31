@@ -8,3 +8,6 @@ export { ChatBubble } from "./ChatBubble";
 export { UploadBox } from "./UploadBox";
 export { LetterPreview } from "./LetterPreview";
 export { default as Container } from "./Container";
+export { ConsentCheckboxGroup } from "./ConsentCheckboxGroup";
+export { RecoveryLinkBox } from "./RecoveryLinkBox";
+export { SaveLetterPanel } from "./SaveLetterPanel";
