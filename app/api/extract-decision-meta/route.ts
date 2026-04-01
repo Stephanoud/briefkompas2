@@ -88,9 +88,32 @@ type LlmDecisionAnalysis = {
   rechtsgrond?: string | null;
   besluitInhoud?: string | null;
   termijnen?: string | null;
+  rechtsmiddelenclausule?: string | null;
   aandachtspunten?: string[] | null;
+  dragendeOverwegingen?: Array<{ passage?: string | null; duiding?: string | null }> | null;
+  wettelijkeGrondslagen?: string[] | null;
+  procedureleAanwijzingen?: string[] | null;
+  beleidsReferenties?: string[] | null;
+  jurisprudentieReferenties?: string[] | null;
+  bijlageReferenties?: string[] | null;
+  bijlagenLijst?: string[] | null;
+  inventarislijstOfDocumenttabel?: string[] | null;
+  correspondentieVerwijzingen?: string[] | null;
   leeskwaliteit?: DecisionReadability | null;
 };
+
+const LEGAL_RECOGNITION_GUIDANCE = [
+  "- Juridische basis bestuursorgaan: een bestuursorgaan is een orgaan van een krachtens publiekrecht ingestelde rechtspersoon of een andere persoon/college met openbaar gezag.",
+  "- Neem niet automatisch aan dat elk overheidsdocument een besluit is.",
+  "- Een besluit is een schriftelijke beslissing van een bestuursorgaan inhoudende een publiekrechtelijke rechtshandeling.",
+  "- Het niet tijdig nemen van een besluit kan in bezwaar en beroep met een besluit worden gelijkgesteld.",
+  "- Zoek actief naar aanwijzingen voor het bestuursorgaan in afzender, briefhoofd, ondertekening, functietitel, logo en inhoud.",
+  "- Let onder meer op: minister, staatssecretaris, inspectie, agentschap, college van burgemeester en wethouders, burgemeester, gemeenteraad, heffingsambtenaar, provinciale staten, gedeputeerde staten, commissaris van de Koning, dagelijks of algemeen bestuur van een waterschap, Belastingdienst, UWV, SVB, DUO, RDW, CBR, Kamer van Koophandel, Nederlandse Zorgautoriteit (NZa) en omgevingsdiensten die namens een bevoegd gezag besluiten.",
+  "- Onderscheid klassieke overheid, publieke taak bij een private partij en geen bestuursorgaan. Als dat niet duidelijk is, laat bestuursorgaan leeg en benoem de twijfel in aandachtspunten.",
+  "- Zoek voor een besluit naar besliswoorden zoals verlenen, weigeren, intrekken, vaststellen, opleggen, afwijzen, toekennen, terugvorderen en handhaven.",
+  "- Let sterk op een rechtsmiddelenclausule zoals bezwaar, beroep of zienswijze.",
+  "- Benoem in aandachtspunten als het document eerder lijkt op een informatiebrief, beleidsregel, overeenkomst, waarschuwing zonder rechtsgevolg, memo, klachtreactie of feitelijke handeling.",
+].join("\n");
 
 function getOpenAIClient() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -172,6 +195,35 @@ function sanitizeOptionalList(value: unknown, maxItems: number, maxItemLength: n
     .slice(0, maxItems);
 }
 
+function sanitizeDecisionConsiderations(
+  value: unknown,
+  maxItems: number,
+  maxPassageLength: number,
+  maxDuidingLength: number
+): Array<{ passage: string; duiding: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const passage = sanitizeOptionalString((item as { passage?: unknown }).passage, maxPassageLength);
+      const duiding = sanitizeOptionalString((item as { duiding?: unknown }).duiding, maxDuidingLength);
+
+      if (!passage || !duiding) {
+        return null;
+      }
+
+      return { passage, duiding };
+    })
+    .filter((item): item is { passage: string; duiding: string } => Boolean(item))
+    .slice(0, maxItems);
+}
+
 function sanitizeReadability(value: unknown): DecisionReadability | null {
   if (value === "high" || value === "medium" || value === "low") {
     return value;
@@ -190,9 +242,22 @@ function countDecisionFields(analysis?: DecisionAnalysisSummary | null): number 
     analysis.rechtsgrond,
     analysis.besluitInhoud,
     analysis.termijnen,
+    analysis.rechtsmiddelenclausule,
   ].filter(Boolean).length;
 
-  return scalarFields + (analysis.aandachtspunten?.length ?? 0);
+  return (
+    scalarFields +
+    (analysis.aandachtspunten?.length ?? 0) +
+    (analysis.dragendeOverwegingen?.length ?? 0) +
+    (analysis.wettelijkeGrondslagen?.length ?? 0) +
+    (analysis.procedureleAanwijzingen?.length ?? 0) +
+    (analysis.beleidsReferenties?.length ?? 0) +
+    (analysis.jurisprudentieReferenties?.length ?? 0) +
+    (analysis.bijlageReferenties?.length ?? 0) +
+    (analysis.bijlagenLijst?.length ?? 0) +
+    (analysis.inventarislijstOfDocumenttabel?.length ?? 0) +
+    (analysis.correspondentieVerwijzingen?.length ?? 0)
+  );
 }
 
 function estimateReadability(extractedText: string, fieldCount: number): DecisionReadability {
@@ -422,6 +487,15 @@ function buildDecisionAnalysis(analysis?: LlmDecisionAnalysis | null): DecisionA
   }
 
   const attentionPoints = sanitizeOptionalList(analysis.aandachtspunten, 4, 220);
+  const dragendeOverwegingen = sanitizeDecisionConsiderations(analysis.dragendeOverwegingen, 4, 280, 220);
+  const wettelijkeGrondslagen = sanitizeOptionalList(analysis.wettelijkeGrondslagen, 6, 220);
+  const procedureleAanwijzingen = sanitizeOptionalList(analysis.procedureleAanwijzingen, 6, 220);
+  const beleidsReferenties = sanitizeOptionalList(analysis.beleidsReferenties, 6, 220);
+  const jurisprudentieReferenties = sanitizeOptionalList(analysis.jurisprudentieReferenties, 6, 220);
+  const bijlageReferenties = sanitizeOptionalList(analysis.bijlageReferenties, 6, 220);
+  const bijlagenLijst = sanitizeOptionalList(analysis.bijlagenLijst, 8, 220);
+  const inventarislijstOfDocumenttabel = sanitizeOptionalList(analysis.inventarislijstOfDocumenttabel, 8, 220);
+  const correspondentieVerwijzingen = sanitizeOptionalList(analysis.correspondentieVerwijzingen, 6, 220);
 
   const normalized: DecisionAnalysisSummary = {
     bestuursorgaan: sanitizeOptionalString(analysis.bestuursorgaan, 180),
@@ -429,7 +503,17 @@ function buildDecisionAnalysis(analysis?: LlmDecisionAnalysis | null): DecisionA
     rechtsgrond: sanitizeOptionalString(analysis.rechtsgrond, 220),
     besluitInhoud: sanitizeOptionalString(analysis.besluitInhoud, 450),
     termijnen: sanitizeOptionalString(analysis.termijnen, 220),
+    rechtsmiddelenclausule: sanitizeOptionalString(analysis.rechtsmiddelenclausule, 220),
     aandachtspunten: attentionPoints.length > 0 ? attentionPoints : undefined,
+    dragendeOverwegingen: dragendeOverwegingen.length > 0 ? dragendeOverwegingen : undefined,
+    wettelijkeGrondslagen: wettelijkeGrondslagen.length > 0 ? wettelijkeGrondslagen : undefined,
+    procedureleAanwijzingen: procedureleAanwijzingen.length > 0 ? procedureleAanwijzingen : undefined,
+    beleidsReferenties: beleidsReferenties.length > 0 ? beleidsReferenties : undefined,
+    jurisprudentieReferenties: jurisprudentieReferenties.length > 0 ? jurisprudentieReferenties : undefined,
+    bijlageReferenties: bijlageReferenties.length > 0 ? bijlageReferenties : undefined,
+    bijlagenLijst: bijlagenLijst.length > 0 ? bijlagenLijst : undefined,
+    inventarislijstOfDocumenttabel: inventarislijstOfDocumenttabel.length > 0 ? inventarislijstOfDocumenttabel : undefined,
+    correspondentieVerwijzingen: correspondentieVerwijzingen.length > 0 ? correspondentieVerwijzingen : undefined,
   };
 
   if (countDecisionFields(normalized) === 0) {
@@ -463,7 +547,17 @@ function mergeAnalyses(
     rechtsgrond: primary?.rechtsgrond ?? secondary?.rechtsgrond ?? null,
     besluitInhoud: primary?.besluitInhoud ?? secondary?.besluitInhoud ?? null,
     termijnen: primary?.termijnen ?? secondary?.termijnen ?? null,
+    rechtsmiddelenclausule: primary?.rechtsmiddelenclausule ?? secondary?.rechtsmiddelenclausule ?? null,
     aandachtspunten: primary?.aandachtspunten ?? secondary?.aandachtspunten ?? null,
+    dragendeOverwegingen: primary?.dragendeOverwegingen ?? secondary?.dragendeOverwegingen ?? null,
+    wettelijkeGrondslagen: primary?.wettelijkeGrondslagen ?? secondary?.wettelijkeGrondslagen ?? null,
+    procedureleAanwijzingen: primary?.procedureleAanwijzingen ?? secondary?.procedureleAanwijzingen ?? null,
+    beleidsReferenties: primary?.beleidsReferenties ?? secondary?.beleidsReferenties ?? null,
+    jurisprudentieReferenties: primary?.jurisprudentieReferenties ?? secondary?.jurisprudentieReferenties ?? null,
+    bijlageReferenties: primary?.bijlageReferenties ?? secondary?.bijlageReferenties ?? null,
+    bijlagenLijst: primary?.bijlagenLijst ?? secondary?.bijlagenLijst ?? null,
+    inventarislijstOfDocumenttabel: primary?.inventarislijstOfDocumenttabel ?? secondary?.inventarislijstOfDocumenttabel ?? null,
+    correspondentieVerwijzingen: primary?.correspondentieVerwijzingen ?? secondary?.correspondentieVerwijzingen ?? null,
     leeskwaliteit: primary?.leeskwaliteit ?? secondary?.leeskwaliteit ?? null,
   };
 }
@@ -487,7 +581,7 @@ async function analyzeDecisionText(openai: OpenAI, extractedText: string): Promi
   const completion = await openai.chat.completions.create({
     model: TEXT_ANALYSIS_MODEL,
     temperature: 0,
-    max_tokens: 1100,
+    max_tokens: 1500,
     messages: [
       {
         role: "system",
@@ -498,16 +592,27 @@ async function analyzeDecisionText(openai: OpenAI, extractedText: string): Promi
         role: "user",
         content:
           "Analyseer de volgende besluittekst en geef uitsluitend JSON terug in dit formaat:\n" +
-          '{"samenvatting":"...", "datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "aandachtspunten":["..."], "leeskwaliteit":"high|medium|low"}\n\n' +
+          '{"samenvatting":"...", "datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "rechtsmiddelenclausule":"...", "dragendeOverwegingen":[{"passage":"...", "duiding":"..."}], "wettelijkeGrondslagen":["..."], "procedureleAanwijzingen":["..."], "beleidsReferenties":["..."], "jurisprudentieReferenties":["..."], "bijlageReferenties":["..."], "bijlagenLijst":["..."], "inventarislijstOfDocumenttabel":["..."], "correspondentieVerwijzingen":["..."], "aandachtspunten":["..."], "leeskwaliteit":"high|medium|low"}\n\n' +
           "Regels:\n" +
+          `${LEGAL_RECOGNITION_GUIDANCE}\n` +
           "- samenvatting: maximaal 650 tekens.\n" +
-          "- documentType: bijvoorbeeld beschikking, boete, aanslag, vergunning of null.\n" +
-          "- bestuursorgaan: noem alleen als het expliciet uit de tekst blijkt.\n" +
+          "- documentType: bijvoorbeeld beschikking, beslissing op bezwaar, ontwerpbesluit, boete, aanslag, vergunning, informatiebrief of null.\n" +
+          "- bestuursorgaan: noem alleen als dit expliciet blijkt of sterk volgt uit briefhoofd, ondertekening of inhoud.\n" +
           "- onderwerp: korte omschrijving van waar het besluit over gaat.\n" +
           "- rechtsgrond: alleen invullen als wet of regeling expliciet zichtbaar is.\n" +
           "- besluitInhoud: kern van wat is besloten, maximaal 350 tekens.\n" +
           "- termijnen: alleen als een bezwaar-, betaal- of hersteltermijn zichtbaar is.\n" +
+          "- rechtsmiddelenclausule: neem de kern van de clausule op als bezwaar, beroep, zienswijze of beroep niet tijdig expliciet in het document staat.\n" +
+          "- dragendeOverwegingen: maximaal 4 objecten. Neem alleen overwegingen op die de uitkomst werkelijk dragen, met een korte letterlijke of bijna-letterlijke passage en een korte duiding.\n" +
+          "- wettelijkeGrondslagen: noem alleen wetten, artikelen of regelingen die expliciet in het document staan.\n" +
+          "- procedureleAanwijzingen: noem alleen concrete aanwijzingen zoals bezwaar, beroep, hoorplicht, herstelverzoek, betaling, aanlevertermijn of bekendmaking.\n" +
+          "- beleidsReferenties: neem ook zichtbare voetnoten, eindnoten of andere verwijzingen naar beleid mee.\n" +
+          "- bijlagenLijst: noteer expliciete bijlagen of bijlagenlijsten uit het document.\n" +
+          "- inventarislijstOfDocumenttabel: noteer expliciete verwijzingen naar een inventarislijst, documenttabel of Woo-overzicht.\n" +
+          "- correspondentieVerwijzingen: noteer alleen expliciete verwijzingen naar eerdere correspondentie, brieven of e-mails.\n" +
+          "- beleidsReferenties, jurisprudentieReferenties en bijlageReferenties: noteer alleen expliciete verwijzingen uit het document.\n" +
           "- aandachtspunten: maximaal 4 korte punten met potentieel relevante kwesties of onzekerheden.\n" +
+          "- Let extra op woorden als geen besluit, niet-ontvankelijk, ingebrekestelling, concreet zicht op legalisatie, sociaal netwerk, definitieve berekening, zoekslag, gedeeltelijke openbaarmaking, opzet en grove schuld.\n" +
           "- leeskwaliteit: high, medium of low.\n" +
           "- Geen markdown, geen code fences, alleen JSON.\n\n" +
           `Tekst:\n${content}`,
@@ -533,7 +638,7 @@ async function extractFromImageWithOpenAI(
   const completion = await openai.chat.completions.create({
     model: IMAGE_ANALYSIS_MODEL,
     temperature: 0,
-    max_tokens: 2200,
+    max_tokens: 2600,
     messages: [
       {
         role: "system",
@@ -547,12 +652,20 @@ async function extractFromImageWithOpenAI(
             type: "text",
             text:
               "Lees deze afbeelding van een besluit en geef uitsluitend JSON terug in dit formaat:\n" +
-              '{"extractedText":"...", "samenvatting":"...", "datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "aandachtspunten":["..."], "leeskwaliteit":"high|medium|low"}\n\n' +
+              '{"extractedText":"...", "samenvatting":"...", "datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "rechtsmiddelenclausule":"...", "dragendeOverwegingen":[{"passage":"...", "duiding":"..."}], "wettelijkeGrondslagen":["..."], "procedureleAanwijzingen":["..."], "beleidsReferenties":["..."], "jurisprudentieReferenties":["..."], "bijlageReferenties":["..."], "bijlagenLijst":["..."], "inventarislijstOfDocumenttabel":["..."], "correspondentieVerwijzingen":["..."], "aandachtspunten":["..."], "leeskwaliteit":"high|medium|low"}\n\n' +
               "Regels:\n" +
+              `${LEGAL_RECOGNITION_GUIDANCE}\n` +
               "- extractedText: relevante zichtbare tekst in leesvolgorde, maximaal 6000 tekens.\n" +
               "- samenvatting: maximaal 650 tekens.\n" +
+              "- bestuursorgaan: mag ook volgen uit zichtbaar logo, briefhoofd, ondertekening of functietitel, maar laat leeg bij serieuze twijfel.\n" +
               "- besluitInhoud: kern van wat zichtbaar is besloten, maximaal 350 tekens.\n" +
+              "- rechtsmiddelenclausule: neem de kern op als die zichtbaar is.\n" +
+              "- dragendeOverwegingen: maximaal 4 objecten met passage en duiding, alleen als die redelijk zichtbaar zijn.\n" +
+              "- wettelijkeGrondslagen, procedureleAanwijzingen en andere referenties alleen invullen als die zichtbaar zijn.\n" +
+              "- neem ook zichtbare bijlagenlijsten, inventarislijsten, documenttabellen en verwijzingen naar eerdere correspondentie mee.\n" +
+              "- neem beleidsverwijzingen ook mee als ze alleen in voetnoot of eindnoot staan.\n" +
               "- rechtsgrond en termijnen alleen invullen als die zichtbaar zijn.\n" +
+              "- let extra op woorden als geen besluit, niet-ontvankelijk, ingebrekestelling, concreet zicht op legalisatie, sociaal netwerk, definitieve berekening, zoekslag, gedeeltelijke openbaarmaking, opzet en grove schuld.\n" +
               "- aandachtspunten: maximaal 4 korte punten.\n" +
               "- Geen markdown, geen code fences, alleen JSON.",
           },
@@ -585,7 +698,7 @@ async function extractKeyFieldsFromImageWithOpenAI(
   const completion = await openai.chat.completions.create({
     model: IMAGE_ANALYSIS_MODEL,
     temperature: 0,
-    max_tokens: 1200,
+    max_tokens: 1500,
     messages: [
       {
         role: "system",
@@ -599,10 +712,15 @@ async function extractKeyFieldsFromImageWithOpenAI(
             type: "text",
             text:
               "De afbeelding kan deels onleesbaar zijn. Bepaal toch zo betrouwbaar mogelijk de kerngegevens en geef alleen JSON terug in dit formaat:\n" +
-              '{"datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "aandachtspunten":["..."], "leeskwaliteit":"high|medium|low"}\n\n' +
+              '{"datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "rechtsmiddelenclausule":"...", "dragendeOverwegingen":[{"passage":"...", "duiding":"..."}], "wettelijkeGrondslagen":["..."], "procedureleAanwijzingen":["..."], "beleidsReferenties":["..."], "jurisprudentieReferenties":["..."], "bijlageReferenties":["..."], "bijlagenLijst":["..."], "inventarislijstOfDocumenttabel":["..."], "correspondentieVerwijzingen":["..."], "aandachtspunten":["..."], "leeskwaliteit":"high|medium|low"}\n\n' +
               "Regels:\n" +
+              `${LEGAL_RECOGNITION_GUIDANCE}\n` +
               "- Vul alleen gegevens in die echt zichtbaar of sterk afleidbaar zijn.\n" +
               "- Laat twijfelgevallen leeg met null.\n" +
+              "- dragendeOverwegingen en overige referenties alleen opnemen als die echt zichtbaar zijn.\n" +
+              "- neem waar zichtbaar ook rechtsmiddelenclausule, bijlagenlijst, inventarislijst of documenttabel en correspondentieverwijzingen mee.\n" +
+              "- neem beleidsverwijzingen ook mee als ze alleen in voetnoot of eindnoot staan.\n" +
+              "- let extra op woorden als geen besluit, niet-ontvankelijk, ingebrekestelling, concreet zicht op legalisatie, sociaal netwerk, definitieve berekening, zoekslag, gedeeltelijke openbaarmaking, opzet en grove schuld.\n" +
               "- aandachtspunten: maximaal 4 korte punten.\n" +
               "- Geen markdown, geen code fences, alleen JSON.",
           },

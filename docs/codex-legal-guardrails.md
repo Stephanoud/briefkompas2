@@ -4,6 +4,11 @@
 
 - Gebruik alleen officiele of vooraf goedgekeurde bronnen.
 - Geen verzonnen jurisprudentie, ECLI, wetsartikelen of procesroutes.
+- Geen verzonnen citaten uit het besluit.
+- Geen verzonnen termijnen, hoorzittingen, correspondentie of procescontacten.
+- Geen aannames over de rol of status van de gebruiker zonder basis in dossier of intake.
+- Geen beroep op "vaste jurisprudentie" zonder geverifieerde uitspraken.
+- Geen module-aannames als het document duidelijk op een andere module wijst.
 - Beschikkingstekst (termijn, adres, rechtsmiddelenclausule) gaat voor generieke webinformatie.
 - Bij onzekerheid altijd terugschalen naar veilige conceptbrief zonder jurisprudentie.
 

@@ -1,5 +1,5 @@
 import { ChatStep, Flow, IntakeFormData } from "@/types";
-import { bestuursorgaanSuggestions } from "@/lib/intake/bestuursorganen";
+import { bestuursorgaanSuggestions, extractBestuursorgaanName } from "@/lib/intake/bestuursorganen";
 import { interpretWooPeriodAnswer, interpretWooSubjectAnswer, isLikelyClarifyingQuestion } from "@/lib/intake-flow";
 
 export type IntakeMainIntent =
@@ -99,25 +99,14 @@ function titleCase(value: string): string {
 }
 
 function extractBestuursorgaan(text: string): string | undefined {
+  const matchedBestuursorgaan = extractBestuursorgaanName(text);
+  if (matchedBestuursorgaan) {
+    return matchedBestuursorgaan;
+  }
+
   const normalized = normalizeText(text);
   const suggestionMatch = bestuursorgaanSuggestions.find((entry) => normalized.includes(entry.toLowerCase()));
-  if (suggestionMatch) {
-    return suggestionMatch;
-  }
-
-  const genericMatch = text.match(
-    /\b(gemeente|provincie|waterschap|ministerie)\s+([a-z0-9\u00c0-\u017f'().,&\- ]{2,})/iu
-  );
-  if (genericMatch) {
-    const phrase = `${genericMatch[1]} ${genericMatch[2]}`.trim().replace(/\s+/g, " ");
-    return titleCase(phrase);
-  }
-
-  if (/\buwv\b/i.test(text)) return "Uitvoeringsinstituut Werknemersverzekeringen (UWV)";
-  if (/\bcjib\b/i.test(text)) return "Centraal Justitieel Incassobureau (CJIB)";
-  if (/\bbelastingdienst\b/i.test(text)) return "Belastingdienst";
-
-  return undefined;
+  return suggestionMatch;
 }
 
 function inferProcedureObject(flow: Flow, text: string): IntakeProcedureObject {

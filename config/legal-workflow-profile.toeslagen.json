@@ -1,0 +1,123 @@
+{
+  "module": "toeslagen",
+  "document_extraction": {
+    "required_fields": [
+      "toeslagsoort",
+      "voorschot_of_definitieve_vaststelling_of_terugvordering",
+      "grond_voor_herziening",
+      "bedrag",
+      "feitenbasis_partner_kinderen_inkomen_vermogen_opvang",
+      "hardheids_of_evenredigheidsmotivering",
+      "betalingsregeling_of_invordering"
+    ],
+    "optional_fields": [
+      "berekeningsspecificatie",
+      "bewijsstukken_ingediend",
+      "bijzondere_omstandigheden",
+      "reacties_van_Toeslagen",
+      "regeling_of_terugbetaalvoorstel"
+    ],
+    "red_flags": [
+      "geen_inzichtelijke_rekenbasis",
+      "zeer_formulematige_afwijzing_van_bijzondere_omstandigheden",
+      "onduidelijk_welke_feiten_het_besluit_dragen"
+    ],
+    "missing_info_triggers": [
+      "onduidelijk_of_het_om_definitieve_of_voorlopige_toekenning_gaat",
+      "onduidelijk_of_bewijsstukken_zijn_ingediend"
+    ]
+  },
+  "classification": {
+    "decision_type_rules": [
+      "terugvordering",
+      "definitieve_vaststelling",
+      "herziening",
+      "invordering_of_regeling"
+    ],
+    "procedure_stage_rules": [
+      "voorschotgeschillen en definitieve vaststellingen moeten van elkaar worden onderscheiden",
+      "toeslagenzaken blijven gescheiden van fiscale aanslagzaken",
+      "invordering of betalingsregeling vraagt om aparte toets op hardheid en evenredigheid"
+    ],
+    "misclassification_risks": [
+      "voorschotgeschil_verwarren_met_definitieve_vaststelling",
+      "belasting_en_toeslagen_niet_scheiden"
+    ]
+  },
+  "question_logic": {
+    "max_questions_per_round": 5,
+    "question_priority_rules": [
+      "vraag_eerst_of_het_om_voorschot_definitieve_vaststelling_of_terugvordering_gaat",
+      "vraag_dan_naar_de_betwiste_feitenbasis",
+      "vraag_dan_naar_bijzondere_omstandigheden",
+      "vraag_dan_naar_de_rekenbasis",
+      "vraag_dan_naar_tijdig_ingediende_stukken"
+    ],
+    "sample_questions": [
+      "Gaat het om een voorschot, een definitieve berekening of een terugvordering?",
+      "Welke feitelijke basis klopt volgens u niet: inkomen, partner, vermogen, opvanguren of iets anders?",
+      "Heeft u bijzondere omstandigheden aangevoerd, en is daarop concreet gereageerd?",
+      "Kunt u de berekening van het bedrag volgen of ontbreken tussenstappen?",
+      "Heeft u de relevante stukken tijdig aangeleverd?"
+    ],
+    "do_not_ask_if_already_known": true
+  },
+  "jurisprudence": {
+    "search_queries": [
+      "toeslagen terugvordering evenredigheid",
+      "toeslagen bijzondere omstandigheden motivering",
+      "definitieve vaststelling toeslag feitenbasis onjuist",
+      "hardheidsclausule toeslagen"
+    ],
+    "must_verify_fields": [
+      "ecli",
+      "court",
+      "date",
+      "legal_rule",
+      "factual_similarity",
+      "helps_user_or_authority",
+      "distinguishable_yes_no"
+    ],
+    "use_only_if_verified": true,
+    "fallback_if_not_verified": "write_without_case_law"
+  },
+  "grounds": {
+    "strongest_case_specific_grounds": [
+      "onjuiste_feitenbasis",
+      "evenredigheid_onvoldoende_individueel_beoordeeld",
+      "bijzondere_omstandigheden_te_formulematig_afgedaan",
+      "berekening_onvoldoende_inzichtelijk",
+      "bewijsstukken_niet_kenbaar_meegewogen"
+    ],
+    "weak_generic_grounds_to_avoid": [
+      "algemene_hardheidsklacht_zonder_concrete_omstandigheden",
+      "algemene_motiveringsklacht_zonder_feitenbasis_of_berekening"
+    ],
+    "evidence_hooks": [
+      "inkomensgegevens",
+      "BRP-situatie",
+      "contracten_kinderopvang",
+      "urenstaten",
+      "correspondentie_met_Toeslagen"
+    ]
+  },
+  "hallucination_guards": [
+    "verzin geen ECLI",
+    "verzin geen wetsartikel",
+    "verzin geen citaat uit besluit",
+    "verzin geen termijn",
+    "verzin geen hoorzitting of correspondentie",
+    "verzin geen rol of status van de gebruiker",
+    "neem geen vaste jurisprudentie op zonder geverifieerde uitspraken",
+    "doe geen aannames over module als het document op iets anders wijst",
+    "niet_stellen_dat_bijzondere_omstandigheden_altijd_tot_kwijtschelding_leiden",
+    "niet_veralgemeniseren_van_hersteloperatie_achtige_redeneringen_naar_gewone_toeslagzaken"
+  ],
+  "value_add_hooks": [
+    "toon_duidelijk_of_het_geschil_over_feiten_of_over_hardheid_gaat",
+    "geef_aparte_subflow_voor_rekenfouten"
+  ],
+  "abort_or_redirect_conditions": [
+    "als_alleen_niet_tijdig_beslissen_speelt_en_nog_geen_inhoudelijk_besluit_is_genomen_redirect_niet_tijdig"
+  ]
+}

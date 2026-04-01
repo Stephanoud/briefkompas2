@@ -20,9 +20,57 @@
     "woo": {
       "routes": ["woo_verzoek", "bezwaar_woo_besluit"],
       "primarySources": ["wetten.overheid.nl", "rijksoverheid.nl", "overheid.nl"],
-      "useCaseLaw": false
+      "useCaseLaw": "only_if_validated"
     },
     "algemeen_bestuursrecht": {
+      "routes": [
+        "zienswijze_bestuursrecht",
+        "bezwaar_bestuursrecht",
+        "beroep_rechtstreeks_bestuursrecht",
+        "beroep_na_bezwaar_bestuursrecht"
+      ],
+      "primarySources": ["wetten.overheid.nl", "overheid.nl", "rijksoverheid.nl", "rechtspraak.nl"],
+      "useCaseLaw": "only_if_validated"
+    },
+    "niet_tijdig_beslissen": {
+      "routes": [
+        "beroep_niet_tijdig_beslissen",
+        "woo_niet_tijdig_beslissen"
+      ],
+      "primarySources": ["wetten.overheid.nl", "overheid.nl", "rijksoverheid.nl", "rechtspraak.nl"],
+      "useCaseLaw": "only_if_validated"
+    },
+    "niet_ontvankelijkheid": {
+      "routes": [
+        "zienswijze_bestuursrecht",
+        "bezwaar_bestuursrecht",
+        "beroep_rechtstreeks_bestuursrecht",
+        "beroep_na_bezwaar_bestuursrecht"
+      ],
+      "primarySources": ["wetten.overheid.nl", "overheid.nl", "rijksoverheid.nl", "rechtspraak.nl"],
+      "useCaseLaw": "only_if_validated"
+    },
+    "bestuurlijke_boete": {
+      "routes": [
+        "zienswijze_bestuursrecht",
+        "bezwaar_bestuursrecht",
+        "beroep_rechtstreeks_bestuursrecht",
+        "beroep_na_bezwaar_bestuursrecht"
+      ],
+      "primarySources": ["wetten.overheid.nl", "overheid.nl", "rijksoverheid.nl", "rechtspraak.nl"],
+      "useCaseLaw": "only_if_validated"
+    },
+    "wmo_pgb": {
+      "routes": [
+        "zienswijze_bestuursrecht",
+        "bezwaar_bestuursrecht",
+        "beroep_rechtstreeks_bestuursrecht",
+        "beroep_na_bezwaar_bestuursrecht"
+      ],
+      "primarySources": ["wetten.overheid.nl", "overheid.nl", "rijksoverheid.nl", "rechtspraak.nl"],
+      "useCaseLaw": "only_if_validated"
+    },
+    "handhaving": {
       "routes": [
         "zienswijze_bestuursrecht",
         "bezwaar_bestuursrecht",

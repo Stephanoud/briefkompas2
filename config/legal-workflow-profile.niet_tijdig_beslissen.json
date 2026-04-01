@@ -1,0 +1,124 @@
+{
+  "module": "niet_tijdig_beslissen",
+  "document_extraction": {
+    "required_fields": [
+      "datum_aanvraag_of_bezwaar",
+      "wettelijke_of_meegedeelde_beslistermijn",
+      "verdaging_of_opschorting",
+      "datum_ingebrekestelling",
+      "bewijs_van_verzending_en_ontvangst",
+      "datum_eventueel_later_besluit",
+      "type_procedure_aanvraag_of_bezwaar"
+    ],
+    "optional_fields": [
+      "ontvangstbevestiging",
+      "e_mailheaders",
+      "track_and_trace",
+      "verdagingbrief",
+      "correspondentie_over_termijn"
+    ],
+    "red_flags": [
+      "geen_bewijs_ontvangst_ingebrekestelling",
+      "ingebrekestelling_te_vroeg_verzonden",
+      "bestuursorgaan_heeft_intussen_al_besloten",
+      "bijzondere_wet_met_afwijkende_termijn_niet_herkend"
+    ],
+    "missing_info_triggers": [
+      "onduidelijk_wat_de_beslistermijn_is",
+      "onduidelijk_of_opschorting_rechtsgeldig_was"
+    ]
+  },
+  "classification": {
+    "decision_type_rules": [
+      "niet_tijdig_op_aanvraag",
+      "niet_tijdig_op_bezwaar",
+      "Woo_niet_tijdig",
+      "uitzonderingsregime_toeslagen_of_bijzondere_wet"
+    ],
+    "procedure_stage_rules": [
+      "zonder geldige ingebrekestelling geen beroep wegens niet tijdig beslissen opstellen",
+      "Woo-zaken kunnen een eigen niet-tijdig route hebben",
+      "bij later inhoudelijk besluit geen niet-tijdig beroep afdwingen"
+    ],
+    "misclassification_risks": [
+      "gewoon_inhoudelijk_beroep_per_abuis_als_niet_tijdig",
+      "te_vroege_flow_toch_laten_schrijven"
+    ]
+  },
+  "question_logic": {
+    "max_questions_per_round": 5,
+    "question_priority_rules": [
+      "vraag_eerst_naar_de_datum_van_aanvraag_of_bezwaar",
+      "vraag_dan_naar_de_beslistermijn",
+      "vraag_dan_naar_ingebrekestelling_en_ontvangstbewijs",
+      "vraag_dan_of_twee_weken_zijn_verstreken",
+      "vraag_dan_naar_verdaging_of_opschorting"
+    ],
+    "sample_questions": [
+      "Wat is de datum van uw oorspronkelijke aanvraag of bezwaar?",
+      "Weet u welke wettelijke of meegedeelde beslistermijn gold?",
+      "Heeft u een ingebrekestelling gestuurd, en kunt u ontvangst bewijzen?",
+      "Zijn daarna minstens twee weken verstreken zonder besluit?",
+      "Heeft het bestuursorgaan de termijn rechtsgeldig verdaagd of opgeschort?"
+    ],
+    "do_not_ask_if_already_known": true
+  },
+  "jurisprudence": {
+    "search_queries": [
+      "premature ingebrekestelling niet tijdig beslissen",
+      "bewijs ontvangst ingebrekestelling",
+      "beroep niet tijdig beslissen opschorting beslistermijn",
+      "Woo beroep niet tijdig beslissen"
+    ],
+    "must_verify_fields": [
+      "ecli",
+      "court",
+      "date",
+      "legal_rule",
+      "factual_similarity",
+      "helps_user_or_authority",
+      "distinguishable_yes_no"
+    ],
+    "use_only_if_verified": true,
+    "fallback_if_not_verified": "write_without_case_law"
+  },
+  "grounds": {
+    "strongest_case_specific_grounds": [
+      "beslistermijn_verstreken",
+      "ingebrekestelling_geldig_en_ontvangen",
+      "geen_rechtsgeldige_verdaging_of_opschorting",
+      "beroep_niet_tijdig_openstaat_en_bestuursorgaan_moet_beslissen"
+    ],
+    "weak_generic_grounds_to_avoid": [
+      "algemene_klacht_over_trage_behandeling_zonder_ingebrekestelling",
+      "algemene_termijnklacht_zonder_beslisdatum_of_opschortingsanalyse"
+    ],
+    "evidence_hooks": [
+      "ontvangstbevestiging",
+      "track_and_trace",
+      "e-mailheaders",
+      "verdagingbrief",
+      "eerder_correspondentie_over_termijn"
+    ]
+  },
+  "hallucination_guards": [
+    "verzin geen ECLI",
+    "verzin geen wetsartikel",
+    "verzin geen citaat uit besluit",
+    "verzin geen termijn",
+    "verzin geen hoorzitting of correspondentie",
+    "verzin geen rol of status van de gebruiker",
+    "neem geen vaste jurisprudentie op zonder geverifieerde uitspraken",
+    "doe geen aannames over module als het document op iets anders wijst",
+    "nooit_beroep_genereren_als_ingebrekestelling_niet_is_geverifieerd",
+    "niet_stellen_dat_dwangsom_altijd_geldt_voor_toeslagen_of_Woo"
+  ],
+  "value_add_hooks": [
+    "bouw_harde_gating_in_zonder_verstreken_termijn_geen_beroep_output",
+    "geef_alternatief_eerst_ingebrekestelling_opstellen"
+  ],
+  "abort_or_redirect_conditions": [
+    "als_nog_geen_ingebrekestelling_is_verzonden",
+    "als_de_tweewekentermijn_nog_niet_is_verstreken"
+  ]
+}

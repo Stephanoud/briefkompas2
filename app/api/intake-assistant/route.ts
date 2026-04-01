@@ -5,6 +5,7 @@ import {
   IntakeAssistantRequest,
   IntakeAssistantResponse,
 } from "@/lib/intake/assistant-guidance";
+import { getKnownBestuursorgaan } from "@/lib/intake/document-context";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,8 @@ function normalizeReply(value?: string | null): string {
 }
 
 function buildPrompt(input: IntakeAssistantRequest): string {
+  const knownBestuursorgaan = getKnownBestuursorgaan(input.intakeData) ?? "onbekend";
+
   return [
     "Beantwoord de vraag van de gebruiker binnen een lopende BriefKompas-intake.",
     "Regels:",
@@ -30,6 +33,7 @@ function buildPrompt(input: IntakeAssistantRequest): string {
     "- Gebruik alleen de meegegeven context.",
     "- Verzin geen documentinhoud die niet expliciet is uitgelezen.",
     "- Als documentuitlezing onzeker of mislukt is, zeg dat eerlijk.",
+    "- Als het bestuursorgaan al bekend is uit intakegegevens of documentanalyse, noem dat bestuursorgaan concreet en vraag er niet opnieuw naar.",
     "- Als de gebruiker een verduidelijkingsvraag stelt, beantwoord die direct en vriendelijk.",
     "- Houd in het achterhoofd welke informatie nog ontbreekt voor de intake, maar stel niet meer dan hooguit een zachte brug terug naar die informatie.",
     "",
@@ -37,6 +41,7 @@ function buildPrompt(input: IntakeAssistantRequest): string {
     `Reden: ${input.reason}`,
     `Huidige stap: ${input.currentStepId ?? "onbekend"}`,
     `Vraag die nu openstaat: ${input.currentStepQuestion ?? "onbekend"}`,
+    `Bekend bestuursorgaan uit intake/document: ${knownBestuursorgaan}`,
     `Ontbrekende punten: ${(input.missingFacts ?? []).join(", ") || "geen"}`,
     `Route-uitleg: ${input.routeExplanation ?? "geen"}`,
     `Documentmelding: ${input.documentAnalysisMessage ?? "geen"}`,

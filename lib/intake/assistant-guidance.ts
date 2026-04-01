@@ -1,4 +1,5 @@
 import { Flow, IntakeFormData } from "@/types";
+import { getKnownBestuursorgaan, refersToUploadedDocument } from "@/lib/intake/document-context";
 
 export type IntakeAssistantReason = "clarifying_question" | "stuck_answer";
 
@@ -58,6 +59,8 @@ function joinHumanList(values: string[]): string {
 
 function summarizeDocumentExtraction(data: Partial<IntakeFormData>): string[] {
   const details: string[] = [];
+  const knownBestuursorgaan = getKnownBestuursorgaan(data);
+  if (hasText(knownBestuursorgaan)) details.push(`het bestuursorgaan ${knownBestuursorgaan}`);
   if (hasText(data.datumBesluit)) details.push(`de datum ${data.datumBesluit}`);
   if (hasText(data.kenmerk)) details.push(`het kenmerk ${data.kenmerk}`);
   if (hasText(data.besluitDocumentType)) details.push(`het documenttype ${data.besluitDocumentType}`);
@@ -69,6 +72,7 @@ function summarizeDocumentExtraction(data: Partial<IntakeFormData>): string[] {
 export function buildIntakeAssistantFallbackReply(input: IntakeAssistantRequest): string {
   const normalizedMessage = input.userMessage.toLowerCase();
   const extractedDocumentDetails = summarizeDocumentExtraction(input.intakeData);
+  const knownBestuursorgaan = getKnownBestuursorgaan(input.intakeData);
   const missingFacts = (input.missingFacts ?? []).slice(0, 2).map(humanizeMissingFact);
   const missingFactsLine =
     missingFacts.length > 0
@@ -84,6 +88,10 @@ export function buildIntakeAssistantFallbackReply(input: IntakeAssistantRequest)
     }
 
     return `Ik heb uit dit bestand nog geen datum, kenmerk of andere besluitdetails betrouwbaar kunnen overnemen. ${input.documentAnalysisMessage ?? "Dat ligt niet automatisch aan jouw zaak; dan steunt de intake tijdelijk vooral op jouw antwoorden."}${missingFactsLine}`;
+  }
+
+  if (input.currentStepId === "bestuursorgaan" && knownBestuursorgaan && refersToUploadedDocument(input.userMessage)) {
+    return `In het geuploade document staat ${knownBestuursorgaan} als bestuursorgaan. Ik neem dat mee voor je intake.${missingFactsLine}`;
   }
 
   if (input.currentStepId === "bestuursorgaan" && /\bwaarom|waarvoor|welk\b/i.test(normalizedMessage)) {

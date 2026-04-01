@@ -51,7 +51,8 @@ test.describe("WOO happy path", () => {
     await page.getByRole("button", { name: "Naar Overzicht" }).click();
 
     await expect(page).toHaveURL(/\/review\/woo$/);
-    await expect(page.getByText("WOO-verzoek details")).toBeVisible();
+    await expect(page.getByText("Overzicht van je antwoorden")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Intake voor WOO-verzoek" })).toBeVisible();
     await expect(page.getByText("Fout")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Ga naar productkeuze ->" }).click();

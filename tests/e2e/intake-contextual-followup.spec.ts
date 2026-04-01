@@ -4,6 +4,10 @@ const testAuthCookie = {
   name: "briefkompas_test_auth",
   value: "briefkompas_test_mode",
 };
+const tinyPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+nXx8AAAAASUVORK5CYII=",
+  "base64"
+);
 
 async function openAuthenticatedPage(page: Page, path: string) {
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
@@ -19,57 +23,71 @@ async function openAuthenticatedPage(page: Page, path: string) {
   await page.goto(path);
 }
 
-async function completeBezwaarRouteCheck(page: Page) {
-  const answerInput = page.getByPlaceholder("Typ je antwoord...");
-  const nextButton = page.getByRole("button", { name: "Volgende" });
+async function mockDecisionExtraction(page: Page, bestuursorgaan?: string) {
+  await page.route("**/api/extract-decision-meta", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        extracted: true,
+        datumBesluit: "1 april 2026",
+        kenmerk: "BK-2026-002",
+        samenvatting: "Afwijzing van een omgevingsvergunning.",
+        extractedText: "Uw aanvraag voor een omgevingsvergunning is afgewezen.",
+        analysisSource: "image",
+        documentType: "beschikking",
+        decisionAnalysis: {
+          bestuursorgaan,
+          onderwerp: "Omgevingsvergunning",
+          besluitInhoud: "De gevraagde omgevingsvergunning is geweigerd.",
+        },
+        analysisStatus: "read",
+        readability: "high",
+      }),
+    });
+  });
+}
 
-  const answers = [
-    "ja",
-    "nee",
-    "nee",
-    "nee",
-    "nee",
-    "nee",
-    "bezwaar",
-    "nee",
-    "Ik word rechtstreeks geraakt door dit besluit.",
-    "ja",
-  ];
+async function uploadMockDecision(page: Page) {
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "besluit.png",
+    mimeType: "image/png",
+    buffer: tinyPng,
+  });
 
-  for (const answer of answers) {
-    await answerInput.fill(answer);
-    await nextButton.click();
-  }
+  await expect(page.getByText(/Bestand ontvangen/)).toBeVisible();
+  await expect(page.getByPlaceholder("Typ je antwoord...")).toBeVisible();
 }
 
 test.describe("Contextual intake follow-up", () => {
-  test("bezwaar intake herijkt de bestuursorgaanvraag bij een geweigerde vergunning", async ({ page }) => {
+  test("bezwaar intake gebruikt documentcontext en slaat bekende bestuursorgaanvraag over", async ({ page }) => {
+    await mockDecisionExtraction(page, "Gemeente Amsterdam");
     await openAuthenticatedPage(page, "/intake/bezwaar");
-    await completeBezwaarRouteCheck(page);
+    await uploadMockDecision(page);
 
-    const answerInput = page.getByPlaceholder("Typ je antwoord...");
-    const nextButton = page.getByRole("button", { name: "Volgende" });
-
-    await answerInput.fill("Ik wil een geweigerde vergunning laten herzien");
-    await nextButton.click();
-
-    await expect(page.getByText("Welk bestuursorgaan heeft de vergunning geweigerd of afgewezen?")).toBeVisible();
-    await expect(
-      page.getByText("Wat is de soort besluit? (Kies een: boete, uitkering, belasting, vergunning, overig)")
-    ).toHaveCount(0);
+    await expect(page.getByText(/(Wat is de soort besluit|Om wat voor besluit gaat het precies)/)).toBeVisible();
+    await expect(page.getByText(/Tegen welk bestuursorgaan richt je het bezwaar/)).toHaveCount(0);
   });
 
-  test("bezwaar intake slaat bekende context over en gaat door naar de gronden", async ({ page }) => {
+  test("bezwaar intake gebruikt vergunningcontext voor doel- en grondenvraag", async ({ page }) => {
+    await mockDecisionExtraction(page);
     await openAuthenticatedPage(page, "/intake/bezwaar");
-    await completeBezwaarRouteCheck(page);
+    await uploadMockDecision(page);
 
     const answerInput = page.getByPlaceholder("Typ je antwoord...");
     const nextButton = page.getByRole("button", { name: "Volgende" });
 
-    await answerInput.fill("Ik wil een geweigerde vergunning laten herzien");
+    await answerInput.fill("Gemeente Amsterdam");
     await nextButton.click();
 
-    await answerInput.fill("Gemeente Amsterdam");
+    await answerInput.fill("vergunning weigering");
+    await nextButton.click();
+
+    await expect(
+      page.getByText("Wat wil je met je bezwaar bereiken: alsnog verlening van de vergunning of een nieuw besluit?")
+    ).toBeVisible();
+
+    await answerInput.fill("Ik wil een geweigerde vergunning laten herzien");
     await nextButton.click();
 
     await expect(page.getByText("Waarom ben je het niet eens met de weigering of afwijzing van de vergunning?")).toBeVisible();

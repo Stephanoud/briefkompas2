@@ -197,6 +197,53 @@ export default function ReviewPage() {
                   {intakeData.besluitAnalyse.besluitInhoud}
                 </p>
               )}
+              {intakeData.besluitAnalyse?.dragendeOverwegingen?.length ? (
+                <div className="mt-3 space-y-2 text-sm leading-relaxed text-[var(--muted-strong)]">
+                  <p className="font-semibold text-[var(--foreground)]">Dragende overwegingen:</p>
+                  {intakeData.besluitAnalyse.dragendeOverwegingen.map((item) => (
+                    <div key={`${item.passage}-${item.duiding}`} className="rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
+                      <p>{item.duiding}</p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">Passage: {item.passage}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {intakeData.besluitAnalyse?.wettelijkeGrondslagen?.length ? (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                  <span className="font-semibold text-[var(--foreground)]">Wettelijke grondslagen:</span>{" "}
+                  {intakeData.besluitAnalyse.wettelijkeGrondslagen.join(", ")}
+                </p>
+              ) : null}
+              {intakeData.besluitAnalyse?.procedureleAanwijzingen?.length ? (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                  <span className="font-semibold text-[var(--foreground)]">Procedurele aanwijzingen:</span>{" "}
+                  {intakeData.besluitAnalyse.procedureleAanwijzingen.join(", ")}
+                </p>
+              ) : null}
+              {intakeData.besluitAnalyse?.rechtsmiddelenclausule ? (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                  <span className="font-semibold text-[var(--foreground)]">Rechtsmiddelenclausule:</span>{" "}
+                  {intakeData.besluitAnalyse.rechtsmiddelenclausule}
+                </p>
+              ) : null}
+              {intakeData.besluitAnalyse?.bijlagenLijst?.length ? (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                  <span className="font-semibold text-[var(--foreground)]">Bijlagenlijst:</span>{" "}
+                  {intakeData.besluitAnalyse.bijlagenLijst.join(", ")}
+                </p>
+              ) : null}
+              {intakeData.besluitAnalyse?.inventarislijstOfDocumenttabel?.length ? (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                  <span className="font-semibold text-[var(--foreground)]">Inventarislijst of documenttabel:</span>{" "}
+                  {intakeData.besluitAnalyse.inventarislijstOfDocumenttabel.join(", ")}
+                </p>
+              ) : null}
+              {intakeData.besluitAnalyse?.correspondentieVerwijzingen?.length ? (
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
+                  <span className="font-semibold text-[var(--foreground)]">Eerdere correspondentie:</span>{" "}
+                  {intakeData.besluitAnalyse.correspondentieVerwijzingen.join(", ")}
+                </p>
+              ) : null}
               {intakeData.besluitSamenvatting && (
                 <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
                   <span className="font-semibold text-[var(--foreground)]">Samenvatting:</span>{" "}

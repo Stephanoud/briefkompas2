@@ -35,6 +35,14 @@ export function determineRoute(input: {
     reasons: [reason],
   });
 
+  if (caseType === "niet_tijdig_beslissen") {
+    if (flow === "woo" || hasAny(text, ["woo", "wet open overheid"])) {
+      return pick("woo_niet_tijdig_beslissen", 0.97, "Niet tijdig beslissen in Woo-context gedetecteerd.");
+    }
+
+    return pick("beroep_niet_tijdig_beslissen", 0.97, "Niet tijdig beslissen volgt de aparte beroepsroute.");
+  }
+
   if (flow === "zienswijze") {
     return pick("zienswijze_bestuursrecht", 0.96, "Procedurecheck wijst op zienswijze.");
   }
@@ -55,8 +63,29 @@ export function determineRoute(input: {
     );
   }
 
-  if (flow === "bezwaar" && caseType === "algemeen_bestuursrecht") {
-    return pick("bezwaar_bestuursrecht", 0.95, "Procedurecheck wijst op de standaard bezwaarrroute.");
+  if (
+    flow === "bezwaar" &&
+    (
+      caseType === "algemeen_bestuursrecht" ||
+      caseType === "bestuurlijke_boete" ||
+      caseType === "wmo_pgb" ||
+      caseType === "handhaving" ||
+      caseType === "niet_ontvankelijkheid"
+    )
+  ) {
+    return pick(
+      "bezwaar_bestuursrecht",
+      0.95,
+      caseType === "bestuurlijke_boete"
+        ? "Procedurecheck wijst op de reguliere Awb-bezwaarroute voor een bestuurlijke boete."
+        : caseType === "wmo_pgb"
+          ? "Procedurecheck wijst op de reguliere Awb-bezwaarroute voor een Wmo/PGB-besluit."
+          : caseType === "handhaving"
+            ? "Procedurecheck wijst op de reguliere Awb-bezwaarroute voor een handhavingsbesluit."
+            : caseType === "niet_ontvankelijkheid"
+              ? "Procedurecheck wijst op de reguliere route voor een ontvankelijkheidsgeschil."
+        : "Procedurecheck wijst op de standaard bezwaarrroute."
+    );
   }
 
   switch (caseType) {
@@ -65,6 +94,18 @@ export function determineRoute(input: {
         return pick("bezwaar_woo_besluit", 0.8, "Intake wijst op bezwaar tegen Woo-besluit.");
       }
       return pick("woo_verzoek", 0.95, "Intake wijst op nieuw Woo-verzoek.");
+    }
+    case "bestuurlijke_boete": {
+      return pick("bezwaar_bestuursrecht", 0.9, "Bestuurlijke boete volgt in beginsel de reguliere Awb-route.");
+    }
+    case "wmo_pgb": {
+      return pick("bezwaar_bestuursrecht", 0.9, "Wmo/PGB-besluiten volgen in beginsel de reguliere Awb-route.");
+    }
+    case "handhaving": {
+      return pick("bezwaar_bestuursrecht", 0.9, "Handhavingsbesluiten volgen in beginsel de reguliere Awb-route.");
+    }
+    case "niet_ontvankelijkheid": {
+      return pick("bezwaar_bestuursrecht", 0.9, "Ontvankelijkheidsgeschillen volgen in beginsel de reguliere Awb-route.");
     }
     case "omgevingswet_vergunning": {
       if (hasAny(text, ["afdeling 3.4", "uitgebreide procedure", "zienswijze", "ontwerpbesluit", "beroep"])) {

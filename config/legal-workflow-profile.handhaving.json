@@ -1,0 +1,129 @@
+{
+  "module": "handhaving",
+  "document_extraction": {
+    "required_fields": [
+      "handhavingsverzoek_of_sanctiebesluit",
+      "gestelde_overtreding",
+      "wettelijke_norm",
+      "concreet_zicht_op_legalisatie_besproken_ja_nee",
+      "onevenredigheid_besproken_ja_nee",
+      "type_sanctie",
+      "lastformulering",
+      "begunstigingstermijn",
+      "belanghebbendheid_bij_verzoek"
+    ],
+    "optional_fields": [
+      "inspectierapport",
+      "vergunningaanvraag",
+      "situatie_ter_plaatse",
+      "voorgeschiedenis_handhaving",
+      "communicatie_met_bestuursorgaan"
+    ],
+    "red_flags": [
+      "last_is_te_vaag",
+      "geen_concrete_overtredingsnorm_benoemd",
+      "bestuursorgaan_wijst_verzoek_af_als_beleid_of_algemeen_signaal_zonder_verdere_analyse",
+      "begunstigingstermijn_lijkt_niet_haalbaar"
+    ],
+    "missing_info_triggers": [
+      "onduidelijk_of_gebruiker_verzoeker_of_aangeschrevene_is",
+      "onduidelijk_of_vergunningaanvraag_loopt"
+    ]
+  },
+  "classification": {
+    "decision_type_rules": [
+      "afwijzing_handhavingsverzoek",
+      "toewijzing_handhavingsverzoek",
+      "last_onder_dwangsom",
+      "bestuursdwang",
+      "invordering_na_dwangsom"
+    ],
+    "procedure_stage_rules": [
+      "last onder dwangsom of bestuursdwang volgt in beginsel de reguliere Awb-route",
+      "beslissing op bezwaar stuurt naar beroep na bezwaar",
+      "signalen dat het eigenlijk om vergunningverlening gaat blokkeren automatische handhavingsrouting"
+    ],
+    "misclassification_risks": [
+      "invorderingsbesluit_behandelen_als_eerste_last",
+      "algemeen_beleidsverzoek_verwarren_met_concreet_handhavingsverzoek"
+    ]
+  },
+  "question_logic": {
+    "max_questions_per_round": 5,
+    "question_priority_rules": [
+      "vraag_eerst_naar_de_rol_van_de_gebruiker",
+      "vraag_dan_naar_de_concrete_overtreding",
+      "vraag_dan_naar_legalisatie",
+      "vraag_dan_naar_de_duidelijkheid_van_de_last_en_termijn",
+      "vraag_dan_naar_onevenredigheid"
+    ],
+    "sample_questions": [
+      "Bent u degene die om handhaving heeft gevraagd, of bent u degene aan wie de last is opgelegd?",
+      "Op welke concrete overtreding doelt het besluit precies?",
+      "Is legalisatie mogelijk of al aangevraagd?",
+      "Is de last volgens u duidelijk genoeg over wat precies moet gebeuren en voor wanneer?",
+      "Heeft het bestuursorgaan uitgelegd waarom handhaving wel of niet onevenredig is?"
+    ],
+    "do_not_ask_if_already_known": true
+  },
+  "jurisprudence": {
+    "search_queries": [
+      "concreet zicht op legalisatie handhaving",
+      "last onder dwangsom duidelijkheid last",
+      "begunstigingstermijn handhaving redelijkheid",
+      "belanghebbende handhavingsverzoek",
+      "afwijzing handhavingsverzoek geen besluit of wel besluit"
+    ],
+    "must_verify_fields": [
+      "ecli",
+      "court",
+      "date",
+      "legal_rule",
+      "factual_similarity",
+      "helps_user_or_authority",
+      "distinguishable_yes_no"
+    ],
+    "use_only_if_verified": true,
+    "fallback_if_not_verified": "write_without_case_law"
+  },
+  "grounds": {
+    "strongest_case_specific_grounds": [
+      "geen_overtreding_aangetoond",
+      "concreet_zicht_op_legalisatie_genegeerd",
+      "onevenredigheid_onvoldoende_beoordeeld",
+      "last_onvoldoende_bepaald",
+      "begunstigingstermijn_onredelijk",
+      "onjuist_oordeel_over_belanghebbendheid_of_besluitbegrip"
+    ],
+    "weak_generic_grounds_to_avoid": [
+      "algemene_motiveringsklacht_zonder_overtredingsnorm",
+      "algemene_evenredigheidsklacht_zonder_concreet_gevolg"
+    ],
+    "evidence_hooks": [
+      "vergunningaanvraag",
+      "fotos_en_inspectierapporten",
+      "correspondentie_met_gemeente",
+      "situatie_ter_plaatse",
+      "uitleg_waarom_verzoek_concreet_was"
+    ]
+  },
+  "hallucination_guards": [
+    "verzin geen ECLI",
+    "verzin geen wetsartikel",
+    "verzin geen citaat uit besluit",
+    "verzin geen termijn",
+    "verzin geen hoorzitting of correspondentie",
+    "verzin geen rol of status van de gebruiker",
+    "neem geen vaste jurisprudentie op zonder geverifieerde uitspraken",
+    "doe geen aannames over module als het document op iets anders wijst",
+    "niet_stellen_dat_handhaving_altijd_moet_bij_overtreding_zonder_uitzonderingen",
+    "niet_automatisch_aannemen_dat_elk_handhavingsverzoek_een_besluit_oplevert"
+  ],
+  "value_add_hooks": [
+    "bij_afwijzing_handhavingsverzoek_altijd_vragen_hoe_concreet_het_oorspronkelijke_verzoek_was",
+    "bij_sanctiebesluit_aparte_keuze_inbouwen_tussen_overtreding_betwist / last_te_vaag / termijn_te_kort"
+  ],
+  "abort_or_redirect_conditions": [
+    "als_het_eigenlijk_gaat_om_verlening_of_weigering_van_vergunning_redirect_vergunning"
+  ]
+}

@@ -1,0 +1,129 @@
+{
+  "module": "woo",
+  "document_extraction": {
+    "required_fields": [
+      "onderwerp_van_het_verzoek",
+      "periode",
+      "organisatieonderdeel",
+      "beschrijving_van_de_zoekslag",
+      "gevonden_documenten",
+      "inventarislijst_ja_nee",
+      "weigeringsgronden_per_document_of_passage",
+      "gedeeltelijke_openbaarmaking_besproken_ja_nee",
+      "termijn_en_verdaging"
+    ],
+    "optional_fields": [
+      "zoektermen",
+      "inventarislijst",
+      "documentcategorieen",
+      "passagegerichte_lakking",
+      "verwijzingen_naar_andere_documenten"
+    ],
+    "red_flags": [
+      "zoekslag_zeer_algemeen_beschreven",
+      "geen_inventarislijst",
+      "weigeringsgrond_alleen_algemeen_en_niet_documentgericht",
+      "geen_kenbare_afweging_over_deels_openbaar_maken"
+    ],
+    "missing_info_triggers": [
+      "onduidelijk_of_meer_documenten_moeten_bestaan",
+      "onduidelijk_of_de_gebruiker_het_verzoek_zelf_te_breed_had_geformuleerd"
+    ]
+  },
+  "classification": {
+    "decision_type_rules": [
+      "volledige_weigering",
+      "gedeeltelijke_toewijzing_met_lakking",
+      "geen_documenten_gevonden",
+      "niet_tijdig_op_Woo_verzoek"
+    ],
+    "procedure_stage_rules": [
+      "onderscheid inhoudelijke weigering van zoekslaggebreken",
+      "onderscheid gewone Woo-beslissing van niet_tijdig_Woo",
+      "pas geen Wob-redenering toe zonder Woo-context en verificatie"
+    ],
+    "misclassification_risks": [
+      "Wob_rechtspraak_onkritisch_op_Woo_toepassen",
+      "inhoudelijke_weigering_en_zoekslaggebrek_door_elkaar_halen"
+    ]
+  },
+  "question_logic": {
+    "max_questions_per_round": 5,
+    "question_priority_rules": [
+      "vraag_eerst_of_het_verzoek_concreet_genoeg_was",
+      "vraag_dan_naar_de_zoekslag",
+      "vraag_dan_of_documenten_volledig_of_deels_zijn_geweigerd",
+      "vraag_dan_naar_uitzonderingsgronden_per_document_of_passage",
+      "vraag_dan_naar_aanwijzingen_voor_extra_documenten"
+    ],
+    "sample_questions": [
+      "Was uw verzoek voldoende concreet qua onderwerp, periode, afdeling of documentsoort?",
+      "Heeft het bestuursorgaan uitgelegd waar, door wie en met welke zoektermen is gezocht?",
+      "Zijn documenten volledig geweigerd, of alleen deels gelakt?",
+      "Per document: is duidelijk op welke Woo-uitzondering het bestuursorgaan zich beroept?",
+      "Zijn er sterke aanwijzingen dat er meer documenten moeten bestaan dan nu zijn gevonden?"
+    ],
+    "do_not_ask_if_already_known": true
+  },
+  "jurisprudence": {
+    "search_queries": [
+      "Woo zoekslag onvoldoende gemotiveerd",
+      "Woo inventarislijst motiveringsgebrek",
+      "Woo gedeeltelijke openbaarmaking passagegericht",
+      "Woo meer documenten moeten bestaan"
+    ],
+    "must_verify_fields": [
+      "ecli",
+      "court",
+      "date",
+      "legal_rule",
+      "factual_similarity",
+      "helps_user_or_authority",
+      "distinguishable_yes_no"
+    ],
+    "use_only_if_verified": true,
+    "fallback_if_not_verified": "write_without_case_law"
+  },
+  "grounds": {
+    "strongest_case_specific_grounds": [
+      "zoekslag_onvoldoende_inzichtelijk_of_onvolledig",
+      "weigeringsgronden_te_abstract_toegepast",
+      "geen_passage_of_documentgerichte_motivering",
+      "geen_kenbare_beoordeling_van_gedeeltelijke_openbaarmaking",
+      "aanwijzingen_voor_bestaande_extra_documenten_genegeerd",
+      "te_laat_beslist_op_Woo_verzoek"
+    ],
+    "weak_generic_grounds_to_avoid": [
+      "algemene_klacht_over_openbaarheid_zonder_documentgerichte_haak",
+      "algemene_motiveringsklacht_zonder_zoekslag_of_weigeringsgrond"
+    ],
+    "evidence_hooks": [
+      "eerdere_e-mails",
+      "notulenverwijzingen",
+      "bestandsnamen_of_dossiernummers",
+      "organogram_of_afdelingen",
+      "documenten_die_naar_andere_documenten_verwijzen"
+    ]
+  },
+  "hallucination_guards": [
+    "verzin geen ECLI",
+    "verzin geen wetsartikel",
+    "verzin geen citaat uit besluit",
+    "verzin geen termijn",
+    "verzin geen hoorzitting of correspondentie",
+    "verzin geen rol of status van de gebruiker",
+    "neem geen vaste jurisprudentie op zonder geverifieerde uitspraken",
+    "doe geen aannames over module als het document op iets anders wijst",
+    "niet_aannemen_dat_elk_gebrek_in_zoekslag_tot_volledige_openbaarmaking_leidt",
+    "niet_stellen_dat_elke_lakking_onrechtmatig_is"
+  ],
+  "value_add_hooks": [
+    "laat_gebruiker_eerst_documentcategorieen_selecteren",
+    "bouw_submodule_voor_niet_tijdig_Woo",
+    "vraag_gericht_naar_vermoede_extra_documenten"
+  ],
+  "abort_or_redirect_conditions": [
+    "als_het_verzoek_zo_vaag_is_dat_eerst_specificatie_nodig_is",
+    "als_er_nog_geen_besluit_is_en_alleen_termijnoverschrijding_speelt_redirect_niet_tijdig"
+  ]
+}

@@ -4,6 +4,10 @@ const testAuthCookie = {
   name: "briefkompas_test_auth",
   value: "briefkompas_test_mode",
 };
+const tinyPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+nXx8AAAAASUVORK5CYII=",
+  "base64"
+);
 
 async function openAuthenticatedPage(page: Page, path: string) {
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
@@ -19,45 +23,56 @@ async function openAuthenticatedPage(page: Page, path: string) {
   await page.goto(path);
 }
 
-async function completeBezwaarRouteCheck(page: Page) {
-  const answerInput = page.getByPlaceholder("Typ je antwoord...");
-  const nextButton = page.getByRole("button", { name: "Volgende" });
+async function mockDecisionExtraction(page: Page) {
+  await page.route("**/api/extract-decision-meta", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        extracted: true,
+        datumBesluit: "1 april 2026",
+        kenmerk: "BK-2026-001",
+        samenvatting: "Afwijzing van een omgevingsvergunning.",
+        extractedText: "Uw aanvraag voor een omgevingsvergunning is afgewezen.",
+        analysisSource: "image",
+        documentType: "beschikking",
+        decisionAnalysis: {
+          onderwerp: "Omgevingsvergunning",
+          besluitInhoud: "De gevraagde omgevingsvergunning is geweigerd.",
+        },
+        analysisStatus: "read",
+        readability: "high",
+      }),
+    });
+  });
+}
 
-  const answers = [
-    "ja",
-    "nee",
-    "nee",
-    "nee",
-    "nee",
-    "nee",
-    "bezwaar",
-    "nee",
-    "Ik word rechtstreeks geraakt door dit besluit.",
-    "ja",
-  ];
+async function uploadMockDecision(page: Page) {
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "besluit.png",
+    mimeType: "image/png",
+    buffer: tinyPng,
+  });
 
-  for (const answer of answers) {
-    await answerInput.fill(answer);
-    await nextButton.click();
-  }
+  await expect(page.getByText(/Bestand ontvangen/)).toBeVisible();
+  await expect(page.getByPlaceholder("Typ je antwoord...")).toBeVisible();
 }
 
 test.describe("Intake chat validation", () => {
   test("bezwaar categorie accepts natural language refusal descriptions", async ({ page }) => {
+    await mockDecisionExtraction(page);
     await openAuthenticatedPage(page, "/intake/bezwaar");
-    await completeBezwaarRouteCheck(page);
+    await uploadMockDecision(page);
 
     const answerInput = page.getByPlaceholder("Typ je antwoord...");
     const nextButton = page.getByRole("button", { name: "Volgende" });
 
-    await expect(
-      page.getByText("Tegen welk bestuursorgaan richt je het bezwaar? (bijvoorbeeld: gemeente Amsterdam, belastingdienst)")
-    ).toBeVisible();
+    await expect(page.getByText(/Tegen welk bestuursorgaan richt je het bezwaar/)).toBeVisible();
 
     await answerInput.fill("Gemeente Amsterdam");
     await nextButton.click();
 
-    await expect(page.getByText("Wat is de soort besluit?")).toBeVisible();
+    await expect(page.getByText(/(Wat is de soort besluit|Om wat voor besluit gaat het precies)/)).toBeVisible();
 
     await answerInput.fill("vergunning weigering");
     await nextButton.click();
@@ -91,9 +106,7 @@ test.describe("Intake chat validation", () => {
     await answerInput.fill("wat voldoet wel aan de voorwaarden?");
     await nextButton.click();
 
-    await expect(
-      page.getByText("Dit lijkt een vraag. Geef eerst een concreet antwoord op de huidige intakevraag.")
-    ).toBeVisible();
+    await expect(page.getByText(/Ik help je daar graag kort bij\./)).toBeVisible();
     await expect(page.getByText("Stap 3 van 6")).toBeVisible();
     await expect(page.getByText("Welke soort documenten vermoed je dat bestaan?")).toHaveCount(0);
 
@@ -192,7 +205,7 @@ test.describe("Intake chat validation", () => {
     await answerInput.fill("recent");
     await nextButton.click();
 
-    await expect(page.getByText("Met 'recent' bedoel je waarschijnlijk een beperkte recente periode.")).toBeVisible();
+    await expect(page.getByText(/Ik probeer je antwoord beter te plaatsen in de intake\./)).toBeVisible();
     await expect(page.getByText("Stap 3 van 6")).toBeVisible();
 
     await answerInput.fill("recent");

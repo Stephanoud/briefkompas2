@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getFlowDocumentLabel, getFlowLabel, isFlow, supportsDecisionUpload } from "@/lib/flow";
+import { extractTextFromPdfInBrowser } from "@/lib/client-pdf-extraction";
+import { getAttachmentKindLabel, inferAttachmentKind } from "@/lib/intake/procedural-attachments";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
@@ -23,6 +25,41 @@ function getStoredProduct(): Product | null {
   return toProduct(sessionStorage.getItem("briefkompas_product"));
 }
 
+function getStoredBijlagen(): UploadedFileRef[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  const cachedIntake = sessionStorage.getItem("briefkompas_intake");
+  if (!cachedIntake) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(cachedIntake) as Partial<IntakeFormData>;
+    return parsed.files?.bijlagen ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function trimExtractedAttachmentText(value?: string | null, maxLength = 4000): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
 export default function PricingPage() {
   const router = useRouter();
   const routeParams = useParams<{ flow?: string }>();
@@ -34,7 +71,10 @@ export default function PricingPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(() =>
     toProduct(appStore.product) ?? getStoredProduct()
   );
-  const [bijlagen, setBijlagen] = useState<UploadedFileRef[]>([]);
+  const [bijlagen, setBijlagen] = useState<UploadedFileRef[]>(
+    () => appStore.intakeData?.files?.bijlagen ?? getStoredBijlagen()
+  );
+  const [isAnalyzingBijlagen, setIsAnalyzingBijlagen] = useState(false);
   const [error, setError] = useState("");
 
   const handleSelectProduct = (product: Product) => {
@@ -46,7 +86,7 @@ export default function PricingPage() {
     setError("");
   };
 
-  const handleBijlagenSelect = (files: File[]) => {
+  const handleBijlagenSelect = async (files: File[]) => {
     if (selectedProduct === "basis") {
       setError("Bijlagen zijn alleen beschikbaar in het Uitgebreid pakket");
       return;
@@ -57,15 +97,38 @@ export default function PricingPage() {
       return;
     }
 
-    const newBijlagen = files.map((file) => ({
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      path: URL.createObjectURL(file),
-    }));
+    setIsAnalyzingBijlagen(true);
+    try {
+      const newBijlagen = await Promise.all(
+        files.map(async (file) => {
+          let extractedText: string | undefined;
 
-    setBijlagen((prev) => [...prev, ...newBijlagen]);
-    setError("");
+          try {
+            const extraction = await extractTextFromPdfInBrowser(file);
+            extractedText = trimExtractedAttachmentText(extraction.extractedText);
+          } catch {
+            extractedText = undefined;
+          }
+
+          return {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            path: URL.createObjectURL(file),
+            extractedText,
+            attachmentKind: inferAttachmentKind({
+              name: file.name,
+              extractedText,
+            }),
+          } satisfies UploadedFileRef;
+        })
+      );
+
+      setBijlagen((prev) => [...prev, ...newBijlagen]);
+      setError("");
+    } finally {
+      setIsAnalyzingBijlagen(false);
+    }
   };
 
   const handleRemoveBijlage = (path: string) => {
@@ -293,9 +356,17 @@ export default function PricingPage() {
             accept=".pdf"
             multiple
             maxSize={25 * 1024 * 1024}
+            helperText="Upload bij beroep bij voorkeur ook je eerdere bezwaarbrief, nadere bezwaargronden of zienswijze. Als zo'n stuk herkenbaar is, nemen we die context mee naast het besluit."
             onFileSelect={handleBijlagenSelect}
             uploadedFiles={bijlagen}
+            disabled={isAnalyzingBijlagen}
           />
+
+          {isAnalyzingBijlagen && (
+            <Alert type="info" title="Bijlagen worden geanalyseerd">
+              We kijken of een geuploade bijlage waarschijnlijk een bezwaarbrief, zienswijze of ander relevant processtuk is.
+            </Alert>
+          )}
 
           {bijlagen.length > 0 && (
             <div className="mt-4 p-4 bg-blue-50 rounded-lg">
@@ -303,7 +374,14 @@ export default function PricingPage() {
               <ul className="space-y-1">
                 {bijlagen.map((file) => (
                   <li key={file.path} className="flex justify-between items-center text-sm">
-                    <span className="text-blue-800">{file.name}</span>
+                    <span className="text-blue-800">
+                      {file.name}
+                      {getAttachmentKindLabel(file.attachmentKind) && (
+                        <span className="ml-2 text-xs text-blue-600">
+                          ({getAttachmentKindLabel(file.attachmentKind)})
+                        </span>
+                      )}
+                    </span>
                     <button
                       onClick={() => handleRemoveBijlage(file.path)}
                       className="text-red-600 hover:text-red-700 font-semibold"
@@ -331,7 +409,7 @@ export default function PricingPage() {
         </Button>
         <Button
           onClick={handleContinueToPayment}
-          disabled={!selectedProduct || !activeFlow}
+          disabled={!selectedProduct || !activeFlow || isAnalyzingBijlagen}
           className="flex-1"
         >
           Ga naar betaling
@@ -339,7 +417,7 @@ export default function PricingPage() {
         <Button
           variant="secondary"
           onClick={handleContinueToTestVersion}
-          disabled={!selectedProduct || !activeFlow}
+          disabled={!selectedProduct || !activeFlow || isAnalyzingBijlagen}
           className="flex-1"
         >
           Verder naar test versie

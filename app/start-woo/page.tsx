@@ -37,8 +37,8 @@ export default function StartWoo() {
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <h3 className="font-semibold text-yellow-900 mb-2">Responstermijn</h3>
             <p className="text-sm text-yellow-800">
-              Het bestuursorgaan beslist in principe binnen 4 weken op je verzoek.
-              Deze termijn kan eenmalig met 2 weken worden verlengd.
+              Controleer altijd welke reactietermijn in de toepasselijke regeling of in latere
+              correspondentie van het bestuursorgaan wordt genoemd.
             </p>
           </div>
 

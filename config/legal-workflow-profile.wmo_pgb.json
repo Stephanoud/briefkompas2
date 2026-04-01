@@ -1,0 +1,127 @@
+{
+  "module": "wmo_pgb",
+  "document_extraction": {
+    "required_fields": [
+      "gemeente",
+      "voorzieningstype",
+      "maatwerkvoorziening_of_pgb_of_beide",
+      "onderzoeksverslag_of_keukentafelgesprek",
+      "beperkingen_en_ondersteuningsbehoefte",
+      "reden_van_afwijzing",
+      "verwijzing_naar_eigen_regie_kwaliteit_kosten_of_sociaal_netwerk",
+      "tarief_of_budgethoogte",
+      "zorg_in_natura_alternatief_ja_nee"
+    ],
+    "optional_fields": [
+      "budgetplan",
+      "zorgplan",
+      "offertes_of_uurtarieven",
+      "medische_of_functionele_informatie",
+      "sociaal_netwerk_onderbouwing"
+    ],
+    "red_flags": [
+      "geen_kenbaar_onderzoek",
+      "afwijzing_pgb_met_alleen_algemene_standaardtekst",
+      "niet_ingaan_op_onmogelijkheid_van_zorg_in_natura",
+      "tarief_niet_herleidbaar"
+    ],
+    "missing_info_triggers": [
+      "onduidelijk_of_budgetplan_is_ingediend",
+      "onduidelijk_of_sociaal_netwerk_in_beeld_is",
+      "onduidelijk_of_client_pgb_wenste_of_accepteerde_dat_niet"
+    ]
+  },
+  "classification": {
+    "decision_type_rules": [
+      "onderscheid_afwijzing_voorziening_vs_afwijzing_vorm_pgb",
+      "onderscheid_nieuwe_aanvraag_vs_herziening_of_intrekking",
+      "onderscheid_Wmo_vs_Jeugdwet"
+    ],
+    "procedure_stage_rules": [
+      "beslissing op bezwaar stuurt naar beroep na bezwaar",
+      "primair Wmo-besluit stuurt in beginsel naar bezwaar",
+      "signalen voor Wlz of Zvw blokkeren automatische Wmo-module-aannames"
+    ],
+    "misclassification_risks": [
+      "Jeugdwet_per_abuis_in_Wmo_flow",
+      "alleen_tariefgeschil_verwarren_met_gehele_afwijzing"
+    ]
+  },
+  "question_logic": {
+    "max_questions_per_round": 5,
+    "question_priority_rules": [
+      "vraag_eerst_of_de_hulp_zelf_of_alleen_de_pgb-vorm_is_geweigerd",
+      "vraag_dan_naar_onderzoek_naar_zorg_in_natura",
+      "vraag_dan_naar_budgetplan_of_zorgplan",
+      "vraag_dan_naar_sociaal_netwerk_of_professionele_hulp",
+      "vraag_dan_naar_toereikendheid_van_tarief_of_budget"
+    ],
+    "sample_questions": [
+      "Is de hulp zelf geweigerd, of alleen de vorm als pgb?",
+      "Heeft de gemeente concreet onderzocht waarom zorg in natura voor u niet passend is?",
+      "Heeft u een budgetplan of zorgplan ingediend, en wat zou daarin volgens de gemeente ontbreken?",
+      "Gaat het om hulp uit uw sociale netwerk of om professionele hulp?",
+      "Is het toegekende budget volgens u feitelijk genoeg om de noodzakelijke hulp in te kopen?"
+    ],
+    "do_not_ask_if_already_known": true
+  },
+  "jurisprudence": {
+    "search_queries": [
+      "Wmo pgb afwijzing onvoldoende onderzoek",
+      "Wmo pgb eigen regie motivering",
+      "Wmo pgb sociaal netwerk tarief",
+      "Wmo passende bijdrage maatwerkvoorziening"
+    ],
+    "must_verify_fields": [
+      "ecli",
+      "court",
+      "date",
+      "legal_rule",
+      "factual_similarity",
+      "helps_user_or_authority",
+      "distinguishable_yes_no"
+    ],
+    "use_only_if_verified": true,
+    "fallback_if_not_verified": "write_without_case_law"
+  },
+  "grounds": {
+    "strongest_case_specific_grounds": [
+      "onvoldoende_individueel_onderzoek",
+      "ondeugdelijke_motivering_waarom_pgb_niet_kan",
+      "ontoereikend_tarief_of_budget",
+      "zorg_in_natura_onvoldoende_passend_onderbouwd",
+      "sociaal_netwerk_te_schematisch_beoordeeld"
+    ],
+    "weak_generic_grounds_to_avoid": [
+      "algemene_zorgvuldigheidsklacht_zonder_concrete_onderzoeksfout",
+      "algemene_motiveringsklacht_zonder_passage_over_pgb_of_tarief"
+    ],
+    "evidence_hooks": [
+      "onderzoeksverslag",
+      "medische_of_functionele_informatie",
+      "budgetplan",
+      "zorgaanbieders_offertes",
+      "uitleg_waarom_zorg_in_natura_niet_werkbaar_is"
+    ]
+  },
+  "hallucination_guards": [
+    "verzin geen ECLI",
+    "verzin geen wetsartikel",
+    "verzin geen citaat uit besluit",
+    "verzin geen termijn",
+    "verzin geen hoorzitting of correspondentie",
+    "verzin geen rol of status van de gebruiker",
+    "neem geen vaste jurisprudentie op zonder geverifieerde uitspraken",
+    "doe geen aannames over module als het document op iets anders wijst",
+    "niet_stellen_dat_client_altijd_recht_heeft_op_pgb_naar_keuze",
+    "niet_aannemen_dat_elke_formele_fout_tot_toekenning_leidt"
+  ],
+  "value_add_hooks": [
+    "maak_subflow_voor_tariefzaken",
+    "maak_subflow_voor_sociaal_netwerk_hulp",
+    "laat_Codex_altijd_vragen_waarom_zorg_in_natura_niet_passend_is"
+  ],
+  "abort_or_redirect_conditions": [
+    "als_het_gaat_om_Wlz_of_Zvw_redirect_naar_andere_zorgmodule"
+  ]
+}

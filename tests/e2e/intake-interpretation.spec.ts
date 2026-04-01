@@ -190,6 +190,18 @@ test.describe("Contextual intake interpretation", () => {
     expect(findNextUnansweredStepIndex(bezwaarSteps, mergedData, 1)).toBe(3);
   });
 
+  test("8b. zelfstandige bestuursorganen zoals de NZa worden ook als bestuursorgaan herkend", () => {
+    const turn = interpretIntakeTurn({
+      flow: "beroep_na_bezwaar",
+      latestUserMessage: "Ik wil beroep instellen tegen de beslissing van de NZa.",
+      currentStep: getStepsByFlow("beroep_na_bezwaar")[0],
+      intakeData: { flow: "beroep_na_bezwaar" },
+      previousState: createInitialIntakeInterpretation("beroep_na_bezwaar"),
+    });
+
+    expect(turn.patch.bestuursorgaan).toBe("Nederlandse Zorgautoriteit (NZa)");
+  });
+
   test("9. als verplichte bezwaarfeiten bekend zijn, blijven geen kernvragen open", () => {
     const turn = interpretIntakeTurn({
       flow: "bezwaar",

@@ -1,0 +1,127 @@
+{
+  "module": "boete",
+  "document_extraction": {
+    "required_fields": [
+      "bestuursorgaan",
+      "boetebesluit_of_beslissing_op_bezwaar",
+      "wettelijke_grondslag_boete",
+      "omschrijving_overtreding",
+      "datum_of_periode_overtreding",
+      "bedrag_boete",
+      "motivering_verwijtbaarheid",
+      "bewijsstukken_geselecteerd_door_bestuursorgaan",
+      "zienswijze_gegeven_ja_nee",
+      "matiging_besproken_ja_nee"
+    ],
+    "optional_fields": [
+      "dagtekening",
+      "ontvangstdatum_besluit",
+      "kenmerk",
+      "persoonlijke_omstandigheden_matiging",
+      "bijlagen_verweerder"
+    ],
+    "red_flags": [
+      "geen_concrete_gedraging_benoemd",
+      "geen_individuele_verwijtbaarheidsmotivering",
+      "alleen_standaardtekst_over_boetehoogte",
+      "onduidelijk_of_boete_herstelsanctie_wordt_verward"
+    ],
+    "missing_info_triggers": [
+      "geen_duidelijkheid_over_opzet_of_grove_schuld",
+      "geen_inzicht_in_rekenwijze_boete",
+      "onbekend_of_belanghebbende_is_gehoord"
+    ]
+  },
+  "classification": {
+    "decision_type_rules": [
+      "onderscheid_bestuurlijke_boete_vs_last_onder_dwangsom",
+      "onderscheid_primair_boetebesluit_vs_beslissing_op_bezwaar",
+      "onderscheid_hoogtegeschil_vs_overtredingsgeschil"
+    ],
+    "procedure_stage_rules": [
+      "zienswijze-signalen kunnen wijzen op een voorfase voorafgaand aan het boetebesluit",
+      "beslissing op bezwaar stuurt naar beroep na bezwaar",
+      "primair boetebesluit stuurt in beginsel naar bezwaar tenzij rechtstreeks beroep expliciet blijkt"
+    ],
+    "misclassification_risks": [
+      "herstelsanctie_per_abuis_als_boete_behandelen",
+      "belastingboete_niet_naar_belastingmodule_routeren",
+      "mulder_of_cjib-boete_ten_onrechte_als_bestuurlijke_boete_behandelen"
+    ]
+  },
+  "question_logic": {
+    "max_questions_per_round": 5,
+    "question_priority_rules": [
+      "vraag_eerst_naar_betwisting_van_de_feiten",
+      "vraag_dan_naar_verwijtbaarheid",
+      "vraag_dan_naar_matiging",
+      "vraag_pas_daarna_naar_toon_of_achtergrond"
+    ],
+    "sample_questions": [
+      "Welke concrete gedraging betwist u: dat het feit is gebeurd, dat u daarvoor verantwoordelijk bent, of beide?",
+      "Heeft het bestuursorgaan uitgelegd waarom u persoonlijk verwijtbaar handelde?",
+      "Zijn er omstandigheden zoals eerste overtreding, geringe ernst, beperkte draagkracht of lange procedureduur die matiging ondersteunen?",
+      "Heeft u vooraf een zienswijze kunnen geven en is daarop zichtbaar gereageerd?",
+      "Klopt de berekening van het boetebedrag volgens u feitelijk en juridisch?"
+    ],
+    "do_not_ask_if_already_known": true
+  },
+  "jurisprudence": {
+    "search_queries": [
+      "bestuurlijke boete verwijtbaarheid matiging artikel 5:46 Awb",
+      "bestuurlijke boete redelijke termijn matiging",
+      "bestuurlijke boete onvoldoende bewijs overtreding",
+      "bestuurlijke boete afwezigheid van alle schuld"
+    ],
+    "must_verify_fields": [
+      "ecli",
+      "court",
+      "date",
+      "legal_rule",
+      "factual_similarity",
+      "helps_user_or_authority",
+      "distinguishable_yes_no"
+    ],
+    "use_only_if_verified": true,
+    "fallback_if_not_verified": "write_without_case_law"
+  },
+  "grounds": {
+    "strongest_case_specific_grounds": [
+      "overtreding_onvoldoende_bewezen",
+      "verwijtbaarheid_onvoldoende_gemotiveerd",
+      "boetehoogte_niet_individueel_afgestemd",
+      "matiging_ten_onrechte_niet_beoordeeld",
+      "verdedigingsrechten_of_zienswijze_geschonden"
+    ],
+    "weak_generic_grounds_to_avoid": [
+      "altijd_artikel_3_2_zonder_feitelijk_tekort",
+      "altijd_artikel_3_46_zonder_concrete_motiveringspassage"
+    ],
+    "evidence_hooks": [
+      "controlerapport",
+      "foto_of_loggegevens",
+      "correspondentie",
+      "eerdere_waarschuwing_ja_nee",
+      "persoonlijke_financiele_gegevens_voor_matiging"
+    ]
+  },
+  "hallucination_guards": [
+    "verzin geen ECLI",
+    "verzin geen wetsartikel",
+    "verzin geen citaat uit besluit",
+    "verzin geen termijn",
+    "verzin geen hoorzitting of correspondentie",
+    "verzin geen rol of status van de gebruiker",
+    "neem geen vaste jurisprudentie op zonder geverifieerde uitspraken",
+    "doe geen aannames over module als het document op iets anders wijst",
+    "nooit_zeggen_dat_matiging_verplicht_is_zonder_casusbasis",
+    "nooit_stellen_dat_alleen_lange_duur_automatisch_tot_vernietiging_leidt"
+  ],
+  "value_add_hooks": [
+    "bouw_aparte_keuze_in_tussen_feit_betwist / verwijtbaarheid_betwist / hoogte_betwist",
+    "toon_gebruiker_het_onderscheid_tussen_vernietiging_en_matiging"
+  ],
+  "abort_or_redirect_conditions": [
+    "als_het_geen_boete_is_maar_dwangsom_of_bestuursdwang_redirect_handhaving"
+  ]
+}

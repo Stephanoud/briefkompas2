@@ -15,11 +15,15 @@ import { SaveLetterPanel } from "@/components/SaveLetterPanel";
 import { downloadFile, generateDocx, generatePdf } from "@/lib/utils";
 import { cleanLetterTextForDelivery } from "@/lib/letter-format";
 import {
+  AdditionalLegalArgument,
+  CaseFileAnalysisSummary,
   DecisionAnalysisStatus,
   DecisionAnalysisSummary,
   Flow,
+  GroundSupportEntry,
   GeneratedLetter,
   IntakeFormData,
+  LabeledLegalStatement,
   LetterGenerationMode,
 } from "@/types";
 import { ReferenceItem } from "@/src/types/references";
@@ -67,7 +71,7 @@ function getLetterChecklist(flow: Flow): string[] {
     "welke beslissing je aanvecht, inclusief datum en kenmerk",
     "waarom je het niet eens bent met die beslissing",
     "wat volgens jou de juiste uitkomst moet zijn",
-    "eventueel een verzoek om een hoorzitting of om uitvoering op te schorten",
+    "eventueel een concreet procedureel verzoek dat uit het dossier blijkt",
   ];
 }
 
@@ -135,7 +139,7 @@ function getDeadlineHint(flow: Flow): string {
     return "Beroepstermijnen zijn strikt. Controleer altijd de termijn in het besluit of de beslissing op bezwaar.";
   }
 
-  return "De bezwaartermijn is vaak 6 weken. Controleer altijd de termijn in het besluit.";
+  return "Controleer altijd welke termijn in het besluit of de rechtsmiddelenclausule staat.";
 }
 
 function getDecisionStatusPresentation(status?: DecisionAnalysisStatus) {
@@ -200,6 +204,113 @@ function renderDecisionRow(label: string, value?: string | null) {
   );
 }
 
+function renderStringList(title: string, items?: string[]) {
+  if (!items || items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="py-2">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">{title}</p>
+      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-[var(--foreground)]">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function getStatementLabelClass(label: LabeledLegalStatement["label"]): string {
+  switch (label) {
+    case "letterlijk uit besluit":
+      return "bg-amber-100 text-amber-900";
+    case "letterlijk uit wet":
+      return "bg-emerald-100 text-emerald-900";
+    case "volgt uit geverifieerde jurisprudentie":
+      return "bg-sky-100 text-sky-900";
+    case "gebruikersstelling / nog niet geverifieerd":
+      return "bg-rose-100 text-rose-900";
+    default:
+      return "bg-slate-100 text-slate-900";
+  }
+}
+
+function renderLabeledStatement(item: LabeledLegalStatement) {
+  return (
+    <article
+      key={`${item.label}-${item.statement}-${item.source ?? ""}`}
+      className="rounded-2xl border border-[var(--border)] bg-white p-3"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${getStatementLabelClass(item.label)}`}>
+          {item.label}
+        </span>
+        {item.source && <span className="text-xs text-[var(--muted)]">{item.source}</span>}
+      </div>
+      <p className="mt-2 text-sm leading-6 text-[var(--foreground)]">{item.statement}</p>
+      {item.note && <p className="mt-2 text-xs leading-5 text-[var(--muted)]">{item.note}</p>}
+    </article>
+  );
+}
+
+function renderGroundCard(ground: GroundSupportEntry) {
+  return (
+    <article key={ground.title} className="rounded-2xl border border-[var(--border)] bg-white p-4">
+      <h4 className="text-sm font-semibold text-[var(--foreground)]">{ground.title}</h4>
+      <div className="mt-3 space-y-3">
+        {ground.decisionPassage && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Passage uit besluit</p>
+            <div className="mt-2">{renderLabeledStatement(ground.decisionPassage)}</div>
+          </div>
+        )}
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Juridisch probleem</p>
+          <div className="mt-2">{renderLabeledStatement(ground.juridischProbleem)}</div>
+        </div>
+        {ground.relevantFeitOfBewijs && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Relevant feit of bewijs</p>
+            <div className="mt-2">{renderLabeledStatement(ground.relevantFeitOfBewijs)}</div>
+          </div>
+        )}
+        {ground.jurisprudentieOfWet && ground.jurisprudentieOfWet.length > 0 && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Wet of geverifieerde rechtspraak</p>
+            <div className="mt-2 space-y-2">
+              {ground.jurisprudentieOfWet.map((item) => renderLabeledStatement(item))}
+            </div>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function renderAdditionalArgument(argument: AdditionalLegalArgument) {
+  return (
+    <article
+      key={`${argument.principle}-${argument.relevance}-${argument.support ?? ""}`}
+      className="rounded-2xl border border-[var(--border)] bg-white p-4"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-[var(--surface-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--foreground)]">
+          {argument.principle}
+        </span>
+        <span className="text-xs text-[var(--muted)]">
+          {argument.integrationMode === "direct" ? "Direct opnemen" : "Voorzichtig formuleren"}
+        </span>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-[var(--foreground)]">{argument.relevance}</p>
+      {argument.support && <p className="mt-2 text-sm leading-6 text-[var(--muted-strong)]">{argument.support}</p>}
+      <p className="mt-3 rounded-2xl bg-[var(--surface-soft)] p-3 text-sm leading-6 text-[var(--foreground)]">
+        {argument.suggestedPhrasing}
+      </p>
+    </article>
+  );
+}
+
 function renderAnalysisCard(analysis?: DecisionAnalysisSummary | null) {
   if (!analysis) {
     return null;
@@ -213,6 +324,30 @@ function renderAnalysisCard(analysis?: DecisionAnalysisSummary | null) {
         {renderDecisionRow("Rechtsgrond", analysis.rechtsgrond)}
         {renderDecisionRow("Besluitinhoud", analysis.besluitInhoud)}
         {renderDecisionRow("Termijnen", analysis.termijnen)}
+        {renderDecisionRow("Rechtsmiddelenclausule", analysis.rechtsmiddelenclausule)}
+        {analysis.dragendeOverwegingen && analysis.dragendeOverwegingen.length > 0 && (
+          <div className="py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+              Dragende overwegingen
+            </p>
+            <div className="mt-2 space-y-3">
+              {analysis.dragendeOverwegingen.map((item) => (
+                <div key={`${item.passage}-${item.duiding}`} className="rounded-2xl border border-[var(--border)] bg-white p-3">
+                  <p className="text-sm leading-6 text-[var(--foreground)]">{item.duiding}</p>
+                  <p className="mt-2 text-xs leading-5 text-[var(--muted)]">Passage: {item.passage}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {renderStringList("Wettelijke grondslagen", analysis.wettelijkeGrondslagen)}
+        {renderStringList("Procedurele aanwijzingen", analysis.procedureleAanwijzingen)}
+        {renderStringList("Beleidsverwijzingen", analysis.beleidsReferenties)}
+        {renderStringList("Jurisprudentieverwijzingen", analysis.jurisprudentieReferenties)}
+        {renderStringList("Bijlageverwijzingen", analysis.bijlageReferenties)}
+        {renderStringList("Bijlagenlijst", analysis.bijlagenLijst)}
+        {renderStringList("Inventarislijst of documenttabel", analysis.inventarislijstOfDocumenttabel)}
+        {renderStringList("Verwijzingen naar eerdere correspondentie", analysis.correspondentieVerwijzingen)}
         {analysis.aandachtspunten && analysis.aandachtspunten.length > 0 && (
           <div className="py-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
@@ -223,6 +358,83 @@ function renderAnalysisCard(analysis?: DecisionAnalysisSummary | null) {
                 <li key={point}>{point}</li>
               ))}
             </ul>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function renderCaseAnalysisCard(caseAnalysis?: CaseFileAnalysisSummary | null) {
+  if (!caseAnalysis) {
+    return null;
+  }
+
+  return (
+    <Card title="Zaakanalyse" subtitle="Deze samenvatting helpt om te zien waar de brief op leunt en waar nog frictie zit">
+      <div className="space-y-1">
+        {renderDecisionRow("Module", caseAnalysis.module)}
+        {renderDecisionRow("Procedurefase", caseAnalysis.procedurefase)}
+        {renderDecisionRow("Kernconflict", caseAnalysis.kernconflict)}
+        {renderDecisionRow("Toelichting", caseAnalysis.toelichting)}
+        {renderStringList("Primaire procesrisico's", caseAnalysis.primaireProcesrisicos)}
+        {renderStringList("Ontbrekende informatie", caseAnalysis.ontbrekendeInformatie)}
+        {renderStringList("Gerichte checkvragen", caseAnalysis.gerichteCheckvragen)}
+        {renderStringList("Waar nog onzekerheid zit", caseAnalysis.onzekerheden)}
+        {caseAnalysis.workflowProfile && (
+          <>
+            {renderStringList(
+              "Workflow: hallucinatieguards",
+              caseAnalysis.workflowProfile.hallucination_guards
+            )}
+            {renderStringList(
+              "Workflow: pre-output-checks",
+              caseAnalysis.workflowProfile.pre_output_checks
+            )}
+            {renderStringList(
+              "Workflow: abort of redirect",
+              caseAnalysis.workflowProfile.abort_or_redirect_conditions
+            )}
+          </>
+        )}
+        {caseAnalysis.jurisprudentieControle && (
+          <div className="border-b border-[var(--border)] py-2 last:border-b-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+              Jurisprudentiecontrole
+            </p>
+            <p className="mt-1 text-sm leading-6 text-[var(--foreground)]">
+              Verified: {caseAnalysis.jurisprudentieControle.verified} | Mixed: {caseAnalysis.jurisprudentieControle.mixed} | Not usable: {caseAnalysis.jurisprudentieControle.notUsable}
+            </p>
+          </div>
+        )}
+        {caseAnalysis.labeledStellingen && caseAnalysis.labeledStellingen.length > 0 && (
+          <div className="py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+              Gelabelde juridische stellingen
+            </p>
+            <div className="mt-2 space-y-3">
+              {caseAnalysis.labeledStellingen.map((item) => renderLabeledStatement(item))}
+            </div>
+          </div>
+        )}
+        {caseAnalysis.relevanteAanvullendeArgumenten && caseAnalysis.relevanteAanvullendeArgumenten.length > 0 && (
+          <div className="py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+              Relevante aanvullende argumenten
+            </p>
+            <div className="mt-2 space-y-3">
+              {caseAnalysis.relevanteAanvullendeArgumenten.map((argument) => renderAdditionalArgument(argument))}
+            </div>
+          </div>
+        )}
+        {caseAnalysis.groundsMatrix && caseAnalysis.groundsMatrix.length > 0 && (
+          <div className="py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+              Grondmatrix
+            </p>
+            <div className="mt-2 space-y-3">
+              {caseAnalysis.groundsMatrix.map((ground) => renderGroundCard(ground))}
+            </div>
           </div>
         )}
       </div>
@@ -409,6 +621,8 @@ export default function ResultPage() {
           )}
 
           {intakeData?.besluitAnalyse && renderAnalysisCard(intakeData.besluitAnalyse)}
+
+          {resolvedGeneratedLetter?.caseAnalysis && renderCaseAnalysisCard(resolvedGeneratedLetter.caseAnalysis)}
 
           {generationMode && (
             <Alert type={generationMode.type} title={generationMode.title}>

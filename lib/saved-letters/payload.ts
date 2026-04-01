@@ -5,6 +5,7 @@ import {
   SavedLetterRecord,
   SavedLetterResearchPayload,
 } from "@/lib/saved-letters/types";
+import { detectBestuursorgaanScope } from "@/lib/intake/bestuursorganen";
 
 function sanitizeFileRef(file?: UploadedFileRef): UploadedFileRef | undefined {
   if (!file) {
@@ -16,6 +17,7 @@ function sanitizeFileRef(file?: UploadedFileRef): UploadedFileRef | undefined {
     size: file.size,
     type: file.type,
     path: `stored:${file.name}:${file.size}`,
+    attachmentKind: file.attachmentKind,
   };
 }
 
@@ -31,18 +33,8 @@ export function sanitizeIntakeForStorage(intakeData: IntakeFormData): IntakeForm
 }
 
 function detectBestuursorgaanType(value?: string | null): SavedLetterResearchPayload["bestuursorgaanType"] {
-  if (!value) {
-    return "onbekend";
-  }
-
-  const normalized = value.toLowerCase();
-  if (normalized.includes("gemeente")) return "gemeente";
-  if (normalized.includes("provincie")) return "provincie";
-  if (normalized.includes("waterschap")) return "waterschap";
-  if (normalized.includes("ministerie") || normalized.includes("rijk") || normalized.includes("belastingdienst")) {
-    return "rijk";
-  }
-  return "overig";
+  const detectedScope = detectBestuursorgaanScope(value);
+  return detectedScope === "onbekend" ? "onbekend" : detectedScope;
 }
 
 function getLength(value?: string | null) {
@@ -67,6 +59,7 @@ export function buildSavedLetterDocumentPayload(params: {
       references: params.generatedLetter.references,
       generationMode: params.generatedLetter.generationMode,
       guardReasons: params.generatedLetter.guardReasons,
+      caseAnalysis: params.generatedLetter.caseAnalysis,
     },
     manualReferences: params.manualReferences,
   };

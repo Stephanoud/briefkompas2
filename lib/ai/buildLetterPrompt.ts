@@ -16,9 +16,29 @@ export function buildLetterPrompt(params: {
     intakeData.files?.bijlagen
       ?.map((file) => file.name.trim())
       .filter(Boolean) ?? [];
+  const postLetterStructure = [
+    "Direct na de brief: kopje Wat de overheid mogelijk zal aanvoeren met 2 tot 3 realistische tegenwerpingen vanuit het bestuursorgaan",
+    "Daarna: kopje Hoe u daarop kunt reageren met evenveel korte, direct bruikbare reacties",
+    "Daarna: kopje Wat gebeurt hierna? met een korte procedure-uitleg",
+    "Daarna: kopje Waar moet u op letten? met algemene aandachtspunten over termijnen, reactie en mogelijke mondelinge toelichting",
+    "Daarna: kopje Als uw bezwaar/beroep wordt afgewezen: met de eerstvolgende neutraal geformuleerde vervolgstap",
+    "Daarna: kopje Praktische tip: met 1 tot 2 concrete acties",
+  ];
 
   const structureInstructions =
-    payload.flow === "woo"
+    payload.caseType === "niet_tijdig_beslissen"
+      ? [
+          "Afzender met placeholders",
+          "Adresblok bevoegde rechtbank",
+          "Betreft en datumregel",
+          "Inleiding beroep wegens niet tijdig beslissen",
+          "Procesverloop met aanvraag of bezwaar, beslistermijn en ingebrekestelling",
+          "Toelichting waarom beroep openstaat",
+          "Verzoek om een beslistermijn op te leggen voor zover dat uit het dossier volgt",
+          "Slotformule",
+          ...postLetterStructure,
+        ]
+      : payload.flow === "woo"
       ? [
           "Afzender met placeholders",
           "Adresblok bestuursorgaan",
@@ -28,6 +48,7 @@ export function buildLetterPrompt(params: {
           "Periode en gevraagde documenten",
           "Verzoek om ontvangstbevestiging en vorm van verstrekking",
           "Slotformule",
+          ...postLetterStructure,
         ]
       : payload.flow === "zienswijze"
         ? [
@@ -40,6 +61,7 @@ export function buildLetterPrompt(params: {
             "Zienswijzen en argumenten",
             "Verzoek tot aanpassing",
             "Slotformule",
+            ...postLetterStructure,
           ]
         : payload.flow === "beroep_zonder_bezwaar"
           ? [
@@ -52,6 +74,7 @@ export function buildLetterPrompt(params: {
               "Beroepsgronden",
               "Verzoek",
               "Slotformule",
+              ...postLetterStructure,
             ]
           : payload.flow === "beroep_na_bezwaar"
             ? [
@@ -64,6 +87,7 @@ export function buildLetterPrompt(params: {
                 "Beroepsgronden",
                 "Verzoek",
                 "Slotformule",
+                ...postLetterStructure,
               ]
             : [
                 "Afzender met placeholders",
@@ -74,12 +98,14 @@ export function buildLetterPrompt(params: {
                 "Gronden van bezwaar",
                 "Verzoek",
                 "Slotformule",
-                "Daarna een gestructureerde dossierbijlage voor de behandelaar",
+                ...postLetterStructure,
+                "Pas daarna een gestructureerde dossierbijlage voor de behandelaar",
               ];
 
   const promptPayload = {
     caseFacts: payload.caseFacts,
     decisionMeta: payload.decisionMeta,
+    caseAnalysis: payload.caseAnalysis,
     decisionAnalysisStatus: payload.decisionAnalysisStatus,
     decisionReadability: payload.decisionReadability,
     decisionAnalysis: payload.decisionAnalysis,
@@ -90,8 +116,21 @@ export function buildLetterPrompt(params: {
       ecli: item.ecli,
       topic: item.topic,
       principle: item.principle,
+      verifiedHolding: item.verifiedHolding ?? null,
       sourceUrl: item.sourceUrl,
       sourceType: item.sourceType,
+      verificationStatus: item.verificationStatus,
+      officialTitle: item.officialTitle,
+      courtName: item.courtName,
+      decisionDate: item.decisionDate,
+      coreConsiderationRead: item.coreConsiderationRead,
+      factualSimilarity: item.factualSimilarity,
+      factualSimilarityAssessed: item.factualSimilarityAssessed,
+      helpsUserOrAuthority: item.helpsUserOrAuthority,
+      distinguishable: item.distinguishable,
+      useInLetter: item.useInLetter,
+      selectionReason: item.selectionReason,
+      valueAddScore: item.valueAddScore,
     })),
     disallowedBehaviors: payload.disallowedBehaviors,
   };
@@ -108,7 +147,7 @@ export function buildLetterPrompt(params: {
       ? [
           "",
           "Dossierbijlage bij bezwaar (verplicht):",
-          "- Voeg na de slotformule een gestructureerde bijlage toe die functioneert als dossieroverzicht voor de behandelaar.",
+          "- Voeg na de nabrief-secties een gestructureerde bijlage toe die functioneert als dossieroverzicht voor de behandelaar.",
           "- Gebruik exact deze kopjes in deze volgorde, volledig in hoofdletters:",
           "- BIJLAGE A - SAMENVATTING VAN HET GESCHIL",
           "- BIJLAGE B - FEITEN EN CONTEXT",
@@ -157,6 +196,16 @@ export function buildLetterPrompt(params: {
     "- Werk zelfstandig de meest verdedigbare argumenten uit voor zover ze worden gedragen door intake, besluitanalyse en gevalideerde bronnen.",
     "- Lever een schone, verzendklare brieftekst die direct bruikbaar is in e-mail of PDF zonder nabewerking.",
     "",
+    "Interne werkvolgorde (niet uitschrijven in de output):",
+    "- Fase 1 documentanalyse: lees metadata, dragende overwegingen, wettelijke grondslagen, procedurele aanwijzingen en verwijzingen uit de meegegeven besluitanalyse.",
+    "- Fase 2 zaakclassificatie: gebruik caseAnalysis voor module, procedurefase, kernconflict, procesrisico's en ontbrekende informatie.",
+    "- Fase 3 gerichte checkvragen: gebruik alleen de bestaande gerichte checkvragen uit caseAnalysis als interne onzekerheidsmarkering; stel geen nieuwe vragen in de brief.",
+    "- Fase 4 jurisprudentie-verificatie: beoordeel eerst of jurisprudentie in deze zaak echt meerwaarde heeft. Gebruik alleen gevalideerde bronnen uit validatedAuthorities en laat rechtspraak weg als die te zwak of onzeker is.",
+    "- Fase 5 grondenbouw: bouw alleen gronden die reageren op de dragende motivering uit het besluit of de beslissing op bezwaar.",
+    "- Fase 6 outputcontrol: controleer intern op hallucinaties, standaardgronden zonder dossierbasis, ongedekte stelligheid en ontbrekende termijnen of procesdrempels.",
+    "- Fase 7 pre-output-checks: loop workflowProfile.pre_output_checks langs voordat je de definitieve tekst geeft.",
+    "- Gebruik intern de labelset voor juridische stellingen: letterlijk uit besluit, letterlijk uit wet, volgt uit geverifieerde jurisprudentie, afgeleide interpretatie, gebruikersstelling / nog niet geverifieerd.",
+    "",
     "Interne briefstructuur (gebruik dit als opbouw, niet als letterlijke meta-kopjes):",
     structureInstructions.map((line) => `- ${line}`).join("\n"),
     "",
@@ -189,13 +238,51 @@ export function buildLetterPrompt(params: {
     "Juridische schrijfregels:",
     "- Maak bij bezwaar of beroep eerst een herkenbare samenvatting van het relevante besluit voordat je de gronden uitwerkt.",
     "- Werk de argumenten inhoudelijk uit en koppel feiten aan juridische normen zoals zorgvuldigheid, deugdelijke motivering, evenredigheid en volledige heroverweging, voor zover die passen bij de feiten.",
+    "- Reageer primair op de dragende overwegingen uit decisionAnalysis.dragendeOverwegingen. Als die ontbreken, wees zichtbaar terughoudend met algemene gronden.",
+    "- Bouw geen grond op als je daarvoor geen combinatie hebt van besluitpassage, concreet juridisch probleem en relevant feit of bewijs uit intake of bijlagen.",
+    "- Gebruik caseAnalysis.labeledStellingen en caseAnalysis.groundsMatrix als interne steunstructuur. Een juridische stelling zonder herleidbaar label mag niet dragend worden gebruikt.",
+    "- Gebruik caseAnalysis.relevanteAanvullendeArgumenten om te beoordelen of zorgvuldigheidsbeginsel, motiveringsbeginsel, evenredigheidsbeginsel, gelijkheidsbeginsel, persoonlijke omstandigheden of financiele impact relevant maar nog onderbenut zijn.",
+    "- Neem een aanvullend argument alleen op als caseAnalysis.relevanteAanvullendeArgumenten daar een concrete reden en steunfeit of passage voor geeft. Maak hiervan nooit een generieke checklist.",
+    "- Als een aanvullend argument integrationMode=direct heeft, verwerk je het gewoon als onderdeel van de inhoudelijke grond en koppel je het aan het relevante dossierfeit of de relevante besluitpassage.",
+    "- Als een aanvullend argument integrationMode=cautious heeft, gebruik je voorzichtige formuleringen zoals 'Daarnaast is van belang dat...' of 'In dit kader had het bestuursorgaan moeten...'.",
+    "- Voeg niet automatisch alle zes mogelijke beginselen toe. Gebruik alleen de aanvullende argumenten die logisch passen bij deze specifieke zaak.",
+    "- Bij niet tijdig beslissen mag je alleen een beroepschrift schrijven als uit het dossier blijkt dat de beslistermijn is verstreken, een ingebrekestelling is verzonden en ontvangen, en het bestuursorgaan daarna nog niet heeft beslist.",
+    "- Een gebruikersstelling of nog niet geverifieerde stelling mag feitelijk worden genoemd, maar niet als zelfstandig juridisch anker worden gepresenteerd.",
     "- Gebruik bij zienswijze geen taal alsof er al bezwaar of beroep loopt; schrijf gericht op beinvloeding van het definitieve besluit.",
     "- Neem bij beroep zonder bezwaar altijd een aparte, expliciete paragraaf op over waarom direct beroep mogelijk is.",
     "- Leg bij beroep na bezwaar concreet uit waarom de beslissing op bezwaar de eerder aangevoerde bezwaren niet wegneemt.",
+    "- Als caseFacts onderliggende processtukken noemen, betrek die actief bij beroep en beperk je niet tot alleen het besluit of de beslissing op bezwaar.",
+    "- Gebruik een eerdere bezwaarbrief of zienswijze alleen voor punten die daadwerkelijk uit intake, bestandsnaam of tekstfragment blijken.",
     "- Gebruik relevante gevalideerde wettelijke grondslagen actief als die in validatedAuthorities staan.",
-    "- Noem jurisprudentie uitsluitend wanneer de ECLI of uitspraak al in validatedAuthorities staat. Als er geen gevalideerde jurisprudentie is, noem je geen jurisprudentie.",
+    "- Gebruik jurisprudentie als kwaliteitsversterker, niet als standaardonderdeel. Als er geen duidelijke meerwaarde is, laat je jurisprudentie weg.",
+    "- Noem jurisprudentie uitsluitend wanneer de uitspraak al in validatedAuthorities staat als verified en useInLetter=true. Als er geen gevalideerde jurisprudentie met duidelijke meerwaarde is, noem je geen jurisprudentie.",
+    "- Gebruik geen jurisprudentie als ECLI, instantie, datum, geverifieerde kernoverweging of beoordeelde feitelijke vergelijkbaarheid ontbreken.",
+    "- Gebruik geen jurisprudentie als validatedAuthorities niet expliciet aangeeft of de uitspraak de gebruiker helpt, de overheid helpt of onderscheidbaar is.",
+    "- Als een uitspraak de overheid helpt en validatedAuthorities niet expliciet distinguishable=yes aangeeft, laat je die uitspraak volledig weg.",
+    "- Gebruik in een gewone burgerbrief meestal maximaal 1 tot 2 uitspraken en alleen compact gekoppeld aan een concrete grond.",
+    "- Gebruik liever geen uitspraak dan een zwakke, generieke of onzekere uitspraak.",
+    "- Voeg direct na de brief een korte sectie toe met de titel 'Wat de overheid mogelijk zal aanvoeren:' met 2 tot 3 realistische tegenwerpingen vanuit het bestuursorgaan.",
+    "- Voeg direct daarna een sectie toe met de titel 'Hoe u daarop kunt reageren:' met evenveel korte, praktische en direct bruikbare reacties.",
+    "- Gebruik in die tegenwerpingen geen stropoppen; neem alleen realistische verweren op die passen bij besluit, module en dragende motivering.",
+    "- Voeg daarna direct de procedure-uitleg toe met exact de kopjes 'Wat gebeurt hierna?', 'Waar moet u op letten?', 'Als uw bezwaar/beroep wordt afgewezen:' en 'Praktische tip:'.",
+    "- Formuleer de procedure-uitleg neutraal, niet als juridisch advies, met zinnen als 'In het algemeen geldt dat...' en 'U kunt overwegen om...'.",
+    "- Noem bij 'Waar moet u op letten?' alleen algemene of dossiergedragen aandachtspunten over termijnen, reactie van het bestuursorgaan of de rechtbank en een mogelijke uitnodiging om het standpunt mondeling toe te lichten.",
+    "- Plaats deze nabrief-secties altijd direct na de brief en voor een eventuele dossierbijlage.",
     "- Als in het besluit zelf een rechtsgrond zichtbaar is, mag je die beschrijven, maar verzin geen extra artikelnummer of sectorspecifieke regeling.",
     "- Geen hallucinaties: geen niet-verifieerbare ECLI's, geen nieuwe wetten, geen verzonnen feiten, geen verzonnen termijnen.",
+    "- Doe bij niet tijdig beslissen niet alsof ingebrekestelling, ontvangst, tweewekentermijn of toepasselijkheid van een dwangsom vaststaan als dat niet expliciet uit dossierinput blijkt.",
+    "- Nooit een citaat uit het besluit opnemen tenzij die passage letterlijk of bijna letterlijk in decisionAnalysis.dragendeOverwegingen of andere dossierinput staat.",
+    "- Noem geen hoorzitting, geen eerdere correspondentie en geen procescontacten tenzij die expliciet uit intake, besluitanalyse of bijlagen blijken.",
+    "- Ken de gebruiker geen rol of status toe zoals belanghebbende, vergunninghouder, verzoeker, appellant of bezwaarmaker tenzij dat uit de stukken blijkt.",
+    "- Gebruik geen formuleringen als 'vaste jurisprudentie' of 'bestendige jurisprudentie' zonder een of meer geverifieerde uitspraken in validatedAuthorities.",
+    "- Als documentsignalen of caseAnalysis twijfel geven over de module, neem geen sectorspecifieke module-aannames over en blijf bij veilige, dossiergedragen formuleringen.",
+    "- Als caseAnalysis.onzekerheden of caseAnalysis.ontbrekendeInformatie wijzen op gaten, formuleer voorzichtig en presenteer aannames nooit als vaststaand.",
+    "- Laat generieke standaardgronden weg als ze niet duidelijk aansluiten op besluitpassage, dossierfeit of procedurele fout.",
+    "- Schrijf niet simpelweg 'het besluit is onzorgvuldig voorbereid' zonder het concrete onderzoeksgebrek meteen te benoemen.",
+    "- Schrijf niet simpelweg 'het besluit is ondeugdelijk gemotiveerd' zonder een aanwijsbare passage, overweging of concrete motiveringsstap uit het besluit te noemen.",
+    "- Schrijf niet simpelweg 'het besluit is in strijd met artikel 3:4 Awb' zonder zowel het concrete nadeel voor de gebruiker als de ontbrekende of scheve belangenafweging uit te leggen.",
+    "- Schrijf niet simpelweg 'de volledige heroverweging ontbreekt' zonder te specificeren welke bezwaargronden, argumenten of onderdelen niet zijn heroverwogen.",
+    "- Controleer voor verzendingstekst expliciet of er zichtbare termijnen, hoorverplichtingen of andere procesdrempels in het dossier zitten en benoem die alleen als ze blijken uit de input.",
     "- Als besluituitlezing beperkt is, wees daar intern zorgvuldig mee: schrijf niet alsof je iets zeker weet terwijl dat niet uit intake of besluit blijkt.",
     bezwaarDossierInstructions,
     "",

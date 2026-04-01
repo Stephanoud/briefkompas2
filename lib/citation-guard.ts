@@ -51,6 +51,11 @@ export function validateCitation(params: {
   decisionDate?: string;
   topicMatch: boolean;
   holdingExtracted: boolean;
+  coreConsiderationRead?: boolean;
+  factualSimilarityAssessed?: boolean;
+  factualSimilarityMatch?: boolean;
+  helpsUserOrAuthority?: "user" | "authority" | "mixed" | "unknown";
+  distinguishable?: "yes" | "no" | "unknown" | "not_applicable";
   allowedDomains?: readonly string[];
 }): CitationValidationResult {
   const reasons: string[] = [];
@@ -82,6 +87,26 @@ export function validateCitation(params: {
 
   if (params.ecli && !params.holdingExtracted) {
     reasons.push("no_verified_holding_extracted");
+  }
+
+  if (params.ecli && !params.coreConsiderationRead) {
+    reasons.push("core_consideration_not_verified");
+  }
+
+  if (params.ecli && !params.factualSimilarityAssessed) {
+    reasons.push("factual_similarity_not_assessed");
+  }
+
+  if (params.ecli && params.factualSimilarityAssessed && !params.factualSimilarityMatch) {
+    reasons.push("insufficient_factual_similarity");
+  }
+
+  if (params.ecli && (!params.helpsUserOrAuthority || params.helpsUserOrAuthority === "unknown" || params.helpsUserOrAuthority === "mixed")) {
+    reasons.push("case_law_helpfulness_unverified");
+  }
+
+  if (params.ecli && params.helpsUserOrAuthority === "authority" && params.distinguishable !== "yes") {
+    reasons.push("authority_helpful_case_not_distinguishable");
   }
 
   return {

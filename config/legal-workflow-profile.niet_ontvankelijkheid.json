@@ -1,0 +1,124 @@
+{
+  "module": "niet_ontvankelijkheid",
+  "document_extraction": {
+    "required_fields": [
+      "reden_niet_ontvankelijkheid",
+      "datum_bekendmaking",
+      "datum_indiening",
+      "herstelverzuim_brief_ja_nee",
+      "mogelijkheid_om_aan_te_vullen_ja_nee",
+      "besluitbegrip_discussie_ja_nee",
+      "belanghebbendheid_discussie_ja_nee"
+    ],
+    "optional_fields": [
+      "termijnbrief_of_verzendbewijs",
+      "herstelverzuimbrief",
+      "machtiging",
+      "oorspronkelijk_verzoek",
+      "stukken_over_ziekte_of_overmacht"
+    ],
+    "red_flags": [
+      "geen_herstelkans_gegeven_bij_repareerbaar_verzuim",
+      "onduidelijke_termijnstart",
+      "bestuursorgaan_noemt_iets_geen_besluit_zonder_nadere_analyse",
+      "belanghebbendheid_te_abstract_afgedaan"
+    ],
+    "missing_info_triggers": [
+      "onduidelijk_waarom_termijn_is_overschreden",
+      "onduidelijk_of_stuk_tijdig_maar_verkeerd_is_ingediend"
+    ]
+  },
+  "classification": {
+    "decision_type_rules": [
+      "termijnoverschrijding",
+      "geen_besluit",
+      "geen_belanghebbende",
+      "ontbrekende_gronden_of_machtiging"
+    ],
+    "procedure_stage_rules": [
+      "onderscheid termijnkwestie van inhoudelijke afwijzing",
+      "onderscheid geen besluit van geen belanghebbende",
+      "bij signalen voor niet tijdig beslissen redirect naar die route"
+    ],
+    "misclassification_risks": [
+      "inhoudelijke_afwijzing_ten_onrechte_als_niet_ontvankelijk_framen",
+      "geen_besluit_discussie_niet_scheiden_van_belanghebbendheid"
+    ]
+  },
+  "question_logic": {
+    "max_questions_per_round": 5,
+    "question_priority_rules": [
+      "vraag_eerst_naar_de_door_het_bestuursorgaan_genoemde_reden",
+      "vraag_dan_naar_bekendmaking_en_indiening",
+      "vraag_dan_naar_herstelmogelijkheid",
+      "vraag_dan_naar_verschoonbare_omstandigheden",
+      "vraag_dan_of_het_geschil_gaat_over_geen_besluit_of_geen_belanghebbende"
+    ],
+    "sample_questions": [
+      "Waarom is uw bezwaar of beroep volgens het bestuursorgaan niet-ontvankelijk verklaard?",
+      "Op welke datum heeft u het besluit ontvangen of is het bekendgemaakt?",
+      "Heeft u de kans gekregen een verzuim te herstellen, zoals het aanvullen van gronden of een machtiging?",
+      "Zijn er omstandigheden waardoor een termijnoverschrijding verschoonbaar kan zijn?",
+      "Twist u vooral dat er geen besluit is, of vooral dat u geen belanghebbende zou zijn?"
+    ],
+    "do_not_ask_if_already_known": true
+  },
+  "jurisprudence": {
+    "search_queries": [
+      "verschoonbare termijnoverschrijding bestuursrecht",
+      "herstel verzuim 6:6 Awb",
+      "geen besluit 1:3 Awb beroep ontvankelijk",
+      "belanghebbende bestuursrecht niet ontvankelijk"
+    ],
+    "must_verify_fields": [
+      "ecli",
+      "court",
+      "date",
+      "legal_rule",
+      "factual_similarity",
+      "helps_user_or_authority",
+      "distinguishable_yes_no"
+    ],
+    "use_only_if_verified": true,
+    "fallback_if_not_verified": "write_without_case_law"
+  },
+  "grounds": {
+    "strongest_case_specific_grounds": [
+      "verschoonbare_termijnoverschrijding",
+      "geen_of_onvoldoende_herstelmogelijkheid_gegeven",
+      "onjuist_oordeel_dat_geen_besluit_voorligt",
+      "onjuist_oordeel_over_belanghebbendheid",
+      "termijnstart_of_bekendmaking_onduidelijk"
+    ],
+    "weak_generic_grounds_to_avoid": [
+      "algemene_verschoonbaarheidsklacht_zonder_uitleg",
+      "algemene_motiveringsklacht_zonder_ontvankelijkheidsgrond"
+    ],
+    "evidence_hooks": [
+      "verzend_en_ontvangstgegevens",
+      "ziekte_of_overmachtstukken",
+      "herstelverzuimbrief",
+      "statuten_of_machtiging",
+      "oorspronkelijk_verzoek_of_besluit"
+    ]
+  },
+  "hallucination_guards": [
+    "verzin geen ECLI",
+    "verzin geen wetsartikel",
+    "verzin geen citaat uit besluit",
+    "verzin geen termijn",
+    "verzin geen hoorzitting of correspondentie",
+    "verzin geen rol of status van de gebruiker",
+    "neem geen vaste jurisprudentie op zonder geverifieerde uitspraken",
+    "doe geen aannames over module als het document op iets anders wijst",
+    "niet_stellen_dat_elke_overschrijding_verschoonbaar_is",
+    "niet_stellen_dat_gebrek_aan_herstelmogelijkheid_altijd_tot_inhoudelijke_behandeling_leidt"
+  ],
+  "value_add_hooks": [
+    "splits_flow_op_termijn_geen_besluit_geen_belanghebbende",
+    "bij_geen_besluit_altijd_laten_uitleggen_hoe_concreet_en_rechtsgevolggericht_het_verzoek_was"
+  ],
+  "abort_or_redirect_conditions": [
+    "als_het_eigenlijk_om_niet_tijdig_beslissen_gaat_redirect_niet_tijdig"
+  ]
+}

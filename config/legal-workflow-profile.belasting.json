@@ -1,0 +1,124 @@
+{
+  "module": "belasting",
+  "document_extraction": {
+    "required_fields": [
+      "belastingsoort",
+      "aanslag_of_boete_of_beide",
+      "jaar_of_tijdvak",
+      "gecorrigeerde_posten",
+      "motivering_inspecteur",
+      "verwijzing_naar_bewijslast_of_omkering",
+      "opzet_of_grove_schuld_ja_nee",
+      "bedragen_en_rekenstappen"
+    ],
+    "optional_fields": [
+      "controlerapport",
+      "ingediende_stukken",
+      "administratieve_onderbouwing",
+      "pleitbaar_standpunt_toegelicht",
+      "reacties_van_inspecteur"
+    ],
+    "red_flags": [
+      "cijfermatige_inconsistentie",
+      "boete_motivering_ontbreekt",
+      "aanslag_en_boete_worden_niet_gescheiden_behandeld",
+      "geen_duidelijke_feitelijke_onderbouwing_van_correcties"
+    ],
+    "missing_info_triggers": [
+      "onduidelijk_of_stukken_al_zijn_aangeleverd",
+      "onduidelijk_of_pleitbaar_standpunt_wordt_ingenomen"
+    ]
+  },
+  "classification": {
+    "decision_type_rules": [
+      "aanslaggeschil",
+      "vergrijp_of_verzuimboete",
+      "informatie_of_bewijslastgeschil"
+    ],
+    "procedure_stage_rules": [
+      "fiscale aanslagen en boetes volgen de fiscale bezwaar- en beroepsroute",
+      "aanslag en boete moeten analytisch van elkaar worden gescheiden",
+      "toeslagsignalen blokkeren automatische routering naar de belastingmodule"
+    ],
+    "misclassification_risks": [
+      "belastingboete_in_algemene_boetemodule_laten_lopen",
+      "toeslagen_per_abuis_naar_belasting_routeren"
+    ]
+  },
+  "question_logic": {
+    "max_questions_per_round": 5,
+    "question_priority_rules": [
+      "vraag_eerst_of_het_geschil_de_aanslag_de_boete_of_beide_betreft",
+      "vraag_dan_naar_de_meest_kwetsbare_correctie",
+      "vraag_dan_naar_opzet_of_grove_schuld",
+      "vraag_dan_naar_ontbrekende_stukken",
+      "vraag_dan_naar_pleitbaar_standpunt_of_complexe_regelgeving"
+    ],
+    "sample_questions": [
+      "Gaat uw bezwaar of beroep over de aanslag, de boete, of allebei?",
+      "Welke correctie vindt u feitelijk onjuist?",
+      "Heeft de Belastingdienst gesteld dat sprake is van opzet of grove schuld?",
+      "Zijn er stukken die u wel had, maar die volgens de Belastingdienst zouden ontbreken?",
+      "Is uw standpunt volgens u verdedigbaar op basis van onduidelijke of complexe regelgeving?"
+    ],
+    "do_not_ask_if_already_known": true
+  },
+  "jurisprudence": {
+    "search_queries": [
+      "belasting vergrijpboete opzet grove schuld",
+      "belasting pleitbaar standpunt boete",
+      "omkering bewijslast belasting",
+      "aanslag motivering correctie onvoldoende"
+    ],
+    "must_verify_fields": [
+      "ecli",
+      "court",
+      "date",
+      "legal_rule",
+      "factual_similarity",
+      "helps_user_or_authority",
+      "distinguishable_yes_no"
+    ],
+    "use_only_if_verified": true,
+    "fallback_if_not_verified": "write_without_case_law"
+  },
+  "grounds": {
+    "strongest_case_specific_grounds": [
+      "correctie_onvoldoende_feitelijk_onderbouwd",
+      "boete_opzet_of_grove_schuld_onvoldoende_bewezen",
+      "pleitbaar_standpunt_of_verschoonbare_fout",
+      "omkering_of_verzwaring_ten_onrechte_toegepast",
+      "cijfermatige_of_logische_inconsistentie"
+    ],
+    "weak_generic_grounds_to_avoid": [
+      "algemene_zorgvuldigheidsklacht_zonder_concrete_correctie",
+      "algemene_motiveringsklacht_zonder_aanslag_of_boetepassage"
+    ],
+    "evidence_hooks": [
+      "administratie",
+      "aangifte",
+      "onderliggende_facturen",
+      "correspondentie_met_inspecteur",
+      "controlerapport"
+    ]
+  },
+  "hallucination_guards": [
+    "verzin geen ECLI",
+    "verzin geen wetsartikel",
+    "verzin geen citaat uit besluit",
+    "verzin geen termijn",
+    "verzin geen hoorzitting of correspondentie",
+    "verzin geen rol of status van de gebruiker",
+    "neem geen vaste jurisprudentie op zonder geverifieerde uitspraken",
+    "doe geen aannames over module als het document op iets anders wijst",
+    "niet_doen_alsof_elke_correctie_een_rekenfout_is",
+    "niet_stellen_dat_pleitbaar_standpunt_altijd_slaagt"
+  ],
+  "value_add_hooks": [
+    "splits_output_in_aanslagdeel_en_boetedeel",
+    "laat_gebruiker_een_post_selecteren_als_meest_kwetsbare_correctie"
+  ],
+  "abort_or_redirect_conditions": [
+    "als_het_gaat_om_toeslagen_redirect_toeslagen"
+  ]
+}

@@ -15,6 +15,7 @@ import {
 } from "@/lib/intake-flow";
 import { getAnswerSuggestions, grondenFallbackOptions } from "@/lib/intake/answerSuggestions";
 import { filterBestuursorganen } from "@/lib/intake/bestuursorganen";
+import { getKnownBestuursorgaan, getReferencedDocumentBestuursorgaan } from "@/lib/intake/document-context";
 import {
   buildIntakeAssistantFallbackReply,
   IntakeAssistantReason,
@@ -113,15 +114,19 @@ function findNextUnsatisfiedStepIndex(
 function buildCurrentStepPatch(
   step: ReturnType<typeof getStepsByFlow>[number] | undefined,
   answer: string,
-  interpretedPatch: Partial<IntakeFormData>
+  interpretedPatch: Partial<IntakeFormData>,
+  currentData: Partial<IntakeFormData>
 ): Partial<IntakeFormData> {
   if (!step) return {};
 
   const interpretedFieldValue = interpretedPatch[step.field as keyof IntakeFormData];
 
   switch (step.id) {
-    case "bestuursorgaan":
-      return interpretedPatch.bestuursorgaan ? { [step.field]: interpretedPatch.bestuursorgaan } : {};
+    case "bestuursorgaan": {
+      const documentBestuursorgaan = getReferencedDocumentBestuursorgaan(answer, currentData);
+      const resolvedBestuursorgaan = interpretedPatch.bestuursorgaan ?? documentBestuursorgaan;
+      return resolvedBestuursorgaan ? { [step.field]: resolvedBestuursorgaan } : {};
+    }
     case "categorie": {
       const normalizedCategory = normalizeBezwaarCategorie(answer);
       return normalizedCategory ? { [step.field]: normalizedCategory } : {};
@@ -167,10 +172,12 @@ function hasReadableDecisionExtraction(data: Partial<IntakeFormData>): boolean {
 function shouldTreatAsClarifyingQuestion(
   value: string,
   hasMeaningfulAdvance: boolean,
-  currentFieldWouldBeSatisfied: boolean
+  currentFieldWouldBeSatisfied: boolean,
+  resolvedFromDocumentContext = false
 ): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
+  if (resolvedFromDocumentContext) return false;
   if (trimmed.includes("?")) return true;
   if (!isLikelyClarifyingQuestion(trimmed)) return false;
   if (!currentFieldWouldBeSatisfied) return true;
@@ -515,7 +522,14 @@ export default function IntakePage() {
       reason: params.reason,
       userMessage: params.userMessage,
       currentStepId: currentStep?.id,
-      currentStepQuestion: currentStep?.question,
+      currentStepQuestion: currentStep
+        ? getContextualQuestion({
+            flow: activeFlow,
+            step: currentStep,
+            interpretation: params.interpretedTurn.state,
+            intakeData: params.semanticPreviewData,
+          })
+        : undefined,
       intakeData: params.semanticPreviewData,
       missingFacts: params.interpretedTurn.state.missingFacts,
       routeExplanation: routeCheckResult?.explanation,
@@ -756,7 +770,7 @@ export default function IntakePage() {
       intakeData,
       previousState: interpretationState,
     });
-    const currentStepPatch = buildCurrentStepPatch(currentStep, answer, interpretedTurn.patch);
+    const currentStepPatch = buildCurrentStepPatch(currentStep, answer, interpretedTurn.patch, intakeData);
 
     const updatedData = {
       ...intakeData,
@@ -856,7 +870,9 @@ export default function IntakePage() {
       intakeData,
       previousState: interpretationState,
     });
-    const currentStepPatch = buildCurrentStepPatch(currentStep, trimmedInput, interpretedTurn.patch);
+    const currentStepPatch = buildCurrentStepPatch(currentStep, trimmedInput, interpretedTurn.patch, intakeData);
+    const referencedDocumentBestuursorgaan =
+      currentStep?.id === "bestuursorgaan" ? getReferencedDocumentBestuursorgaan(trimmedInput, intakeData) : null;
     const semanticPreviewData = {
       ...intakeData,
       ...interpretedTurn.patch,
@@ -867,7 +883,8 @@ export default function IntakePage() {
     const wantsAssistantGuidance = shouldTreatAsClarifyingQuestion(
       trimmedInput,
       interpretedTurn.hasMeaningfulAdvance,
-      currentFieldWouldBeSatisfied
+      currentFieldWouldBeSatisfied,
+      Boolean(referencedDocumentBestuursorgaan)
     );
 
     if (wantsAssistantGuidance) {
@@ -1205,8 +1222,14 @@ export default function IntakePage() {
     setIsAnalyzingDocument(false);
     setDocumentAnalysisMessage(analysisNote);
 
+    const resolvedBestuursorgaan = getKnownBestuursorgaan({
+      ...intakeData,
+      besluitAnalyse: extractedAnalysis,
+    });
+
     const updatedData = {
       ...intakeData,
+      bestuursorgaan: resolvedBestuursorgaan ?? undefined,
       datumBesluit: extractedDatumBesluit,
       kenmerk: extractedKenmerk,
       besluitSamenvatting: extractedSummary,
@@ -1248,6 +1271,7 @@ export default function IntakePage() {
           })
         : null;
       const extractionNotes: string[] = [];
+      if (updatedData.bestuursorgaan) extractionNotes.push(`bestuursorgaan: ${updatedData.bestuursorgaan}`);
       if (updatedData.datumBesluit) extractionNotes.push(`datum: ${updatedData.datumBesluit}`);
       if (updatedData.kenmerk) extractionNotes.push(`kenmerk: ${updatedData.kenmerk}`);
       if (updatedData.besluitDocumentType) extractionNotes.push(`documenttype: ${updatedData.besluitDocumentType}`);
@@ -1403,6 +1427,12 @@ export default function IntakePage() {
             {(intakeData.besluitSamenvatting || intakeData.besluitTekst || intakeData.besluitAnalyse) && (
               <Alert type="success" title="Uit het besluit gehaald">
                 <div className="space-y-2 text-sm">
+                  {intakeData.bestuursorgaan && (
+                    <p>
+                      <span className="font-semibold text-[var(--foreground)]">Bestuursorgaan:</span>{" "}
+                      {intakeData.bestuursorgaan}
+                    </p>
+                  )}
                   {intakeData.besluitAnalyse?.onderwerp && (
                     <p>
                       <span className="font-semibold text-[var(--foreground)]">Onderwerp:</span>{" "}

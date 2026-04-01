@@ -1,4 +1,6 @@
 import {
+  AuthorityVerificationStatus,
+  CaseFileAnalysisSummary,
   DecisionAnalysisStatus,
   DecisionAnalysisSummary,
   DecisionReadability,
@@ -11,6 +13,11 @@ import { ReferenceItem } from "@/src/types/references";
 export type CaseType =
   | "woo"
   | "algemeen_bestuursrecht"
+  | "bestuurlijke_boete"
+  | "handhaving"
+  | "niet_tijdig_beslissen"
+  | "niet_ontvankelijkheid"
+  | "wmo_pgb"
   | "omgevingswet_vergunning"
   | "taakstraf"
   | "verkeersboete"
@@ -22,6 +29,8 @@ export type CaseType =
 export type RouteType =
   | "woo_verzoek"
   | "bezwaar_woo_besluit"
+  | "beroep_niet_tijdig_beslissen"
+  | "woo_niet_tijdig_beslissen"
   | "zienswijze_bestuursrecht"
   | "bezwaar_bestuursrecht"
   | "beroep_rechtstreeks_bestuursrecht"
@@ -41,6 +50,9 @@ export type RouteType =
   | "handmatige_triage";
 
 export type UseCaseLawMode = false | "only_if_validated";
+export type CaseLawSimilarity = "high" | "medium" | "low" | "unknown";
+export type CaseLawHelpfulness = "user" | "authority" | "mixed" | "unknown";
+export type CaseLawDistinguishable = "yes" | "no" | "unknown" | "not_applicable";
 
 export interface SourceDefinition {
   domain: string;
@@ -60,6 +72,20 @@ export interface ValidatedCitation extends ReferenceItem {
   allowed: boolean;
   reasons: string[];
   sourceUrl: string;
+  verificationStatus: AuthorityVerificationStatus;
+  searchQueries?: string[];
+  officialTitle?: string;
+  verifiedHolding?: string | null;
+  courtName?: string;
+  decisionDate?: string;
+  coreConsiderationRead?: boolean;
+  factualSimilarity?: CaseLawSimilarity;
+  factualSimilarityAssessed?: boolean;
+  helpsUserOrAuthority?: CaseLawHelpfulness;
+  distinguishable?: CaseLawDistinguishable;
+  useInLetter?: boolean;
+  selectionReason?: string;
+  valueAddScore?: number;
 }
 
 export interface PromptPayload {
@@ -69,6 +95,7 @@ export interface PromptPayload {
   caseFacts: string[];
   decisionMeta: string[];
   decisionAnalysis?: DecisionAnalysisSummary | null;
+  caseAnalysis?: CaseFileAnalysisSummary;
   decisionAnalysisStatus?: DecisionAnalysisStatus;
   decisionReadability?: DecisionReadability | null;
   selectedSources: SourceDefinition[];
@@ -134,6 +161,7 @@ export interface GenerationGuardResult {
   selectedSourceSet?: SelectedSourceSet;
   rejectedSources: string[];
   validatedAuthorities: ValidatedCitation[];
+  reviewedAuthorities: ValidatedCitation[];
   auditTrail: string[];
 }
 

@@ -1,0 +1,154 @@
+{
+  "module": "dynamic_from_case_analysis",
+  "document_extraction": {
+    "required_fields": [
+      "bestuursorgaan",
+      "documentType",
+      "besluitInhoud_of_samenvatting",
+      "dragendeOverwegingen_of_hoofdreden",
+      "procedureleAanwijzingen"
+    ],
+    "optional_fields": [
+      "datumBesluit",
+      "kenmerk",
+      "wettelijkeGrondslagen",
+      "rechtsmiddelenclausule",
+      "beleidsReferenties",
+      "jurisprudentieReferenties",
+      "bijlageReferenties",
+      "bijlagenLijst",
+      "inventarislijstOfDocumenttabel",
+      "correspondentieVerwijzingen",
+      "termijnen"
+    ],
+    "red_flags": [
+      "document wijst op andere procedurefase dan intake",
+      "rechtsmiddelenclausule ontbreekt of spreekt intake tegen",
+      "besluit niet goed leesbaar of alleen deels uitgelezen",
+      "geen dragende motivering herkenbaar",
+      "document lijkt geen besluit of beslissing op bezwaar"
+    ],
+    "missing_info_triggers": [
+      "geen betrouwbare datum of ontvangstdatum",
+      "geen kern van het bestreden besluit",
+      "geen eerdere processtukken bij beroep",
+      "geen concrete tegenwerping tegen de dragende motivering",
+      "geen duidelijk verzoek of gewenste uitkomst"
+    ]
+  },
+  "classification": {
+    "decision_type_rules": [
+      "documentsignalen gaan voor algemene intake-signalen bij sectorspecifieke classificatie",
+      "bij conflict tussen document en intake geen sectorspecifieke module afdwingen",
+      "ontwerpbesluit- en beslissing-op-bezwaar-signalen wegen zwaarder dan categorietekst alleen"
+    ],
+    "procedure_stage_rules": [
+      "rechtsmiddelenclausule uit document heeft prioriteit",
+      "beslissing op bezwaar stuurt naar beroep na bezwaar",
+      "ontwerpbesluit met zienswijze-signalen stuurt naar zienswijze of rechtstreeks beroep"
+    ],
+    "misclassification_risks": [
+      "generieke intakecategorie zonder steun in het document",
+      "sectorale woorden in intake die niet terugkomen in het besluit",
+      "besluit is feitelijk een informatiebrief of processtuk in plaats van een besluit"
+    ]
+  },
+  "question_logic": {
+    "max_questions_per_round": 5,
+    "question_priority_rules": [
+      "vraag eerst naar termijnkritische informatie",
+      "vraag daarna naar bekendmaking, bevoegd orgaan, procespositie en moduleconflicten",
+      "vraag vervolgens door op expliciet genoemde dossierstukken waar het besluit op leunt",
+      "vraag daarna naar dragende motivering en procesroute",
+      "vraag daarna naar ontbrekend feit of bewijs dat een juridisch kantelpunt oplevert",
+      "stel geen stijl- of comfortvragen zolang dossierkritische informatie ontbreekt"
+    ],
+    "do_not_ask_if_already_known": true
+  },
+  "jurisprudence": {
+    "search_queries": [
+      "<ECLI>",
+      "<ECLI> <topic>",
+      "<topic> <decision_type>",
+      "<topic> <bestuursorgaan_or_domain>"
+    ],
+    "must_verify_fields": [
+      "ecli",
+      "court",
+      "date",
+      "legal_rule",
+      "factual_similarity",
+      "helps_user_or_authority",
+      "distinguishable_yes_no"
+    ],
+    "use_only_if_verified": true,
+    "fallback_if_not_verified": "write_without_case_law"
+  },
+  "grounds": {
+    "strongest_case_specific_grounds": [
+      "reageer op dragende motivering",
+      "koppel norm aan concreet dossierfeit",
+      "werk alleen gronden uit die bewijs- of besluithaak hebben"
+    ],
+    "weak_generic_grounds_to_avoid": [
+      "algemene motiveringsklacht zonder besluitpassage",
+      "algemene zorgvuldigheidsklacht zonder ontbrekend feit of stuk",
+      "evenredigheid zonder concreet gevolg of belangenafweging",
+      "vaste jurisprudentie zonder verified uitspraken"
+    ],
+    "evidence_hooks": [
+      "bestreden besluit",
+      "onderliggende bezwaarbrief of zienswijze",
+      "besluitpassage",
+      "meegezonden bijlagen",
+      "feitelijke gevolgen uit intake"
+    ]
+  },
+  "hallucination_guards": [
+    "verzin geen ECLI",
+    "verzin geen wetsartikel",
+    "verzin geen citaat uit besluit",
+    "verzin geen termijn",
+    "verzin geen hoorzitting of correspondentie",
+    "verzin geen rol of status van de gebruiker",
+    "neem geen vaste jurisprudentie op zonder geverifieerde uitspraken",
+    "doe geen aannames over module als het document op iets anders wijst",
+    "verzin geen ECLI of samenvatting van rechtspraak en zet Wob-jurisprudentie niet automatisch op Woo",
+    "verzin geen termijn of aanvang van termijn en neem niet te snel aan dat beroep openstaat",
+    "frame pgb niet als vrij keuzeproduct, handhaving niet als absoluut verplicht, evenredigheid niet als automatische vernietigingsgrond en matiging niet als standaard uitkomst",
+    "vul geen feiten, belanghebbendheid of overlegde stukken in die niet uit dossier of besluit blijken"
+  ],
+  "value_add_hooks": [
+    "gebruik dragende overwegingen om gronden te spiegelen",
+    "toon waar onzekerheid nog zit",
+    "maak checkvragen termijn- en routekritisch",
+    "benoem alleen verified jurisprudentie in de brief",
+    "gebruik jurisprudentie alleen als kwaliteitsversterker met echte dossiermeerwaarde en meestal maximaal twee uitspraken",
+    "koppel bewijs zichtbaar aan grond of feit",
+    "wees extra alert op signalen als geen besluit, niet-ontvankelijk, ingebrekestelling, concreet zicht op legalisatie, sociaal netwerk, definitieve berekening, zoekslag, gedeeltelijke openbaarmaking en opzet of grove schuld",
+    "vraag door op stukken waar het besluit expliciet naar verwijst, zoals rapport, zienswijzenota, controleverslag, onderzoeksverslag, inventarislijst, budgetplan, controlerapport of handhavingsverzoek"
+  ],
+  "pre_output_checks": [
+    "module_correctly_classified",
+    "procedure_stage_confirmed",
+    "primary_issue_identified",
+    "all_key_dates_extracted",
+    "all_critical_missing_facts_asked",
+    "no_more_than_5_questions_used",
+    "all_case_law_verified",
+    "each_ground_tied_to_decision_passage",
+    "no_generic_awb_dump",
+    "no_unverified_assertions"
+  ],
+  "abort_or_redirect_conditions": [
+    "document_case_type_conflict",
+    "missing_source_set",
+    "missing_required_intake_fields",
+    "route_uncertain_with_document_conflict",
+    "output_unvalidated_ecli",
+    "output_unverified_term",
+    "output_unverified_hearing_reference",
+    "output_unverified_correspondence_reference",
+    "output_unverified_decision_quote"
+  ]
+}

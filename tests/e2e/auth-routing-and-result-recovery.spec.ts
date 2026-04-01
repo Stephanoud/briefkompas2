@@ -39,7 +39,7 @@ test.describe("Auth routing and result recovery", () => {
 
     await page.goto("/result/woo");
 
-    await expect(page.getByRole("heading", { name: "Je brief" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Je WOO-verzoek" })).toBeVisible();
     await expect(page.getByText("Hierbij verzoek ik u om openbaarmaking van documenten.")).toBeVisible();
     await expect(page.getByText("Geen brief gegenereerd.")).toHaveCount(0);
   });

@@ -9,7 +9,7 @@ const letterContents = [
   "tegen welke beslissing je bezwaar maakt, inclusief datum en kenmerk",
   "waarom je het niet eens bent met die beslissing",
   "wat volgens jou de juiste uitkomst moet zijn",
-  "eventueel een verzoek om je bezwaar toe te lichten tijdens een hoorzitting",
+  "eventueel een concreet procedureel verzoek dat uit je dossier of doel volgt",
   "eventueel een verzoek om de beslissing nog niet uit te voeren zolang het bezwaar loopt",
 ];
 
@@ -21,8 +21,8 @@ const preparationChecklist = [
 ];
 
 const deliveryChecklist = [
-  "controleer eerst de bezwaartermijn; dat is vaak 6 weken",
-  "is de termijn bijna voorbij, stuur dan in elk geval alvast een voorlopig bezwaarschrift",
+  "controleer eerst welke termijn in het besluit of de rechtsmiddelenclausule staat",
+  "staat de termijn onder druk, dien dan tijdig een voorlopig bezwaarschrift in",
   "stuur een kopie van de beslissing mee, plus bewijsstukken als je die hebt",
   "verstuur bij voorkeur aangetekend én per gewone post en bewaar kopie, verzendbewijs en ontvangstbewijs",
   "is het de laatste dag, breng de brief dan zelf langs of controleer of online indienen mogelijk is",
@@ -61,8 +61,9 @@ export default function StartBezwaar() {
           <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-5">
             <h3 className="mb-2 font-semibold text-yellow-900">Termijn eerst controleren</h3>
             <p className="text-sm leading-6 text-yellow-800">
-              Je hebt meestal 6 weken om bezwaar te maken. Staat de termijn onder druk, stuur dan
-              eerst een voorlopig bezwaarschrift en werk je motivering later uit.
+              Controleer eerst welke termijn in het besluit of de rechtsmiddelenclausule staat.
+              Staat die termijn onder druk, stuur dan tijdig een voorlopig bezwaarschrift en werk je
+              motivering later uit.
             </p>
           </div>
         </div>
