@@ -11,6 +11,7 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.102.0",
     "docx": "^9.6.0",
     "js-cookie": "^3.0.5",
     "jspdf": "^4.2.0",

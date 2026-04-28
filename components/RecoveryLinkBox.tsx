@@ -5,7 +5,7 @@ import { Button } from "@/components/Button";
 import { Alert } from "@/components/Alerts";
 
 interface RecoveryLinkBoxProps {
-  recoveryUrl: string;
+  restoreUrl: string;
   expiresAt: string;
 }
 
@@ -17,13 +17,14 @@ function formatExpiresAt(value: string) {
   }).format(date);
 }
 
-export function RecoveryLinkBox({ recoveryUrl, expiresAt }: RecoveryLinkBoxProps) {
+export function RecoveryLinkBox({ restoreUrl, expiresAt }: RecoveryLinkBoxProps) {
   const [copied, setCopied] = useState(false);
   const formattedExpiry = useMemo(() => formatExpiresAt(expiresAt), [expiresAt]);
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(recoveryUrl);
+      const absoluteRestoreUrl = new URL(restoreUrl, window.location.origin).toString();
+      await navigator.clipboard.writeText(absoluteRestoreUrl);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2200);
     } catch {
@@ -39,7 +40,7 @@ export function RecoveryLinkBox({ recoveryUrl, expiresAt }: RecoveryLinkBoxProps
 
       <div className="rounded-2xl border border-emerald-200 bg-white px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">Herstel-link</p>
-        <p className="mt-2 break-all text-sm leading-6 text-[var(--foreground)]">{recoveryUrl}</p>
+        <p className="mt-2 break-all text-sm leading-6 text-[var(--foreground)]">{restoreUrl}</p>
       </div>
 
       <div className="flex flex-wrap gap-3">

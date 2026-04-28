@@ -534,10 +534,6 @@ export default function ResultPage() {
   const generatedReferences: ReferenceItem[] = resolvedGeneratedLetter?.references || [];
   const decisionStatus = getDecisionStatusPresentation(intakeData?.besluitAnalyseStatus);
   const generationMode = getGenerationModePresentation(resolvedGeneratedLetter?.generationMode);
-  const saveableLetter: GeneratedLetter = {
-    ...(resolvedGeneratedLetter ?? { references: [] }),
-    letterText: cleanLetterTextForDelivery(letterText),
-  };
   const referencesSubtitle =
     flow === "bezwaar"
       ? "Deze bronnen blijven alleen zichtbaar in de interface en worden niet als losse restbijlage meegeexporteerd."
@@ -674,12 +670,12 @@ export default function ResultPage() {
           {intakeData && (
             <Card
               title="Bewaren en terugvinden"
-              subtitle="Je gegevens worden standaard niet opgeslagen. Download of kopieer je brief als je deze wilt bewaren."
+              subtitle="Je gegevens worden standaard niet opgeslagen. Je kunt deze brief wel tijdelijk voor 7 dagen bewaren."
             >
               <div className="space-y-5">
                 <p className="text-sm leading-6 text-[var(--muted-strong)]">
-                  Je gegevens worden standaard niet opgeslagen. Download of kopieer je brief als je deze wilt
-                  bewaren.
+                  Je gegevens worden standaard niet opgeslagen. Met de knop hieronder maak je een tijdelijke
+                  herstel-link waarmee je deze brief later nog eens kunt openen.
                 </p>
 
                 <div className="flex flex-wrap gap-3">
@@ -715,9 +711,17 @@ export default function ResultPage() {
 
                 <SaveLetterPanel
                   flow={flow}
+                  content={cleanLetterTextForDelivery(letterText)}
                   product={resolvedProduct}
                   intakeData={intakeData}
-                  generatedLetter={saveableLetter}
+                  generatedLetter={{
+                    ...(resolvedGeneratedLetter ?? {
+                      references: [],
+                      generationMode: "static_fallback",
+                      guardReasons: [],
+                    }),
+                    letterText: cleanLetterTextForDelivery(letterText),
+                  }}
                   manualReferences={manualReferences}
                 />
 

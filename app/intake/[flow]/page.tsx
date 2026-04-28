@@ -15,7 +15,11 @@ import {
 } from "@/lib/intake-flow";
 import { getAnswerSuggestions, grondenFallbackOptions } from "@/lib/intake/answerSuggestions";
 import { filterBestuursorganen } from "@/lib/intake/bestuursorganen";
-import { getKnownBestuursorgaan, getReferencedDocumentBestuursorgaan } from "@/lib/intake/document-context";
+import {
+  getKnownBestuursorgaan,
+  getReferencedDocumentFieldValue,
+  isDocumentLookupRequest,
+} from "@/lib/intake/document-context";
 import {
   buildIntakeAssistantFallbackReply,
   IntakeAssistantReason,
@@ -120,16 +124,26 @@ function buildCurrentStepPatch(
   if (!step) return {};
 
   const interpretedFieldValue = interpretedPatch[step.field as keyof IntakeFormData];
+  const documentFieldValue = getReferencedDocumentFieldValue(answer, step.id, currentData);
+  const documentLookupRequest = isDocumentLookupRequest(answer);
 
   switch (step.id) {
     case "bestuursorgaan": {
-      const documentBestuursorgaan = getReferencedDocumentBestuursorgaan(answer, currentData);
-      const resolvedBestuursorgaan = interpretedPatch.bestuursorgaan ?? documentBestuursorgaan;
+      const resolvedBestuursorgaan = interpretedPatch.bestuursorgaan ?? documentFieldValue;
       return resolvedBestuursorgaan ? { [step.field]: resolvedBestuursorgaan } : {};
     }
     case "categorie": {
-      const normalizedCategory = normalizeBezwaarCategorie(answer);
+      const normalizedCategory =
+        normalizeBezwaarCategorie(answer) ??
+        normalizeBezwaarCategorie(typeof documentFieldValue === "string" ? documentFieldValue : "");
       return normalizedCategory ? { [step.field]: normalizedCategory } : {};
+    }
+    case "ontwerpbesluit": {
+      const resolvedOntwerpbesluit =
+        typeof interpretedFieldValue === "string" && interpretedFieldValue.trim().length > 0
+          ? interpretedFieldValue
+          : documentFieldValue;
+      return resolvedOntwerpbesluit ? { [step.field]: resolvedOntwerpbesluit } : {};
     }
     case "digitale_verstrekking":
     case "spoed":
@@ -137,6 +151,10 @@ function buildCurrentStepPatch(
         [step.field]: ["ja", "yes", "j"].includes(answer.toLowerCase()),
       };
     default:
+      if (documentLookupRequest && !documentFieldValue) {
+        return {};
+      }
+
       return {
         [step.field]: interpretedFieldValue ?? answer,
       };
@@ -870,22 +888,39 @@ export default function IntakePage() {
       intakeData,
       previousState: interpretationState,
     });
+    const documentLookupRequest = isDocumentLookupRequest(trimmedInput);
+    const documentFieldValue = getReferencedDocumentFieldValue(trimmedInput, currentStep?.id, intakeData);
     const currentStepPatch = buildCurrentStepPatch(currentStep, trimmedInput, interpretedTurn.patch, intakeData);
-    const referencedDocumentBestuursorgaan =
-      currentStep?.id === "bestuursorgaan" ? getReferencedDocumentBestuursorgaan(trimmedInput, intakeData) : null;
-    const semanticPreviewData = {
+    let semanticPreviewData = {
       ...intakeData,
       ...interpretedTurn.patch,
       ...currentStepPatch,
       flow: activeFlow,
     } as Partial<IntakeFormData>;
+
+    if (documentLookupRequest && !documentFieldValue) {
+      const currentStepField = currentStep.field as keyof IntakeFormData;
+      const existingValue = intakeData[currentStepField];
+
+      if (typeof existingValue === "undefined") {
+        delete semanticPreviewData[currentStepField];
+      } else {
+        semanticPreviewData = {
+          ...semanticPreviewData,
+          [currentStepField]: existingValue,
+        };
+      }
+    }
+
     const currentFieldWouldBeSatisfied = isChatStepSatisfied(currentStep, semanticPreviewData);
-    const wantsAssistantGuidance = shouldTreatAsClarifyingQuestion(
-      trimmedInput,
-      interpretedTurn.hasMeaningfulAdvance,
-      currentFieldWouldBeSatisfied,
-      Boolean(referencedDocumentBestuursorgaan)
-    );
+    const wantsAssistantGuidance =
+      (documentLookupRequest && !documentFieldValue && !currentFieldWouldBeSatisfied) ||
+      shouldTreatAsClarifyingQuestion(
+        trimmedInput,
+        interpretedTurn.hasMeaningfulAdvance,
+        currentFieldWouldBeSatisfied,
+        Boolean(documentFieldValue)
+      );
 
     if (wantsAssistantGuidance) {
       submitInFlightRef.current = true;

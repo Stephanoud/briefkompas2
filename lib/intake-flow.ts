@@ -29,6 +29,11 @@ const bezwaarCategoriePatterns: Array<{ categorie: string; pattern: RegExp }> = 
     categorie: "vergunning",
     pattern: /\b(vergunning|vergunnings|omgevingsvergunning|bouwvergunning|exploitatievergunning)\b/i,
   },
+  {
+    categorie: "overig",
+    pattern:
+      /\b(wft|wet op het financieel toezicht|aanwijzing|toezichthouder|toezicht|nza|afm|dnb|acm|beslissing op bezwaar)\b/i,
+  },
   { categorie: "overig", pattern: /\b(overig|overige|anders|andere)\b/i },
 ];
 

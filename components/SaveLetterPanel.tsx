@@ -1,138 +1,79 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Flow, GeneratedLetter, IntakeFormData, Product } from "@/types";
+import { useMemo, useState } from "react";
+
 import { Alert } from "@/components/Alerts";
 import { Button } from "@/components/Button";
-import { ConsentCheckboxGroup } from "@/components/ConsentCheckboxGroup";
 import { RecoveryLinkBox } from "@/components/RecoveryLinkBox";
+import type { SaveLetterResponse } from "@/lib/temporaryLetterStorageTypes";
+import type { Flow, GeneratedLetter, IntakeFormData, Product } from "@/types";
 
 interface SaveLetterPanelProps {
   flow: Flow;
+  content: string;
   product: Product | null;
   intakeData: IntakeFormData;
   generatedLetter: GeneratedLetter;
   manualReferences: string;
 }
 
-type SaveLetterResponse = {
-  ok: true;
-  recoveryUrl: string;
-  expiresAt: string;
-};
-
-type SaveLetterAvailabilityResponse = {
-  available: boolean;
-  storageMode: "postgres" | "file" | "unavailable";
-  message: string | null;
-};
-
 function getPanelIntro(flow: Flow) {
   const label = flow === "woo" ? "je verzoek" : "je brief";
-  return `Wil je later verder kunnen met ${label}? Sla hem tijdelijk op en ontvang een herstel-link.`;
+  return `Wil je later verder kunnen met ${label}? Sla hem tijdelijk voor 7 dagen op en ontvang een herstel-link.`;
 }
 
 export function SaveLetterPanel({
   flow,
+  content,
   product,
   intakeData,
   generatedLetter,
   manualReferences,
 }: SaveLetterPanelProps) {
-  const [availability, setAvailability] = useState<SaveLetterAvailabilityResponse | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const [consentStorage, setConsentStorage] = useState(false);
-  const [consentResearch, setConsentResearch] = useState(false);
-  const [storageError, setStorageError] = useState("");
   const [requestError, setRequestError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [savedState, setSavedState] = useState<SaveLetterResponse | null>(null);
 
   const introText = useMemo(() => getPanelIntro(flow), [flow]);
-  const storageUnavailable = availability?.available === false;
-  const availabilityMessage =
-    availability?.message ??
-    "Tijdelijke opslag is op dit moment niet beschikbaar. Download of kopieer je brief voorlopig als je die wilt bewaren.";
-
-  useEffect(() => {
-    let isActive = true;
-
-    const loadAvailability = async () => {
-      try {
-        const response = await fetch("/api/save-letter", {
-          method: "GET",
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error("Beschikbaarheid kon niet worden gecontroleerd.");
-        }
-
-        const payload = (await response.json()) as SaveLetterAvailabilityResponse;
-        if (!isActive) {
-          return;
-        }
-
-        setAvailability(payload);
-      } catch {
-        if (!isActive) {
-          return;
-        }
-
-        setAvailability({
-          available: true,
-          storageMode: "file",
-          message: null,
-        });
-      }
-    };
-
-    void loadAvailability();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
 
   const handleSubmit = async () => {
-    setStorageError("");
     setRequestError("");
 
-    if (storageUnavailable) {
-      setRequestError(availabilityMessage);
-      return;
-    }
-
-    if (!consentStorage) {
-      setStorageError("Vink eerst de toestemming voor tijdelijke opslag aan.");
+    if (!content.trim()) {
+      setSavedState(null);
+      setRequestError("Er is nog geen briefinhoud om tijdelijk op te slaan.");
       return;
     }
 
     try {
       setIsSaving(true);
+      setSavedState(null);
+
       const response = await fetch("/api/save-letter", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          content,
           flow,
           product,
           intakeData,
-          generatedLetter,
+          generatedLetter: {
+            ...generatedLetter,
+            letterText: content,
+          },
           manualReferences,
-          consentStorage,
-          consentResearch,
+          consentResearch: false,
         }),
       });
 
       const payload = (await response.json()) as SaveLetterResponse | { error?: string };
-      if (!response.ok || !("ok" in payload)) {
+      if (!response.ok || !("restoreUrl" in payload)) {
         throw new Error(payload && "error" in payload ? payload.error : "Opslaan mislukt.");
       }
 
       setSavedState(payload);
-      setIsOpen(true);
     } catch (error) {
       setRequestError(error instanceof Error ? error.message : "Opslaan mislukt.");
     } finally {
@@ -147,47 +88,22 @@ export function SaveLetterPanel({
           <p className="text-sm font-semibold text-[var(--foreground)]">Bewaar mijn brief</p>
           <p className="mt-2 max-w-[52ch] text-sm leading-6 text-[var(--muted-strong)]">{introText}</p>
         </div>
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={storageUnavailable}
-          onClick={() => setIsOpen((current) => !current)}
-        >
-          {storageUnavailable ? "Tijdelijke opslag niet beschikbaar" : isOpen ? "Sluit" : "Bewaar mijn brief"}
+        <Button type="button" onClick={handleSubmit} isLoading={isSaving}>
+          {isSaving ? "Brief opslaan..." : "Bewaar mijn brief"}
         </Button>
       </div>
 
-      {savedState && <RecoveryLinkBox recoveryUrl={savedState.recoveryUrl} expiresAt={savedState.expiresAt} />}
-
-      {storageUnavailable && (
-        <Alert type="warning" title="Tijdelijke opslag is nu niet beschikbaar">
-          {availabilityMessage}
+      {requestError && (
+        <Alert type="error" title="Opslaan lukt nu niet">
+          {requestError}
         </Alert>
       )}
 
-      {isOpen && (
-        <div className="space-y-4 rounded-[22px] border border-[var(--border)] bg-white p-4">
-          <ConsentCheckboxGroup
-            consentStorage={consentStorage}
-            consentResearch={consentResearch}
-            disabled={isSaving}
-            storageError={storageError}
-            onConsentStorageChange={setConsentStorage}
-            onConsentResearchChange={setConsentResearch}
-          />
-
-          {requestError && (
-            <Alert type="error" title="Opslaan lukt nu niet">
-              {requestError}
-            </Alert>
-          )}
-
-          <div className="flex flex-wrap gap-3">
-            <Button type="button" onClick={handleSubmit} isLoading={isSaving}>
-              Opslaan en herstel-link maken
-            </Button>
-          </div>
-        </div>
+      {savedState && (
+        <RecoveryLinkBox
+          restoreUrl={savedState.restoreUrl}
+          expiresAt={savedState.expires_at}
+        />
       )}
     </div>
   );

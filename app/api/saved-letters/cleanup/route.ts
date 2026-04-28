@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
-import { cleanupExpiredSavedLetters } from "@/lib/saved-letters/store";
+
+import { cleanupExpiredLetters } from "@/lib/temporaryLetterStorage";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const result = await cleanupExpiredSavedLetters();
-    return NextResponse.json(result);
+    await cleanupExpiredLetters();
+
+    return NextResponse.json({
+      ok: true,
+    });
   } catch (error) {
     console.error("Failed to clean up saved letters", error);
+
     return NextResponse.json(
       { error: "Cleanup mislukt." },
       { status: 500 }

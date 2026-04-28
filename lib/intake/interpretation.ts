@@ -480,6 +480,27 @@ function shouldAskForProcedureObject(state: IntakeInterpretationState, intakeDat
   return !hasValue(intakeData.categorie) && state.procedureObject === "besluit";
 }
 
+function getEffectiveProcedureObject(
+  interpretation: IntakeInterpretationState,
+  intakeData: Partial<IntakeFormData>
+): IntakeProcedureObject {
+  const categorie = typeof intakeData.categorie === "string" ? intakeData.categorie.trim().toLowerCase() : "";
+
+  if (categorie === "vergunning") {
+    return "vergunning";
+  }
+
+  if (categorie === "uitkering") {
+    return "uitkering";
+  }
+
+  if (categorie === "boete") {
+    return "boete";
+  }
+
+  return interpretation.procedureObject;
+}
+
 export function getContextualQuestion(params: {
   flow: Flow;
   step: ChatStep;
@@ -487,6 +508,7 @@ export function getContextualQuestion(params: {
   intakeData: Partial<IntakeFormData>;
 }): string {
   const { flow, step, interpretation, intakeData } = params;
+  const effectiveProcedureObject = getEffectiveProcedureObject(interpretation, intakeData);
 
   if (flow === "woo") {
     if (step.id === "bestuursorgaan") {
@@ -525,16 +547,16 @@ export function getContextualQuestion(params: {
 
   switch (step.id) {
     case "bestuursorgaan":
-      if (interpretation.procedureObject === "vergunning" && interpretation.mainIntent === "besluit_aanvechten") {
+      if (effectiveProcedureObject === "vergunning" && interpretation.mainIntent === "besluit_aanvechten") {
         return "Welk bestuursorgaan heeft de vergunning geweigerd of afgewezen?";
       }
-      if (interpretation.procedureObject === "uitkering") {
+      if (effectiveProcedureObject === "uitkering") {
         return "Welke instantie heeft dit besluit over je uitkering genomen?";
       }
-      if (interpretation.procedureObject === "boete") {
+      if (effectiveProcedureObject === "boete") {
         return "Welke instantie heeft de boete of beschikking opgelegd?";
       }
-      if (interpretation.procedureObject === "handhavingsbesluit") {
+      if (effectiveProcedureObject === "handhavingsbesluit") {
         return "Welk bestuursorgaan heeft het handhavingsbesluit genomen?";
       }
       if (interpretation.mainIntent === "nieuwe_aanvraag" && !interpretation.excludedPaths.includes("nieuwe_aanvraag")) {
@@ -549,13 +571,13 @@ export function getContextualQuestion(params: {
       return step.question;
 
     case "doel":
-      if (interpretation.procedureObject === "vergunning" && interpretation.mainIntent === "besluit_aanvechten") {
+      if (effectiveProcedureObject === "vergunning" && interpretation.mainIntent === "besluit_aanvechten") {
         return "Wat wil je met je bezwaar bereiken: alsnog verlening van de vergunning of een nieuw besluit?";
       }
-      if (interpretation.procedureObject === "uitkering") {
+      if (effectiveProcedureObject === "uitkering") {
         return "Wat wil je met dit bezwaar bereiken: toekenning, herziening of aanpassing van het besluit?";
       }
-      if (interpretation.procedureObject === "boete") {
+      if (effectiveProcedureObject === "boete") {
         return "Wat wil je met dit bezwaar bereiken: intrekking, verlaging of een nieuw besluit?";
       }
       return step.question;
@@ -564,10 +586,10 @@ export function getContextualQuestion(params: {
       if (interpretation.knownFacts.grounds?.toLowerCase().includes("persoonlijke situatie")) {
         return "Je gaf al aan dat je persoonlijke situatie niet is meegewogen. Wat is er volgens jou precies over het hoofd gezien?";
       }
-      if (interpretation.procedureObject === "vergunning" && interpretation.mainIntent === "besluit_aanvechten") {
+      if (effectiveProcedureObject === "vergunning" && interpretation.mainIntent === "besluit_aanvechten") {
         return "Waarom ben je het niet eens met de weigering of afwijzing van de vergunning?";
       }
-      if (interpretation.procedureObject === "uitkering") {
+      if (effectiveProcedureObject === "uitkering") {
         return "Waarom klopt dit besluit over je uitkering volgens jou niet?";
       }
       return step.question;

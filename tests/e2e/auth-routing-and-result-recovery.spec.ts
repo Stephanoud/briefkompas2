@@ -44,6 +44,59 @@ test.describe("Auth routing and result recovery", () => {
     await expect(page.getByText("Geen brief gegenereerd.")).toHaveCount(0);
   });
 
+  test("tijdelijke herstel-link bewaart en herstelt de gegenereerde brief", async ({ page }) => {
+    const letterText =
+      "Geacht college,\n\nDit is een testbrief voor tijdelijke opslag en herstel.\n\nHoogachtend,";
+
+    await page.addInitScript(
+      ({ intake, storedLetter }) => {
+        window.sessionStorage.setItem("briefkompas_product", "basis");
+        window.sessionStorage.setItem("briefkompas_intake", JSON.stringify(intake));
+        window.sessionStorage.setItem("briefkompas_generated_letter", JSON.stringify(storedLetter));
+      },
+      {
+        intake: {
+          flow: "woo",
+          bestuursorgaan: "Gemeente Amsterdam",
+          wooOnderwerp: "Subsidies en wijkprojecten",
+          wooPeriode: "januari 2023 tot januari 2024",
+          wooDocumenten: "emails en notulen",
+          files: {},
+        },
+        storedLetter: {
+          flow: "woo",
+          letter: {
+            letterText,
+            references: [],
+            generationMode: "static_fallback",
+            guardReasons: [],
+          },
+        },
+      }
+    );
+
+    await page.goto("/result/woo");
+    await page.getByRole("button", { name: "Bewaar mijn brief", exact: true }).click();
+
+    await expect(page.getByText("Je brief is tijdelijk opgeslagen.")).toBeVisible();
+    const restoreUrl = await page
+      .locator("p")
+      .filter({ hasText: "/recover/" })
+      .last()
+      .textContent();
+
+    expect(restoreUrl).toBeTruthy();
+
+    await page.goto(restoreUrl!.trim());
+    await expect(page.getByText("Je brief is teruggevonden.")).toBeVisible();
+    await expect(page.getByText("Dit is een testbrief voor tijdelijke opslag en herstel.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Verder met deze brief" }).click();
+
+    await expect(page).toHaveURL(/\/result\/woo$/);
+    await expect(page.getByText("Dit is een testbrief voor tijdelijke opslag en herstel.")).toBeVisible();
+  });
+
   test("productkeuze blijft behouden na reload van productpagina", async ({ page }) => {
     await page.addInitScript(() => {
       window.sessionStorage.setItem("briefkompas_product", "uitgebreid");

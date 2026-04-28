@@ -1,46 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Flow, GeneratedLetter, IntakeFormData, Product } from "@/types";
-import { buildSavedLetterDocumentPayload, buildSavedLetterResearchPayload } from "@/lib/saved-letters/payload";
+
 import {
-  getSavedLetterStorageMode,
-  SAVED_LETTER_STORAGE_UNAVAILABLE_MESSAGE,
-  saveLetterRecord,
-} from "@/lib/saved-letters/store";
+  buildSavedLetterDocumentPayload,
+  buildSavedLetterResearchPayload,
+} from "@/lib/saved-letters/payload";
+import { saveLetterRecord } from "@/lib/saved-letters/store";
+import type { SaveLetterResponse } from "@/lib/temporaryLetterStorageTypes";
+import { cleanLetterTextForDelivery } from "@/lib/letter-format";
 import { isFlow } from "@/lib/flow";
+import type { GeneratedLetter, IntakeFormData, Product } from "@/types";
 
 export const runtime = "nodejs";
 
 type SaveLetterRequestBody = {
-  flow?: Flow;
-  product?: Product | null;
-  intakeData?: IntakeFormData;
-  generatedLetter?: GeneratedLetter;
-  manualReferences?: string;
-  consentStorage?: boolean;
-  consentResearch?: boolean;
+  content?: unknown;
+  flow?: unknown;
+  product?: unknown;
+  intakeData?: unknown;
+  generatedLetter?: unknown;
+  manualReferences?: unknown;
+  consentResearch?: unknown;
 };
 
-function isProduct(value: unknown): value is Product {
-  return value === "basis" || value === "uitgebreid";
-}
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
 
-function hasValidGeneratedLetter(value: unknown): value is GeneratedLetter {
-  return (
-    Boolean(value) &&
-    typeof value === "object" &&
-    typeof (value as GeneratedLetter).letterText === "string" &&
-    (value as GeneratedLetter).letterText.trim().length > 0
-  );
-}
-
-export async function GET() {
-  const storageMode = getSavedLetterStorageMode();
-
-  return NextResponse.json({
-    available: storageMode !== "unavailable",
-    storageMode,
-    message: storageMode === "unavailable" ? SAVED_LETTER_STORAGE_UNAVAILABLE_MESSAGE : null,
-  });
+  return "Het tijdelijk opslaan van de brief is mislukt.";
 }
 
 export async function POST(request: NextRequest) {
@@ -52,62 +39,81 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Ongeldige aanvraag." }, { status: 400 });
   }
 
-  if (!body.consentStorage) {
+  const rawContent = typeof body.content === "string" ? body.content : "";
+  const content = cleanLetterTextForDelivery(rawContent);
+  if (!content.trim()) {
+    return NextResponse.json({ error: "De briefinhoud mag niet leeg zijn." }, { status: 400 });
+  }
+
+  const flow = typeof body.flow === "string" && isFlow(body.flow) ? body.flow : null;
+  if (!flow) {
+    return NextResponse.json({ error: "Het traject ontbreekt of is ongeldig." }, { status: 400 });
+  }
+
+  const product: Product | null =
+    body.product === "basis" || body.product === "uitgebreid" ? body.product : null;
+  const intakeData =
+    body.intakeData && typeof body.intakeData === "object"
+      ? (body.intakeData as IntakeFormData)
+      : null;
+  const generatedLetter =
+    body.generatedLetter &&
+    typeof body.generatedLetter === "object" &&
+    typeof (body.generatedLetter as GeneratedLetter).letterText === "string"
+      ? ({
+          ...(body.generatedLetter as GeneratedLetter),
+          letterText: content,
+        } satisfies GeneratedLetter)
+      : null;
+  const manualReferences =
+    typeof body.manualReferences === "string" ? body.manualReferences : "";
+  const consentResearch = body.consentResearch === true;
+
+  if (!intakeData || !generatedLetter) {
     return NextResponse.json(
-      { error: "Tijdelijke opslag mag alleen na expliciete toestemming." },
+      { error: "De gegevens voor tijdelijke opslag zijn onvolledig." },
       { status: 400 }
     );
   }
-
-  if (!isFlow(body.flow) || !body.intakeData || !hasValidGeneratedLetter(body.generatedLetter)) {
-    return NextResponse.json(
-      { error: "De brief of intakegegevens ontbreken voor tijdelijke opslag." },
-      { status: 400 }
-    );
-  }
-
-  const product = isProduct(body.product) ? body.product : null;
-  const manualReferences = typeof body.manualReferences === "string" ? body.manualReferences : "";
-  const documentPayload = buildSavedLetterDocumentPayload({
-    flow: body.flow,
-    product,
-    intakeData: body.intakeData,
-    generatedLetter: body.generatedLetter,
-    manualReferences,
-  });
-  const researchPayload = body.consentResearch
-    ? buildSavedLetterResearchPayload({
-        flow: body.flow,
-        product,
-        intakeData: body.intakeData,
-        generatedLetter: body.generatedLetter,
-        manualReferences,
-      })
-    : null;
 
   try {
-    const saved = await saveLetterRecord({
+    const documentPayload = buildSavedLetterDocumentPayload({
+      flow,
+      product,
+      intakeData,
+      generatedLetter,
+      manualReferences,
+    });
+    const researchPayload = consentResearch
+      ? buildSavedLetterResearchPayload({
+          flow,
+          product,
+          intakeData,
+          generatedLetter,
+          manualReferences,
+        })
+      : null;
+    const result = await saveLetterRecord({
       documentPayload,
-      generatedLetter: body.generatedLetter.letterText,
+      generatedLetter: content,
       researchPayload,
-      consentResearch: Boolean(body.consentResearch),
+      consentResearch,
     });
-    const recoveryUrl = new URL(`/recover/${saved.recoveryToken}`, request.url).toString();
 
-    return NextResponse.json({
-      ok: true,
-      recoveryUrl,
-      expiresAt: saved.expiresAt,
-    });
+    const response: SaveLetterResponse = {
+      id: result.id,
+      access_token: result.recoveryToken,
+      expires_at: result.expiresAt,
+      restoreUrl: `/recover/${result.recoveryToken}`,
+    };
+
+    return NextResponse.json(response, { status: 201 });
   } catch (error) {
     console.error("Failed to save letter", error);
-    const message =
-      error instanceof Error && error.message ? error.message : "Het opslaan van de brief is niet gelukt.";
-    const status = message === SAVED_LETTER_STORAGE_UNAVAILABLE_MESSAGE ? 503 : 500;
 
     return NextResponse.json(
-      { error: message },
-      { status }
+      { error: getErrorMessage(error) },
+      { status: 500 }
     );
   }
 }

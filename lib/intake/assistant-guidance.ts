@@ -1,5 +1,9 @@
 import { Flow, IntakeFormData } from "@/types";
-import { getKnownBestuursorgaan, refersToUploadedDocument } from "@/lib/intake/document-context";
+import {
+  getKnownBestuursorgaan,
+  getReferencedDocumentFieldValue,
+  refersToUploadedDocument,
+} from "@/lib/intake/document-context";
 
 export type IntakeAssistantReason = "clarifying_question" | "stuck_answer";
 
@@ -50,6 +54,38 @@ function humanizeMissingFact(value: string): string {
   }
 }
 
+function humanizeCurrentStep(stepId: string): string {
+  switch (stepId) {
+    case "bestuursorgaan":
+      return "het bestuursorgaan";
+    case "categorie":
+      return "het soort zaak";
+    case "ontwerpbesluit":
+      return "de inhoud van het ontwerpbesluit";
+    case "doel":
+      return "wat je precies wilt bereiken";
+    case "gronden":
+      return "waarom het besluit volgens jou niet klopt";
+    default:
+      return "dit punt";
+  }
+}
+
+function getCategoryLabel(value: string): string {
+  switch (value) {
+    case "vergunning":
+      return "een vergunningzaak";
+    case "uitkering":
+      return "een uitkeringszaak";
+    case "belasting":
+      return "een belastingzaak";
+    case "boete":
+      return "een boetezaak";
+    default:
+      return "een overige bestuursrechtelijke zaak";
+  }
+}
+
 function joinHumanList(values: string[]): string {
   if (values.length === 0) return "";
   if (values.length === 1) return values[0];
@@ -72,7 +108,9 @@ function summarizeDocumentExtraction(data: Partial<IntakeFormData>): string[] {
 export function buildIntakeAssistantFallbackReply(input: IntakeAssistantRequest): string {
   const normalizedMessage = input.userMessage.toLowerCase();
   const extractedDocumentDetails = summarizeDocumentExtraction(input.intakeData);
-  const knownBestuursorgaan = getKnownBestuursorgaan(input.intakeData);
+  const currentStepDocumentValue = input.currentStepId
+    ? getReferencedDocumentFieldValue(input.userMessage, input.currentStepId, input.intakeData)
+    : null;
   const missingFacts = (input.missingFacts ?? []).slice(0, 2).map(humanizeMissingFact);
   const missingFactsLine =
     missingFacts.length > 0
@@ -90,8 +128,22 @@ export function buildIntakeAssistantFallbackReply(input: IntakeAssistantRequest)
     return `Ik heb uit dit bestand nog geen datum, kenmerk of andere besluitdetails betrouwbaar kunnen overnemen. ${input.documentAnalysisMessage ?? "Dat ligt niet automatisch aan jouw zaak; dan steunt de intake tijdelijk vooral op jouw antwoorden."}${missingFactsLine}`;
   }
 
-  if (input.currentStepId === "bestuursorgaan" && knownBestuursorgaan && refersToUploadedDocument(input.userMessage)) {
-    return `In het geuploade document staat ${knownBestuursorgaan} als bestuursorgaan. Ik neem dat mee voor je intake.${missingFactsLine}`;
+  if (input.currentStepId && currentStepDocumentValue) {
+    if (input.currentStepId === "bestuursorgaan") {
+      return `In het geuploade document staat ${currentStepDocumentValue} als bestuursorgaan. Ik neem dat mee voor je intake.${missingFactsLine}`;
+    }
+
+    if (input.currentStepId === "categorie") {
+      return `In het geuploade document zie ik genoeg aanwijzingen dat dit om ${getCategoryLabel(currentStepDocumentValue)} gaat. Ik neem dat mee voor je intake.${missingFactsLine}`;
+    }
+
+    if (input.currentStepId === "ontwerpbesluit") {
+      return `Ik heb de kern van het geuploade document meegenomen als omschrijving van het ontwerpbesluit.${missingFactsLine}`;
+    }
+  }
+
+  if (input.currentStepId && refersToUploadedDocument(input.userMessage)) {
+    return `Ik heb opnieuw in het geuploade document gekeken, maar ik kan daar ${humanizeCurrentStep(input.currentStepId)} nog niet betrouwbaar uit halen. Kun je dat kort zelf noemen?${missingFactsLine}`;
   }
 
   if (input.currentStepId === "bestuursorgaan" && /\bwaarom|waarvoor|welk\b/i.test(normalizedMessage)) {
