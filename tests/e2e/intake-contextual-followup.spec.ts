@@ -60,14 +60,14 @@ async function mockWftDecisionExtraction(page: Page) {
         samenvatting:
           "Beslissing op bezwaar tegen een aanwijzing ex artikel 1:75 Wft aan Aegon Bank N.V.",
         extractedText:
-          "Beslissing op bezwaar tegen aanwijzing ex artikel 1:75 Wft aan Aegon Bank N.V. De Nederlandsche Bank heeft het bezwaar ongegrond verklaard.",
+          "Beslissing op bezwaar tegen aanwijzing ex artikel 1:75 Wft aan Aegon Bank N.V. In bezwaar heeft AEB aangevoerd dat het primaire besluit moet worden herroepen omdat openbaarmaking van de aanwijzing onjuist en onevenredig is. De Nederlandsche Bank heeft het bezwaar ongegrond verklaard.",
         analysisSource: "image",
         documentType: "beslissing op bezwaar",
         decisionAnalysis: {
           bestuursorgaan: "De Nederlandsche Bank (DNB)",
           onderwerp: "Beslissing op bezwaar tegen aanwijzing ex artikel 1:75 Wft",
           besluitInhoud:
-            "De Nederlandsche Bank heeft het bezwaar tegen een aanwijzing ex artikel 1:75 Wft ongegrond verklaard.",
+            "In bezwaar heeft AEB aangevoerd dat het primaire besluit moet worden herroepen omdat openbaarmaking van de aanwijzing onjuist en onevenredig is. De Nederlandsche Bank heeft het bezwaar ongegrond verklaard.",
           termijnen: "Zes weken termijn voor aanvulling motivering beroepschrift.",
         },
         analysisStatus: "read",
@@ -157,5 +157,26 @@ test.describe("Contextual intake follow-up", () => {
 
     await expect(page.getByText("Welke hoofdpunten had je al in bezwaar aangevoerd?")).toBeVisible();
     await expect(page.getByText("Stap 4 van 7")).toBeVisible();
+  });
+
+  test("documentverwijzing vult eerdere bezwaargronden uit de beslissing op bezwaar", async ({ page }) => {
+    await mockWftDecisionExtraction(page);
+    await openAuthenticatedPage(page, "/intake/beroep_na_bezwaar");
+    await uploadMockDecision(page);
+
+    const answerInput = page.getByPlaceholder("Typ je antwoord...");
+    const nextButton = page.getByRole("button", { name: "Volgende" });
+
+    await answerInput.fill("zoek dat in het document");
+    await nextButton.click();
+    await expect(page.getByText("Welke hoofdpunten had je al in bezwaar aangevoerd?")).toBeVisible();
+
+    await answerInput.fill("staat ook in de brief");
+    await nextButton.click();
+
+    await expect(
+      page.getByText("Wat heeft het bestuursorgaan in de beslissing op bezwaar volgens jou nog steeds niet goed uitgelegd of meegewogen?")
+    ).toBeVisible();
+    await expect(page.getByText("Stap 5 van 7")).toBeVisible();
   });
 });

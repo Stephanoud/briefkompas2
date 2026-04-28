@@ -145,6 +145,14 @@ function buildCurrentStepPatch(
           : documentFieldValue;
       return resolvedOntwerpbesluit ? { [step.field]: resolvedOntwerpbesluit } : {};
     }
+    case "eerdere_bezwaargronden": {
+      const resolvedPriorGrounds =
+        documentFieldValue ??
+        (typeof interpretedFieldValue === "string" && interpretedFieldValue.trim().length > 0
+          ? interpretedFieldValue
+          : answer);
+      return resolvedPriorGrounds ? { [step.field]: resolvedPriorGrounds } : {};
+    }
     case "digitale_verstrekking":
     case "spoed":
       return {

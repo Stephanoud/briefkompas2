@@ -66,6 +66,8 @@ function humanizeCurrentStep(stepId: string): string {
       return "wat je precies wilt bereiken";
     case "gronden":
       return "waarom het besluit volgens jou niet klopt";
+    case "eerdere_bezwaargronden":
+      return "welke hoofdpunten eerder in bezwaar zijn aangevoerd";
     default:
       return "dit punt";
   }
@@ -139,6 +141,10 @@ export function buildIntakeAssistantFallbackReply(input: IntakeAssistantRequest)
 
     if (input.currentStepId === "ontwerpbesluit") {
       return `Ik heb de kern van het geuploade document meegenomen als omschrijving van het ontwerpbesluit.${missingFactsLine}`;
+    }
+
+    if (input.currentStepId === "eerdere_bezwaargronden") {
+      return `Ik heb de eerdere bezwaargronden uit de bezwaarstukken of beslissing op bezwaar gehaald en neem die mee voor je beroepschrift.${missingFactsLine}`;
     }
   }
 

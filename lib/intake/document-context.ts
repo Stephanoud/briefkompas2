@@ -1,4 +1,5 @@
 import { IntakeFormData } from "@/types";
+import { inferAttachmentKind } from "@/lib/intake/procedural-attachments";
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -140,6 +141,99 @@ function getDocumentSummaryForOntwerpbesluit(data: Partial<IntakeFormData>): str
   return null;
 }
 
+function trimExcerpt(value: string, maxLength = 900): string {
+  const normalized = normalizeWhitespace(value);
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function stripDocumentLookupLeadIn(value: string): string | null {
+  const normalized = normalizeWhitespace(value);
+  const leadInMatch = normalized.match(
+    /\b(?:maar|namelijk|want|met name|onder meer|volgende bezwaargronden aan)\s*[:,-]?\s+(.+)$/i
+  );
+
+  if (leadInMatch?.[1] && leadInMatch[1].trim().length >= 20) {
+    return leadInMatch[1].trim();
+  }
+
+  return null;
+}
+
+function extractPriorObjectionGroundsFromText(value: string): string | null {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const directGroundsMatch = normalized.match(
+    /(?:bezwaargronden|gronden van bezwaar|in bezwaar (?:is|zijn|werd|werden|heeft|hebben|voerde|voerden).*?(?:aangevoerd|gesteld|betoogd|aangegeven))\s*(?:dat|:)?\s+(.{40,900})/i
+  );
+  if (directGroundsMatch?.[1]) {
+    return trimExcerpt(directGroundsMatch[1]);
+  }
+
+  const numberedGrounds = normalized.match(/(?:\(\s*i+\s*\)|1[.)]|eerste(?:lijk)?).{40,900}/i);
+  if (numberedGrounds?.[0] && /\b(bezwaar|grond|onjuist|herroepen|onevenredig|publicatie)\b/i.test(numberedGrounds[0])) {
+    return trimExcerpt(numberedGrounds[0]);
+  }
+
+  if (/\b(bezwaarschrift|bezwaarbrief|nadere bezwaargronden|aanvulling bezwaar)\b/i.test(normalized)) {
+    return trimExcerpt(normalized);
+  }
+
+  return null;
+}
+
+function getPriorObjectionGroundsFromDocument(
+  value: string,
+  data: Partial<IntakeFormData>
+): string | null {
+  if (hasText(data.eerdereBezwaargronden)) {
+    return normalizeWhitespace(data.eerdereBezwaargronden);
+  }
+
+  const typedFallback = stripDocumentLookupLeadIn(value);
+  const relevantAttachments = (data.files?.bijlagen ?? [])
+    .map((file) => ({
+      ...file,
+      attachmentKind: file.attachmentKind ?? inferAttachmentKind(file),
+    }))
+    .filter((file) =>
+      ["bezwaarbrief", "aanvulling_bezwaar", "onderliggend_processtuk"].includes(file.attachmentKind)
+    );
+
+  for (const file of relevantAttachments) {
+    if (!hasText(file.extractedText)) {
+      continue;
+    }
+
+    const extractedGrounds = extractPriorObjectionGroundsFromText(file.extractedText);
+    if (extractedGrounds) {
+      return extractedGrounds;
+    }
+  }
+
+  const decisionContext = [
+    data.besluitSamenvatting,
+    data.besluitTekst,
+    data.files?.besluit?.extractedText,
+    data.besluitAnalyse?.besluitInhoud,
+    data.besluitAnalyse?.rechtsmiddelenclausule,
+    ...(data.besluitAnalyse?.dragendeOverwegingen ?? []).flatMap((item) => [item.passage, item.duiding]),
+    ...(data.besluitAnalyse?.aandachtspunten ?? []),
+    ...(data.besluitAnalyse?.correspondentieVerwijzingen ?? []),
+  ]
+    .filter(hasText)
+    .join(" ");
+  const extractedFromDecision = extractPriorObjectionGroundsFromText(decisionContext);
+
+  return extractedFromDecision ?? typedFallback;
+}
+
 export function getReferencedDocumentBestuursorgaan(
   value: string,
   data: Partial<IntakeFormData>
@@ -168,6 +262,8 @@ export function getReferencedDocumentFieldValue(
       return inferCategoryFromDocument(data);
     case "ontwerpbesluit":
       return getDocumentSummaryForOntwerpbesluit(data);
+    case "eerdere_bezwaargronden":
+      return getPriorObjectionGroundsFromDocument(value, data);
     default:
       return null;
   }

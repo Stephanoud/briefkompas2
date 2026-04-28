@@ -69,7 +69,41 @@ test.describe("Intake document context", () => {
     expect(categorie).toBe("overig");
   });
 
-  test("6. fallback-assistent noemt het bestuursorgaan uit het document in plaats van opnieuw te vragen", () => {
+  test("6. documentverwijzing haalt eerdere bezwaargronden uit bezwaarbijlagen", () => {
+    const eerdereBezwaargronden = getReferencedDocumentFieldValue("zoek dat in het document", "eerdere_bezwaargronden", {
+      flow: "beroep_na_bezwaar",
+      files: {
+        bijlagen: [
+          {
+            name: "bezwaarschrift.pdf",
+            size: 1234,
+            type: "application/pdf",
+            path: "stored:bezwaarschrift.pdf",
+            extractedText:
+              "Bezwaargronden: het primaire besluit moet worden herroepen omdat de aanwijzing onvoldoende is gemotiveerd. Daarnaast is publicatie onevenredig.",
+          },
+        ],
+      },
+    });
+
+    expect(eerdereBezwaargronden).toContain("het primaire besluit moet worden herroepen");
+    expect(eerdereBezwaargronden).toContain("publicatie onevenredig");
+  });
+
+  test("7. documentverwijzing gebruikt inhoud na maar als de gebruiker die alsnog noemt", () => {
+    const eerdereBezwaargronden = getReferencedDocumentFieldValue(
+      "staat ook in de brief maar: het primaire besluit moet worden herroepen omdat de aanwijzing onjuist is",
+      "eerdere_bezwaargronden",
+      {
+        flow: "beroep_na_bezwaar",
+        files: {},
+      }
+    );
+
+    expect(eerdereBezwaargronden).toBe("het primaire besluit moet worden herroepen omdat de aanwijzing onjuist is");
+  });
+
+  test("8. fallback-assistent noemt het bestuursorgaan uit het document in plaats van opnieuw te vragen", () => {
     const reply = buildIntakeAssistantFallbackReply({
       flow: "beroep_na_bezwaar",
       reason: "clarifying_question",
@@ -94,7 +128,7 @@ test.describe("Intake document context", () => {
     expect(reply.toLowerCase()).not.toContain("welk bestuursorgaan");
   });
 
-  test("7. fallback-assistent zegt eerlijk wanneer het geuploade document dit punt niet oplost", () => {
+  test("9. fallback-assistent zegt eerlijk wanneer het geuploade document dit punt niet oplost", () => {
     const reply = buildIntakeAssistantFallbackReply({
       flow: "bezwaar",
       reason: "stuck_answer",
