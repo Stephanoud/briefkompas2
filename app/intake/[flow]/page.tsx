@@ -146,6 +146,10 @@ function buildCurrentStepPatch(
       return resolvedOntwerpbesluit ? { [step.field]: resolvedOntwerpbesluit } : {};
     }
     case "eerdere_bezwaargronden": {
+      if (documentLookupRequest && !documentFieldValue) {
+        return {};
+      }
+
       const resolvedPriorGrounds =
         documentFieldValue ??
         (typeof interpretedFieldValue === "string" && interpretedFieldValue.trim().length > 0
@@ -166,6 +170,47 @@ function buildCurrentStepPatch(
       return {
         [step.field]: interpretedFieldValue ?? answer,
       };
+  }
+}
+
+function buildDocumentResolvedPrefix(
+  step: ReturnType<typeof getStepsByFlow>[number] | undefined,
+  documentFieldValue: string | null,
+  data: Partial<IntakeFormData>
+): string {
+  if (!step || !documentFieldValue) {
+    return "";
+  }
+
+  const shortValue = truncatePreview(documentFieldValue, 180);
+
+  switch (step.id) {
+    case "bestuursorgaan":
+      return `Gevonden in het document: ${shortValue}. Ik gebruik dit als bestuursorgaan. `;
+    case "categorie": {
+      const categoryLabel =
+        documentFieldValue === "overig"
+          ? "overige bestuursrechtelijke zaak"
+          : documentFieldValue;
+      const basis = [
+        data.besluitDocumentType,
+        data.besluitAnalyse?.onderwerp,
+        data.besluitAnalyse?.rechtsgrond,
+      ]
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .map((value) => truncatePreview(value, 80))
+        .slice(0, 2)
+        .join("; ");
+      return basis
+        ? `Ik heb het document gecheckt en classificeer dit als ${categoryLabel}. Basis: ${basis}. `
+        : `Ik heb het document gecheckt en classificeer dit als ${categoryLabel}. `;
+    }
+    case "ontwerpbesluit":
+      return `Ik heb de kern uit het document overgenomen: ${shortValue}. `;
+    case "eerdere_bezwaargronden":
+      return `Ik heb eerdere bezwaargronden in de bezwaarstukken of beslissing op bezwaar herkend: ${shortValue}. Ik neem dit mee in het beroepschrift. `;
+    default:
+      return `Ik heb dit uit het document gehaald: ${shortValue}. `;
   }
 }
 
@@ -796,6 +841,8 @@ export default function IntakePage() {
       intakeData,
       previousState: interpretationState,
     });
+    const documentLookupRequest = isDocumentLookupRequest(answer);
+    const documentFieldValue = getReferencedDocumentFieldValue(answer, currentStep.id, intakeData);
     const currentStepPatch = buildCurrentStepPatch(currentStep, answer, interpretedTurn.patch, intakeData);
 
     const updatedData = {
@@ -855,8 +902,15 @@ export default function IntakePage() {
     setPendingWooSubjectClarification(null);
 
     const followUp = needsFollowUp(updatedData as IntakeFormData, currentStep.id);
+    const documentResolvedPrefix =
+      documentLookupRequest && documentFieldValue
+        ? buildDocumentResolvedPrefix(currentStep, documentFieldValue, updatedData)
+        : "";
 
     if (followUp) {
+      if (documentResolvedPrefix) {
+        addAssistantMessage(documentResolvedPrefix.trim());
+      }
       addAssistantMessage(followUp);
       setCurrentInput("");
       return;
@@ -866,6 +920,7 @@ export default function IntakePage() {
       data: updatedData,
       interpretation: interpretedTurn.state,
       startIndex: currentStepIndex + 1,
+      prefix: documentResolvedPrefix,
     });
     setCurrentInput("");
   };

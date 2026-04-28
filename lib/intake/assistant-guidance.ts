@@ -88,6 +88,15 @@ function getCategoryLabel(value: string): string {
   }
 }
 
+function shorten(value: string, maxLength = 180): string {
+  const normalized = normalizeWhitespace(value);
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
 function joinHumanList(values: string[]): string {
   if (values.length === 0) return "";
   if (values.length === 1) return values[0];
@@ -132,19 +141,25 @@ export function buildIntakeAssistantFallbackReply(input: IntakeAssistantRequest)
 
   if (input.currentStepId && currentStepDocumentValue) {
     if (input.currentStepId === "bestuursorgaan") {
-      return `In het geuploade document staat ${currentStepDocumentValue} als bestuursorgaan. Ik neem dat mee voor je intake.${missingFactsLine}`;
+      return `Gevonden in het geuploade document: ${currentStepDocumentValue}. Ik gebruik dit als bestuursorgaan voor je brief.${missingFactsLine}`;
     }
 
     if (input.currentStepId === "categorie") {
-      return `In het geuploade document zie ik genoeg aanwijzingen dat dit om ${getCategoryLabel(currentStepDocumentValue)} gaat. Ik neem dat mee voor je intake.${missingFactsLine}`;
+      const basis = [input.intakeData.besluitDocumentType, input.intakeData.besluitAnalyse?.onderwerp]
+        .filter(hasText)
+        .map((value) => shorten(value, 90))
+        .join("; ");
+      return basis
+        ? `Ik heb het document gecheckt en zet het soort zaak op ${getCategoryLabel(currentStepDocumentValue)}. Basis: ${basis}.${missingFactsLine}`
+        : `Ik heb het document gecheckt en zet het soort zaak op ${getCategoryLabel(currentStepDocumentValue)}.${missingFactsLine}`;
     }
 
     if (input.currentStepId === "ontwerpbesluit") {
-      return `Ik heb de kern van het geuploade document meegenomen als omschrijving van het ontwerpbesluit.${missingFactsLine}`;
+      return `Ik heb de kern uit het geuploade document overgenomen: ${shorten(currentStepDocumentValue)}.${missingFactsLine}`;
     }
 
     if (input.currentStepId === "eerdere_bezwaargronden") {
-      return `Ik heb de eerdere bezwaargronden uit de bezwaarstukken of beslissing op bezwaar gehaald en neem die mee voor je beroepschrift.${missingFactsLine}`;
+      return `Ik heb eerdere bezwaargronden herkend in de bezwaarstukken of beslissing op bezwaar: ${shorten(currentStepDocumentValue)}. Ik neem dit mee in het beroepschrift.${missingFactsLine}`;
     }
   }
 

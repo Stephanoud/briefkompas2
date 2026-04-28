@@ -47,7 +47,8 @@ export function isDocumentLookupRequest(value: string): boolean {
   return (
     /\b(haal|kijk|zie|gebruik|pak|zoek|lees|controleer)\b/.test(normalized) ||
     /\bkun\s+je\b.*\b(halen|lezen|pakken|zoeken|zien|gebruiken|controleren)\b/.test(normalized) ||
-    /\bstaat\s+(dat|dit|die|het)\b/.test(normalized)
+    /\bstaat\s+(dat|dit|die|het)\b/.test(normalized) ||
+    /\bstaat\b.*\b(document|bestand|pdf|bijlage|brief|besluit|beschikking)\b/.test(normalized)
   );
 }
 

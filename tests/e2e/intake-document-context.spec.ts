@@ -3,6 +3,7 @@ import {
   getKnownBestuursorgaan,
   getReferencedDocumentFieldValue,
   getReferencedDocumentBestuursorgaan,
+  isDocumentLookupRequest,
   refersToUploadedDocument,
 } from "@/lib/intake/document-context";
 import { buildIntakeAssistantFallbackReply } from "@/lib/intake/assistant-guidance";
@@ -37,6 +38,7 @@ test.describe("Intake document context", () => {
 
   test("3. een verwijzing naar de brief wordt ook als documentverwijzing herkend", () => {
     expect(refersToUploadedDocument("haal dat uit de brief")).toBeTruthy();
+    expect(isDocumentLookupRequest("staat ook in de brief")).toBeTruthy();
   });
 
   test("4. documentverwijzing kan de categorie uit het besluit halen", () => {
@@ -124,7 +126,7 @@ test.describe("Intake document context", () => {
     });
 
     expect(reply).toContain("Nederlandse Zorgautoriteit (NZa)");
-    expect(reply.toLowerCase()).toContain("ik neem dat mee");
+    expect(reply.toLowerCase()).toContain("ik gebruik dit als bestuursorgaan");
     expect(reply.toLowerCase()).not.toContain("welk bestuursorgaan");
   });
 

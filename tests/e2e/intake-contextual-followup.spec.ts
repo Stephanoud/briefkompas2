@@ -155,6 +155,7 @@ test.describe("Contextual intake follow-up", () => {
     await answerInput.fill("zoek dat in het document");
     await nextButton.click();
 
+    await expect(page.getByText(/Ik heb het document gecheckt en classificeer dit als overige bestuursrechtelijke zaak/)).toBeVisible();
     await expect(page.getByText("Welke hoofdpunten had je al in bezwaar aangevoerd?")).toBeVisible();
     await expect(page.getByText("Stap 4 van 7")).toBeVisible();
   });
@@ -174,6 +175,7 @@ test.describe("Contextual intake follow-up", () => {
     await answerInput.fill("staat ook in de brief");
     await nextButton.click();
 
+    await expect(page.getByText(/Ik heb eerdere bezwaargronden in de bezwaarstukken of beslissing op bezwaar herkend/)).toBeVisible();
     await expect(
       page.getByText("Wat heeft het bestuursorgaan in de beslissing op bezwaar volgens jou nog steeds niet goed uitgelegd of meegewogen?")
     ).toBeVisible();
