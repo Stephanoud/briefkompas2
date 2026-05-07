@@ -571,7 +571,7 @@ export function getContextualQuestion(params: {
       return step.question;
 
     case "doel":
-      if (effectiveProcedureObject === "vergunning" && interpretation.mainIntent === "besluit_aanvechten") {
+      if (effectiveProcedureObject === "vergunning") {
         return "Wat wil je met je bezwaar bereiken: alsnog verlening van de vergunning of een nieuw besluit?";
       }
       if (effectiveProcedureObject === "uitkering") {
@@ -586,7 +586,7 @@ export function getContextualQuestion(params: {
       if (interpretation.knownFacts.grounds?.toLowerCase().includes("persoonlijke situatie")) {
         return "Je gaf al aan dat je persoonlijke situatie niet is meegewogen. Wat is er volgens jou precies over het hoofd gezien?";
       }
-      if (effectiveProcedureObject === "vergunning" && interpretation.mainIntent === "besluit_aanvechten") {
+      if (effectiveProcedureObject === "vergunning") {
         return "Waarom ben je het niet eens met de weigering of afwijzing van de vergunning?";
       }
       if (effectiveProcedureObject === "uitkering") {

@@ -167,6 +167,10 @@ export interface IntakeFormData {
   datumBesluit?: string;
   kenmerk?: string;
   besluitSamenvatting?: string;
+  besluitOnderwerp?: string;
+  beslissingOfMaatregel?: string;
+  belangrijksteMotivering?: string;
+  relevanteTermijn?: string;
   besluitTekst?: string;
   besluitBronType?: DecisionDocumentSource;
   besluitDocumentType?: string;

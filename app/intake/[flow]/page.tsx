@@ -13,15 +13,16 @@ import {
   needsFollowUp,
   normalizeBezwaarCategorie,
 } from "@/lib/intake-flow";
-import { getAnswerSuggestions, grondenFallbackOptions } from "@/lib/intake/answerSuggestions";
+import { getAnswerSuggestions, grondenSuggestionOptions } from "@/lib/intake/answerSuggestions";
 import { filterBestuursorganen } from "@/lib/intake/bestuursorganen";
 import {
   getKnownBestuursorgaan,
+  getInferredCategoryFromDocument,
   getReferencedDocumentFieldValue,
   isDocumentLookupRequest,
 } from "@/lib/intake/document-context";
 import {
-  buildIntakeAssistantFallbackReply,
+  buildIntakeAssistantDeterministicReply,
   IntakeAssistantReason,
   IntakeAssistantRequest,
   IntakeAssistantResponse,
@@ -36,12 +37,13 @@ import {
 } from "@/lib/intake/interpretation";
 import {
   assessDecisionProcedure,
-  buildDecisionProcedureSwitchPrompt,
   type DecisionProcedureAssessment,
 } from "@/lib/decision-procedure";
 import {
   getFlowActionLabel,
   getFlowDocumentLabel,
+  getFlowLabel,
+  isFlow,
   requiresDecisionUpload,
   supportsDecisionUpload,
   resolveFlowFromRoute,
@@ -51,6 +53,7 @@ import { ChatMessage, DecisionExtractionResult, Flow, IntakeFormData } from "@/t
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
+import { Textarea } from "@/components/Textarea";
 import { UploadBox } from "@/components/UploadBox";
 import { ChatBubble } from "@/components/ChatBubble";
 import { StepHeader, Alert } from "@/components";
@@ -87,10 +90,225 @@ interface PendingWooSubjectClarification {
 
 type IntakeStage = "route_confirm" | "substantive";
 
+type ExtractedMetadataItemId =
+  | "procedureAdvies"
+  | "bestuursorgaan"
+  | "datumBesluit"
+  | "kenmerk"
+  | "categorie"
+  | "besluitOnderwerp"
+  | "beslissingOfMaatregel"
+  | "belangrijksteMotivering"
+  | "relevanteTermijn"
+  | "eerdereBezwaargronden";
+
+interface ExtractedMetadataItem {
+  id: ExtractedMetadataItemId;
+  label: string;
+  value: string;
+  correctionPrompt: string;
+  multiline?: boolean;
+}
+
 function hasMeaningfulValue(value: unknown): boolean {
   if (typeof value === "string") return value.trim().length > 0;
   if (typeof value === "boolean") return true;
   return Boolean(value);
+}
+
+function getFirstText(...values: Array<string | null | undefined>): string | null {
+  return values.map((value) => value?.trim()).find((value): value is string => Boolean(value)) ?? null;
+}
+
+function getPrimaryDecisionMotivation(data: Partial<IntakeFormData>): string | null {
+  return getFirstText(
+    data.belangrijksteMotivering,
+    data.besluitAnalyse?.dragendeOverwegingen?.[0]?.duiding,
+    data.besluitAnalyse?.dragendeOverwegingen?.[0]?.passage,
+    data.besluitAnalyse?.rechtsgrond,
+    data.besluitAnalyse?.besluitInhoud
+  );
+}
+
+function getProcedureLabelFromAdvice(value: IntakeFormData["procedureAdvies"] | Flow | undefined): string | null {
+  if (!value || value === "bezwaarfase" || value === "niet_tijdig_beslissen") {
+    return null;
+  }
+
+  return getFlowLabel(value);
+}
+
+function parseProcedureFlow(value: string): Flow | null {
+  const normalized = value.toLowerCase();
+  if (/\b(woo|wet open overheid)\b/.test(normalized)) return "woo";
+  if (/\bzienswijze\b/.test(normalized)) return "zienswijze";
+  if (/\bbezwaar\b/.test(normalized) && !/\bna bezwaar\b/.test(normalized)) return "bezwaar";
+  if (/\bberoep\b/.test(normalized) && /\bna bezwaar\b/.test(normalized)) return "beroep_na_bezwaar";
+  if (/\bberoep\b/.test(normalized) && /\b(zonder bezwaar|rechtstreeks|direct)\b/.test(normalized)) {
+    return "beroep_zonder_bezwaar";
+  }
+  if (/\bberoep\b/.test(normalized)) return "beroep_zonder_bezwaar";
+  return null;
+}
+
+function buildExtractedMetadataItems(
+  data: Partial<IntakeFormData>,
+  activeFlow: Flow,
+  assessment: DecisionProcedureAssessment | null
+): ExtractedMetadataItem[] {
+  const items: ExtractedMetadataItem[] = [];
+  const inferredCategory = getInferredCategoryFromDocument(data);
+  const procedureValue =
+    getProcedureLabelFromAdvice(assessment?.suggestedFlow ?? data.procedureAdvies) ?? getFlowLabel(activeFlow);
+  const subject = getFirstText(data.besluitOnderwerp, data.besluitAnalyse?.onderwerp, data.besluitDocumentType);
+  const decisionAction = getFirstText(
+    data.beslissingOfMaatregel,
+    data.besluitAnalyse?.besluitInhoud,
+    data.besluitSamenvatting
+  );
+  const motivation = getPrimaryDecisionMotivation(data);
+  const term = getFirstText(data.relevanteTermijn, data.besluitAnalyse?.termijnen, data.besluitAnalyse?.rechtsmiddelenclausule);
+  const priorObjectionGrounds = getFirstText(data.eerdereBezwaargronden);
+
+  const pushItem = (item: ExtractedMetadataItem, condition = true) => {
+    if (condition && item.value.trim() && !items.some((existing) => existing.id === item.id)) {
+      items.push(item);
+    }
+  };
+
+  pushItem({
+    id: "procedureAdvies",
+    label: "Proceduretype",
+    value: procedureValue,
+    correctionPrompt: "Vul het juiste proceduretype in: bezwaar, beroep na bezwaar, beroep zonder bezwaar, zienswijze of WOO.",
+  });
+  pushItem({
+    id: "bestuursorgaan",
+    label: "Bestuursorgaan",
+    value: getFirstText(data.bestuursorgaan, data.besluitAnalyse?.bestuursorgaan) ?? "",
+    correctionPrompt: "Vul het juiste bestuursorgaan in.",
+  });
+  pushItem({
+    id: "datumBesluit",
+    label: "Datum besluit",
+    value: data.datumBesluit ?? "",
+    correctionPrompt: "Vul de juiste datum van het besluit in.",
+  });
+  pushItem({
+    id: "kenmerk",
+    label: "Kenmerk",
+    value: data.kenmerk ?? "",
+    correctionPrompt: "Vul het juiste kenmerk of zaaknummer in.",
+  });
+  pushItem({
+    id: "categorie",
+    label: "Soort besluit",
+    value: inferredCategory ?? data.categorie ?? "",
+    correctionPrompt: "Vul het juiste soort besluit in: vergunning, uitkering, boete, belasting of overig.",
+  });
+  pushItem({
+    id: "besluitOnderwerp",
+    label: "Onderwerp besluit",
+    value: subject ?? "",
+    correctionPrompt: "Vul het juiste onderwerp van het besluit in.",
+    multiline: true,
+  });
+  pushItem({
+    id: "beslissingOfMaatregel",
+    label: "Beslissing of maatregel",
+    value: decisionAction ?? "",
+    correctionPrompt: "Vul in welke beslissing of maatregel in het besluit staat.",
+    multiline: true,
+  });
+  pushItem({
+    id: "belangrijksteMotivering",
+    label: "Belangrijkste motivering",
+    value: motivation ?? "",
+    correctionPrompt: "Vul de belangrijkste reden of motivering van het bestuursorgaan in.",
+    multiline: true,
+  });
+  pushItem({
+    id: "relevanteTermijn",
+    label: "Relevante termijn",
+    value: term ?? "",
+    correctionPrompt: "Vul de relevante bezwaar-, beroep- of reactietermijn in.",
+  });
+  pushItem({
+    id: "eerdereBezwaargronden",
+    label: "Eerdere bezwaargronden",
+    value: priorObjectionGrounds ?? "",
+    correctionPrompt: "Vul de hoofdpunten in die eerder in bezwaar zijn aangevoerd.",
+    multiline: true,
+  });
+
+  return items;
+}
+
+function applyMetadataCorrection(
+  data: Partial<IntakeFormData>,
+  item: ExtractedMetadataItem,
+  value: string,
+  currentFlow: Flow
+): Partial<IntakeFormData> {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return data;
+  }
+
+  switch (item.id) {
+    case "procedureAdvies": {
+      const procedureFlow = parseProcedureFlow(trimmedValue) ?? currentFlow;
+      return {
+        ...data,
+        flow: procedureFlow,
+        procedureAdvies: procedureFlow,
+        procedureBevestigd: true,
+      };
+    }
+    case "categorie":
+      return {
+        ...data,
+        categorie: normalizeBezwaarCategorie(trimmedValue) ?? trimmedValue,
+      };
+    case "besluitOnderwerp":
+      return {
+        ...data,
+        besluitOnderwerp: trimmedValue,
+        besluitAnalyse: {
+          ...(data.besluitAnalyse ?? {}),
+          onderwerp: trimmedValue,
+        },
+      };
+    case "beslissingOfMaatregel":
+      return {
+        ...data,
+        beslissingOfMaatregel: trimmedValue,
+        besluitSamenvatting: data.besluitSamenvatting ?? trimmedValue,
+        besluitAnalyse: {
+          ...(data.besluitAnalyse ?? {}),
+          besluitInhoud: trimmedValue,
+        },
+      };
+    case "belangrijksteMotivering":
+      return {
+        ...data,
+        belangrijksteMotivering: trimmedValue,
+      };
+    case "relevanteTermijn":
+      return {
+        ...data,
+        relevanteTermijn: trimmedValue,
+        besluitAnalyse: {
+          ...(data.besluitAnalyse ?? {}),
+          termijnen: trimmedValue,
+        },
+      };
+    default:
+      return {
+        ...data,
+        [item.id]: trimmedValue,
+      };
+  }
 }
 
 function isChatStepSatisfied(step: ReturnType<typeof getStepsByFlow>[number] | undefined, data: Partial<IntakeFormData>): boolean {
@@ -281,10 +499,10 @@ function getDocumentAnalysisPresentation(status?: IntakeFormData["besluitAnalyse
   }
 
   return {
-    title: "Alleen intake gebruikt",
+    title: "Besluitinformatie aanvullen",
     type: "warning" as const,
     description:
-      "Het besluit kon niet voldoende worden uitgelezen. Upload bij voorkeur een scherpere afbeelding of een doorzoekbare PDF.",
+      "Het besluit kon niet volledig worden uitgelezen. Vul ontbrekende kerngegevens verplicht aan of upload een scherpere afbeelding of doorzoekbare PDF.",
   };
 }
 
@@ -300,7 +518,7 @@ function buildIntroMessage(
         : flow === "zienswijze"
           ? "zienswijze"
           : getFlowActionLabel(flow).toLowerCase();
-    return `Hallo! Ik ben de BriefKompas chatbot. Upload eerst je besluit of ontwerpbesluit. Daarna controleer ik of ${routeLabel} waarschijnlijk de juiste route is en stel ik een paar korte vragen voor je ${getFlowDocumentLabel(
+    return `Hallo! Ik ben de BriefKompas chatbot. Upload eerst je besluit of ontwerpbesluit. Daarna controleer ik of ${routeLabel} waarschijnlijk de juiste route is en vraag ik alleen nog gericht naar ontbrekende gegevens voor je ${getFlowDocumentLabel(
       flow
     )}.`;
   }
@@ -362,6 +580,10 @@ export default function IntakePage() {
   const [deferredStepIds, setDeferredStepIds] = useState<string[]>([]);
   const [isAnalyzingDocument, setIsAnalyzingDocument] = useState(false);
   const [documentAnalysisMessage, setDocumentAnalysisMessage] = useState("");
+  const [pendingMetadataConfirmations, setPendingMetadataConfirmations] = useState<ExtractedMetadataItem[]>([]);
+  const [metadataCorrectionOpen, setMetadataCorrectionOpen] = useState<Record<string, boolean>>({});
+  const [metadataCorrectionValues, setMetadataCorrectionValues] = useState<Record<string, string>>({});
+  const [metadataCorrectionError, setMetadataCorrectionError] = useState("");
   const currentStep = stage === "substantive" ? steps[currentStepIndex] : undefined;
   const bestuursorgaanOptions =
     stage === "substantive" && currentStep?.field === "bestuursorgaan"
@@ -393,7 +615,12 @@ export default function IntakePage() {
           ? `step-options-${currentStep.id}`
           : undefined;
   const hasDecisionFile = !supportsDecisionUpload(activeFlow) || Boolean(intakeData.files?.besluit);
-  const questionsCompleted = stage === "substantive" && hasDecisionFile && currentStepIndex >= steps.length;
+  const hasPendingMetadataConfirmations = pendingMetadataConfirmations.length > 0;
+  const questionsCompleted =
+    stage === "substantive" &&
+    hasDecisionFile &&
+    !hasPendingMetadataConfirmations &&
+    currentStepIndex >= steps.length;
   const totalSteps = steps.length + (supportsDecisionUpload(activeFlow) ? 1 : 0);
   const visibleStepNumber =
     supportsDecisionUpload(activeFlow) && !hasDecisionFile
@@ -620,10 +847,10 @@ export default function IntakePage() {
         return payload.reply.trim();
       }
     } catch {
-      // Fall through to deterministic fallback below.
+      // Fall through to the local deterministic reply below.
     }
 
-    return buildIntakeAssistantFallbackReply(requestBody);
+    return buildIntakeAssistantDeterministicReply(requestBody);
   };
 
   const respondWithAssistantGuidance = async (params: {
@@ -728,6 +955,100 @@ export default function IntakePage() {
     finalizeIntake(params.data);
   };
 
+  const continueAfterMetadataConfirmation = (data: Partial<IntakeFormData>) => {
+    const confirmedProcedure = isFlow(data.procedureAdvies) ? data.procedureAdvies : activeFlow;
+    const nextData = {
+      ...data,
+      flow: confirmedProcedure,
+      procedureAdvies: confirmedProcedure,
+      procedureBevestigd: true,
+    } as Partial<IntakeFormData>;
+
+    if (confirmedProcedure !== activeFlow) {
+      startSubstantiveFlow(confirmedProcedure, nextData);
+      return;
+    }
+
+    setStage("substantive");
+    setCurrentInput("");
+    setValidationError("");
+    setStepPromptCounts({});
+    continueToNextRelevantStep({
+      data: nextData,
+      interpretation: interpretationState,
+      startIndex: 0,
+      prefix: "Ik gebruik de bevestigde gegevens uit het besluit. ",
+    });
+  };
+
+  const completeMetadataItem = (item: ExtractedMetadataItem, nextData: Partial<IntakeFormData>) => {
+    const remainingItems = pendingMetadataConfirmations.filter((metadataItem) => metadataItem.id !== item.id);
+    setIntakeData(nextData);
+    setPendingMetadataConfirmations(remainingItems);
+    setMetadataCorrectionOpen((current) => {
+      const next = { ...current };
+      delete next[item.id];
+      return next;
+    });
+    setMetadataCorrectionValues((current) => {
+      const next = { ...current };
+      delete next[item.id];
+      return next;
+    });
+    setMetadataCorrectionError("");
+
+    if (remainingItems.length === 0) {
+      continueAfterMetadataConfirmation(nextData);
+    }
+  };
+
+  const confirmMetadataItem = (item: ExtractedMetadataItem) => {
+    const nextData = applyMetadataCorrection(intakeData, item, item.value, activeFlow);
+    completeMetadataItem(item, nextData);
+  };
+
+  const saveMetadataCorrection = (item: ExtractedMetadataItem) => {
+    const correctionValue = metadataCorrectionValues[item.id]?.trim() ?? "";
+    if (!correctionValue) {
+      setMetadataCorrectionError(item.correctionPrompt);
+      return;
+    }
+
+    if (item.id === "procedureAdvies" && !parseProcedureFlow(correctionValue)) {
+      setMetadataCorrectionError("Gebruik: bezwaar, beroep na bezwaar, beroep zonder bezwaar, zienswijze of WOO.");
+      return;
+    }
+
+    if (item.id === "categorie" && !normalizeBezwaarCategorie(correctionValue)) {
+      setMetadataCorrectionError("Gebruik: vergunning, uitkering, boete, belasting of overig.");
+      return;
+    }
+
+    const nextData = applyMetadataCorrection(intakeData, item, correctionValue, activeFlow);
+    completeMetadataItem(item, nextData);
+  };
+
+  const beginMetadataConfirmation = (params: {
+    data: Partial<IntakeFormData>;
+    assessment: DecisionProcedureAssessment | null;
+    message: string;
+  }) => {
+    const metadataItems = buildExtractedMetadataItems(params.data, activeFlow, params.assessment);
+    setIntakeData(params.data);
+    setStage("substantive");
+    setPendingMetadataConfirmations(metadataItems);
+    setMetadataCorrectionOpen({});
+    setMetadataCorrectionValues(
+      Object.fromEntries(metadataItems.map((item) => [item.id, item.value]))
+    );
+    setMetadataCorrectionError("");
+    addAssistantMessage(params.message);
+
+    if (metadataItems.length === 0) {
+      continueAfterMetadataConfirmation(params.data);
+    }
+  };
+
   const processRouteConfirmation = (answer: string) => {
     if (!routeCheckResult) return;
 
@@ -787,21 +1108,21 @@ export default function IntakePage() {
 
     switch (step.id) {
       case "bestuursorgaan":
-        return "Ik mis nog het bestuursorgaan. Noem bijvoorbeeld 'gemeente Utrecht', 'Belastingdienst' of 'UWV'.";
+        return "Geef aan welk bestuursorgaan dit besluit heeft genomen, bijvoorbeeld 'gemeente Utrecht', 'Belastingdienst' of 'UWV'.";
       case "categorie":
-        return "Ik heb nog niet scherp om wat voor besluit het gaat. Is het een vergunning, uitkering, boete, belastingzaak of iets anders?";
+        return "Vul in om wat voor besluit het gaat: vergunning, uitkering, boete, belastingzaak of overig.";
       case "doel":
-        return "Ik hoor nog niet precies wat je wilt bereiken. Gaat het je om intrekking, herziening, aanpassing, verlaging of een nieuw besluit?";
+        return "Vul de gewenste uitkomst in: intrekking, herziening, aanpassing, verlaging of een nieuw besluit.";
       case "gronden":
-        return "Ik mis nog waarom het besluit volgens jou niet klopt. Noem bijvoorbeeld wat onjuist is, wat niet is meegewogen of waarom de gevolgen te zwaar zijn.";
+        return "Vul in waarom het besluit volgens jou niet klopt: wat is onjuist, niet meegewogen of te zwaar?";
       case "documenten":
-        return "Ik mis nog welke stukken je zoekt. Denk aan e-mails, memo's, rapporten, notulen of besluiten.";
+        return "Vul in welke stukken je zoekt, zoals e-mails, memo's, rapporten, notulen of besluiten.";
       case "digitale_verstrekking":
         return "Laat even weten of je digitale verstrekking wilt: antwoord met 'ja' of 'nee'.";
       case "spoed":
         return "Laat even weten of er spoed is: antwoord met 'ja' of 'nee'.";
       default:
-        return `Ik kan nog niet door op basis van dit antwoord. ${step.question}`;
+        return `Vul dit punt concreet in. ${step.question}`;
     }
   };
 
@@ -1324,13 +1645,34 @@ export default function IntakePage() {
       ...intakeData,
       besluitAnalyse: extractedAnalysis,
     });
+    const inferredCategory = getInferredCategoryFromDocument({
+      ...intakeData,
+      besluitDocumentType: extractedDocumentType,
+      besluitSamenvatting: extractedSummary,
+      besluitTekst: extractedText,
+      besluitAnalyse: extractedAnalysis,
+    });
+    const primaryMotivation = getPrimaryDecisionMotivation({
+      ...intakeData,
+      besluitAnalyse: extractedAnalysis,
+    });
 
-    const updatedData = {
+    let updatedData = {
       ...intakeData,
       bestuursorgaan: resolvedBestuursorgaan ?? undefined,
       datumBesluit: extractedDatumBesluit,
       kenmerk: extractedKenmerk,
+      categorie: intakeData.categorie ?? inferredCategory ?? undefined,
       besluitSamenvatting: extractedSummary,
+      besluitOnderwerp: intakeData.besluitOnderwerp ?? extractedAnalysis?.onderwerp ?? extractedDocumentType ?? undefined,
+      beslissingOfMaatregel:
+        intakeData.beslissingOfMaatregel ?? extractedAnalysis?.besluitInhoud ?? extractedSummary ?? undefined,
+      belangrijksteMotivering: intakeData.belangrijksteMotivering ?? primaryMotivation ?? undefined,
+      relevanteTermijn:
+        intakeData.relevanteTermijn ??
+        extractedAnalysis?.termijnen ??
+        extractedAnalysis?.rechtsmiddelenclausule ??
+        undefined,
       besluitTekst: extractedText,
       besluitBronType: extractedSource,
       besluitDocumentType: extractedDocumentType,
@@ -1347,6 +1689,18 @@ export default function IntakePage() {
         },
       },
     } as Partial<IntakeFormData>;
+
+    const extractedPriorObjectionGrounds = getReferencedDocumentFieldValue(
+      "zoek dat in het document",
+      "eerdere_bezwaargronden",
+      updatedData
+    );
+    if (!updatedData.eerdereBezwaargronden && extractedPriorObjectionGrounds) {
+      updatedData = {
+        ...updatedData,
+        eerdereBezwaargronden: extractedPriorObjectionGrounds,
+      };
+    }
 
     if (supportsDecisionUpload(activeFlow)) {
       const hasReadableExtraction = hasReadableDecisionExtraction(updatedData);
@@ -1390,72 +1744,32 @@ export default function IntakePage() {
           ? ` Ik heb alvast ${extractionNotes.join(" en ")} uit het besluit gehaald.`
           : " Ik kon datum en kenmerk nog niet betrouwbaar uitlezen.";
       const procedureLine = assessment ? ` ${assessment.explanation}` : "";
+      const nextData = {
+        ...updatedData,
+        procedureAdvies: assessment?.suggestedFlow ?? activeFlow,
+        procedureReden: assessment?.explanation,
+        procedureBevestigd: Boolean(assessment?.matchedSelectedFlow || assessment?.shouldAutoSwitch),
+      } as Partial<IntakeFormData>;
 
       setRouteCheckResult(assessment);
 
-      if (!assessment) {
-        setIntakeData(updatedData);
-        setStage("substantive");
-        addAssistantMessage(
-          `Bestand ontvangen${sourceLine} (${selectedFile.name}).${statusLine}${extractionLine}${summaryLine}${noteLine}`
-        );
-        return;
-      }
-
-      if (assessment.shouldAutoSwitch && assessment.suggestedFlow) {
-        addAssistantMessage(
-          `Bestand ontvangen${sourceLine} (${selectedFile.name}).${statusLine}${extractionLine}${summaryLine}${noteLine}${procedureLine}`
-        );
-        startSubstantiveFlow(assessment.suggestedFlow, {
-          ...updatedData,
-          procedureAdvies: assessment.suggestedFlow,
-          procedureReden: assessment.explanation,
-          procedureBevestigd: true,
-        });
-        return;
-      }
-
-      const nextData = {
-        ...updatedData,
-        procedureAdvies: assessment.suggestedFlow ?? activeFlow,
-        procedureReden: assessment.explanation,
-        procedureBevestigd: assessment.matchedSelectedFlow,
-      } as Partial<IntakeFormData>;
-      setIntakeData(nextData);
-
-      if (questionsCompleted) {
-        const completedExtractionLine =
-          extractionNotes.length > 0
-            ? ` Gevonden in het besluit: ${extractionNotes.join(", ")}.`
-            : " Datum en kenmerk konden niet betrouwbaar uit het bestand worden gehaald.";
-        addAssistantMessage(
-          `Bestand ontvangen${sourceLine} (${selectedFile.name}). Je intake is voltooid. Klik op 'Naar Overzicht'.${statusLine}${completedExtractionLine}${summaryLine}${noteLine}${procedureLine}`
-        );
-        return;
-      }
-
-      if (assessment.shouldConfirmSwitch) {
-        setStage("route_confirm");
-        addAssistantMessage(
-          `Bestand ontvangen${sourceLine} (${selectedFile.name}).${statusLine}${extractionLine}${summaryLine}${noteLine}`
-        );
-        addAssistantMessage(buildDecisionProcedureSwitchPrompt(assessment));
-        return;
-      }
-
-      setStage("substantive");
-      addAssistantMessage(
-        `Bestand ontvangen${sourceLine} (${selectedFile.name}).${statusLine}${extractionLine}${summaryLine}${noteLine}${procedureLine}`
-      );
-      askFirstQuestionForCurrentFlow(nextData, "Nog een korte vraag om je brief op te bouwen: ");
+      beginMetadataConfirmation({
+        data: nextData,
+        assessment,
+        message: `Bestand ontvangen${sourceLine} (${selectedFile.name}).${statusLine}${extractionLine}${summaryLine}${noteLine}${procedureLine} Controleer de gevonden gegevens hieronder voordat de intake verdergaat.`,
+      });
       return;
     }
 
-    setIntakeData(updatedData);
-
-    if (questionsCompleted) {
-      addAssistantMessage(`Bestand ontvangen (${selectedFile.name}). Je intake is voltooid. Klik op 'Naar Overzicht'.`);
-    }
+    beginMetadataConfirmation({
+      data: {
+        ...updatedData,
+        procedureAdvies: activeFlow,
+        procedureBevestigd: true,
+      },
+      assessment: null,
+      message: `Bestand ontvangen (${selectedFile.name}). Controleer de gevonden gegevens hieronder voordat de intake verdergaat.`,
+    });
   };
 
   const handleContinue = () => {
@@ -1470,7 +1784,11 @@ export default function IntakePage() {
     routeCheckResult?.suggestedFlow ? getFlowActionLabel(routeCheckResult.suggestedFlow) : null;
   const shouldShowAnswerInput =
     stage === "route_confirm" ||
-    (stage === "substantive" && hasDecisionFile && !questionsCompleted && currentStepIndex < steps.length);
+    (stage === "substantive" &&
+      hasDecisionFile &&
+      !hasPendingMetadataConfirmations &&
+      !questionsCompleted &&
+      currentStepIndex < steps.length);
 
   return (
     <div className="max-w-2xl mx-auto min-h-[78vh] flex flex-col justify-center">
@@ -1570,6 +1888,97 @@ export default function IntakePage() {
                 </div>
               </Alert>
             )}
+
+            {hasPendingMetadataConfirmations && (
+              <div className="rounded-xl border border-[var(--border)] bg-white p-4">
+                <div className="mb-4">
+                  <h3 className="font-semibold text-[var(--foreground)]">Controleer gegevens uit het besluit</h3>
+                  <p className="mt-1 text-sm leading-6 text-[var(--muted-strong)]">
+                    Bevestig de gevonden gegevens. Corrigeer alleen wat niet klopt; daarna gaat de intake verder met
+                    de ontbrekende punten.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  {pendingMetadataConfirmations.map((item) => {
+                    const isCorrectionOpen = metadataCorrectionOpen[item.id];
+                    const correctionValue = metadataCorrectionValues[item.id] ?? item.value;
+
+                    return (
+                      <div key={item.id} className="rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                          {item.label}
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[var(--foreground)]">{item.value}</p>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button type="button" size="sm" onClick={() => confirmMetadataItem(item)}>
+                            [✓ Juist]
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setMetadataCorrectionOpen((current) => ({
+                                ...current,
+                                [item.id]: true,
+                              }));
+                              setMetadataCorrectionValues((current) => ({
+                                ...current,
+                                [item.id]: item.value,
+                              }));
+                              setMetadataCorrectionError("");
+                            }}
+                          >
+                            [✗ Onjuist]
+                          </Button>
+                        </div>
+
+                        {isCorrectionOpen && (
+                          <div className="mt-3 space-y-3">
+                            {item.multiline ? (
+                              <Textarea
+                                label={item.correctionPrompt}
+                                value={correctionValue}
+                                onChange={(event) => {
+                                  setMetadataCorrectionValues((current) => ({
+                                    ...current,
+                                    [item.id]: event.target.value,
+                                  }));
+                                  setMetadataCorrectionError("");
+                                }}
+                              />
+                            ) : (
+                              <Input
+                                label={item.correctionPrompt}
+                                value={correctionValue}
+                                onChange={(event) => {
+                                  setMetadataCorrectionValues((current) => ({
+                                    ...current,
+                                    [item.id]: event.target.value,
+                                  }));
+                                  setMetadataCorrectionError("");
+                                }}
+                              />
+                            )}
+                            <Button type="button" size="sm" onClick={() => saveMetadataCorrection(item)}>
+                              Correctie opslaan
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {metadataCorrectionError && (
+                  <Alert type="error" title="Correctie nodig" className="mt-4">
+                    {metadataCorrectionError}
+                  </Alert>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1660,7 +2069,7 @@ export default function IntakePage() {
             )}
             {currentStep?.id === "gronden" && (
               <div className="flex flex-wrap gap-2">
-                {grondenFallbackOptions.map((option) => (
+                {grondenSuggestionOptions.map((option) => (
                   <button
                     key={option}
                     type="button"

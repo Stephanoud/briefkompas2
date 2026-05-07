@@ -73,21 +73,7 @@ function buildDecisionContext(data: Partial<IntakeFormData>): string {
     .join(" ");
 }
 
-function hasMeaningfulDecisionContext(data: Partial<IntakeFormData>): boolean {
-  return Boolean(
-    hasText(data.besluitDocumentType) ||
-      hasText(data.besluitSamenvatting) ||
-      hasText(data.besluitTekst) ||
-      hasText(data.files?.besluit?.extractedText) ||
-      hasText(data.besluitAnalyse?.onderwerp) ||
-      hasText(data.besluitAnalyse?.besluitInhoud) ||
-      hasText(data.besluitAnalyse?.rechtsgrond) ||
-      hasText(data.besluitAnalyse?.termijnen) ||
-      (data.files?.bijlagen ?? []).some((file) => hasText(file.extractedText))
-  );
-}
-
-function inferCategoryFromDocument(data: Partial<IntakeFormData>): string | null {
+export function getInferredCategoryFromDocument(data: Partial<IntakeFormData>): string | null {
   if (hasText(data.categorie)) {
     return normalizeWhitespace(data.categorie).toLowerCase();
   }
@@ -116,14 +102,14 @@ function inferCategoryFromDocument(data: Partial<IntakeFormData>): string | null
   }
 
   if (
-    /\b(wft|wet op het financieel toezicht|aanwijzing|toezichthouder|toezicht|nza|afm|dnb|acm|beslissing op bezwaar)\b/.test(
+    /\b(wft|wet op het financieel toezicht|aanwijzing|toezichthouder|toezicht|nza|afm|dnb|acm|beslissing op bezwaar|trac(?:e|\u00e9)besluit|trac(?:e|\u00e9)wet|rijksweg(?:en)?|inpassingsplan|bestemmingsplan|omgevingsplan)\b/.test(
       normalized
     )
   ) {
     return "overig";
   }
 
-  return hasMeaningfulDecisionContext(data) ? "overig" : null;
+  return null;
 }
 
 function getDocumentSummaryForOntwerpbesluit(data: Partial<IntakeFormData>): string | null {
@@ -197,7 +183,7 @@ function getPriorObjectionGroundsFromDocument(
     return normalizeWhitespace(data.eerdereBezwaargronden);
   }
 
-  const typedFallback = stripDocumentLookupLeadIn(value);
+  const typedLeadInValue = stripDocumentLookupLeadIn(value);
   const relevantAttachments = (data.files?.bijlagen ?? [])
     .map((file) => ({
       ...file,
@@ -232,7 +218,7 @@ function getPriorObjectionGroundsFromDocument(
     .join(" ");
   const extractedFromDecision = extractPriorObjectionGroundsFromText(decisionContext);
 
-  return extractedFromDecision ?? typedFallback;
+  return extractedFromDecision ?? typedLeadInValue;
 }
 
 export function getReferencedDocumentBestuursorgaan(
@@ -260,7 +246,7 @@ export function getReferencedDocumentFieldValue(
     case "bestuursorgaan":
       return getReferencedDocumentBestuursorgaan(value, data);
     case "categorie":
-      return inferCategoryFromDocument(data);
+      return getInferredCategoryFromDocument(data);
     case "ontwerpbesluit":
       return getDocumentSummaryForOntwerpbesluit(data);
     case "eerdere_bezwaargronden":

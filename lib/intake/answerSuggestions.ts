@@ -21,7 +21,7 @@ const answerSuggestionsByStepId: Record<string, string[]> = {
   spoed: ["ja", "nee"],
 };
 
-export const grondenFallbackOptions = answerSuggestionsByStepId.gronden;
+export const grondenSuggestionOptions = answerSuggestionsByStepId.gronden;
 
 export function getAnswerSuggestions(stepId: string | undefined, input: string, maxResults = 8): string[] {
   if (!stepId) return [];

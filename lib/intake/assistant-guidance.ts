@@ -116,7 +116,7 @@ function summarizeDocumentExtraction(data: Partial<IntakeFormData>): string[] {
   return details;
 }
 
-export function buildIntakeAssistantFallbackReply(input: IntakeAssistantRequest): string {
+export function buildIntakeAssistantDeterministicReply(input: IntakeAssistantRequest): string {
   const normalizedMessage = input.userMessage.toLowerCase();
   const extractedDocumentDetails = summarizeDocumentExtraction(input.intakeData);
   const currentStepDocumentValue = input.currentStepId
@@ -125,7 +125,7 @@ export function buildIntakeAssistantFallbackReply(input: IntakeAssistantRequest)
   const missingFacts = (input.missingFacts ?? []).slice(0, 2).map(humanizeMissingFact);
   const missingFactsLine =
     missingFacts.length > 0
-      ? ` Ik probeer tegelijk nog ${joinHumanList(missingFacts)} scherp te krijgen voor je brief.`
+      ? ` Nog verplicht aan te vullen: ${joinHumanList(missingFacts)}.`
       : "";
 
   if (
@@ -164,7 +164,7 @@ export function buildIntakeAssistantFallbackReply(input: IntakeAssistantRequest)
   }
 
   if (input.currentStepId && refersToUploadedDocument(input.userMessage)) {
-    return `Ik heb opnieuw in het geuploade document gekeken, maar ik kan daar ${humanizeCurrentStep(input.currentStepId)} nog niet betrouwbaar uit halen. Kun je dat kort zelf noemen?${missingFactsLine}`;
+    return `Ik heb opnieuw in het geuploade document gekeken, maar ik kan daar ${humanizeCurrentStep(input.currentStepId)} nog niet betrouwbaar uit halen. Vul dit punt zelf in.${missingFactsLine}`;
   }
 
   if (input.currentStepId === "bestuursorgaan" && /\bwaarom|waarvoor|welk\b/i.test(normalizedMessage)) {

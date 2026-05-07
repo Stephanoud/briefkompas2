@@ -6,7 +6,7 @@ import {
   isDocumentLookupRequest,
   refersToUploadedDocument,
 } from "@/lib/intake/document-context";
-import { buildIntakeAssistantFallbackReply } from "@/lib/intake/assistant-guidance";
+import { buildIntakeAssistantDeterministicReply } from "@/lib/intake/assistant-guidance";
 
 test.describe("Intake document context", () => {
   test("1. haalt bestuursorgaan uit documentanalyse als intakeveld nog leeg is", () => {
@@ -71,7 +71,24 @@ test.describe("Intake document context", () => {
     expect(categorie).toBe("overig");
   });
 
-  test("6. documentverwijzing haalt eerdere bezwaargronden uit bezwaarbijlagen", () => {
+  test("6. documentverwijzing herkent tracebesluit als overige bestuursrechtelijke zaak", () => {
+    const categorie = getReferencedDocumentFieldValue("zoek dat in het document", "categorie", {
+      flow: "bezwaar",
+      besluitDocumentType: "Trac\u00e9besluit en ontwerp",
+      besluitAnalyseStatus: "read",
+      besluitAnalyse: {
+        bestuursorgaan: "Minister van Infrastructuur en Milieu",
+        onderwerp: "Wijziging en nieuwe aanleg Rijkswegen A12 en A15",
+        besluitInhoud:
+          "Het Trac\u00e9besluit A12/A15 Ressen-Oudbroeken regelt wijziging en nieuwe aanleg van Rijkswegen.",
+      },
+      files: {},
+    });
+
+    expect(categorie).toBe("overig");
+  });
+
+  test("7. documentverwijzing haalt eerdere bezwaargronden uit bezwaarbijlagen", () => {
     const eerdereBezwaargronden = getReferencedDocumentFieldValue("zoek dat in het document", "eerdere_bezwaargronden", {
       flow: "beroep_na_bezwaar",
       files: {
@@ -92,7 +109,7 @@ test.describe("Intake document context", () => {
     expect(eerdereBezwaargronden).toContain("publicatie onevenredig");
   });
 
-  test("7. documentverwijzing gebruikt inhoud na maar als de gebruiker die alsnog noemt", () => {
+  test("8. documentverwijzing gebruikt inhoud na maar als de gebruiker die alsnog noemt", () => {
     const eerdereBezwaargronden = getReferencedDocumentFieldValue(
       "staat ook in de brief maar: het primaire besluit moet worden herroepen omdat de aanwijzing onjuist is",
       "eerdere_bezwaargronden",
@@ -105,8 +122,8 @@ test.describe("Intake document context", () => {
     expect(eerdereBezwaargronden).toBe("het primaire besluit moet worden herroepen omdat de aanwijzing onjuist is");
   });
 
-  test("8. fallback-assistent noemt het bestuursorgaan uit het document in plaats van opnieuw te vragen", () => {
-    const reply = buildIntakeAssistantFallbackReply({
+  test("9. deterministische assistent noemt het bestuursorgaan uit het document in plaats van opnieuw te vragen", () => {
+    const reply = buildIntakeAssistantDeterministicReply({
       flow: "beroep_na_bezwaar",
       reason: "clarifying_question",
       userMessage: "zie het geuploade document voor het relevante bestuursorgaan",
@@ -130,8 +147,8 @@ test.describe("Intake document context", () => {
     expect(reply.toLowerCase()).not.toContain("welk bestuursorgaan");
   });
 
-  test("9. fallback-assistent zegt eerlijk wanneer het geuploade document dit punt niet oplost", () => {
-    const reply = buildIntakeAssistantFallbackReply({
+  test("10. deterministische assistent zegt eerlijk wanneer het geuploade document dit punt niet oplost", () => {
+    const reply = buildIntakeAssistantDeterministicReply({
       flow: "bezwaar",
       reason: "stuck_answer",
       userMessage: "haal dat uit de brief",

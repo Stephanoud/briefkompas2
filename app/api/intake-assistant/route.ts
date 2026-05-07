@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import {
-  buildIntakeAssistantFallbackReply,
+  buildIntakeAssistantDeterministicReply,
   IntakeAssistantRequest,
   IntakeAssistantResponse,
 } from "@/lib/intake/assistant-guidance";
@@ -35,7 +35,7 @@ function buildPrompt(input: IntakeAssistantRequest): string {
     "- Als documentuitlezing onzeker of mislukt is, zeg dat eerlijk.",
     "- Als het bestuursorgaan al bekend is uit intakegegevens of documentanalyse, noem dat bestuursorgaan concreet en vraag er niet opnieuw naar.",
     "- Als de gebruiker een verduidelijkingsvraag stelt, beantwoord die direct en vriendelijk.",
-    "- Houd in het achterhoofd welke informatie nog ontbreekt voor de intake, maar stel niet meer dan hooguit een zachte brug terug naar die informatie.",
+    "- Benoem ontbrekende intake-informatie alleen gericht en verplicht; stel geen vrijblijvende of generieke vervolgvragen.",
     "",
     `Flow: ${input.flow}`,
     `Reden: ${input.reason}`,
@@ -61,11 +61,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const fallbackReply = buildIntakeAssistantFallbackReply(input);
+  const deterministicReply = buildIntakeAssistantDeterministicReply(input);
   const openai = getOpenAIClient();
 
   if (!openai) {
-    const response: IntakeAssistantResponse = { reply: fallbackReply };
+    const response: IntakeAssistantResponse = { reply: deterministicReply };
     return NextResponse.json(response);
   }
 
@@ -89,12 +89,12 @@ export async function POST(request: NextRequest) {
 
     const reply = normalizeReply(completion.choices[0]?.message?.content);
     const response: IntakeAssistantResponse = {
-      reply: reply || fallbackReply,
+      reply: reply || deterministicReply,
     };
     return NextResponse.json(response);
   } catch (error) {
     console.error("Failed to generate intake assistant reply", error);
-    const response: IntakeAssistantResponse = { reply: fallbackReply };
+    const response: IntakeAssistantResponse = { reply: deterministicReply };
     return NextResponse.json(response);
   }
 }
