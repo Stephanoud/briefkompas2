@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { getFlowDocumentLabel, getFlowLabel, isFlow } from "@/lib/flow";
 import { readStoredGeneratedLetter } from "@/lib/generatedLetterSession";
 import { readStoredResultDraft, writeStoredResultDraft } from "@/lib/resultDraftSession";
+import { readStoredIntake, readStoredProduct } from "@/lib/browser-persistence";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
@@ -545,24 +546,16 @@ export default function ResultPage() {
   const flow = isFlow(routeFlow) ? routeFlow : null;
   const appStore = useAppStore();
   const setGeneratedLetter = useAppStore((state) => state.setGeneratedLetter);
-  const cachedProduct =
-    typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_product") : null;
+  const cachedProduct = readStoredProduct();
   const resolvedProduct =
     appStore.product === "basis" || appStore.product === "uitgebreid"
       ? appStore.product
-      : cachedProduct === "basis" || cachedProduct === "uitgebreid"
-        ? cachedProduct
-        : null;
-  const cachedIntake =
-    typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_intake") : null;
+      : cachedProduct;
+  const cachedIntake = flow ? readStoredIntake(flow) : null;
   let intakeData: IntakeFormData | null = appStore.intakeData;
 
   if (!intakeData && cachedIntake) {
-    try {
-      intakeData = JSON.parse(cachedIntake) as IntakeFormData;
-    } catch {
-      intakeData = null;
-    }
+    intakeData = cachedIntake as IntakeFormData;
   }
 
   const [resolvedGeneratedLetter, setResolvedGeneratedLetter] = useState<GeneratedLetter | null>(

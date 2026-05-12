@@ -13,6 +13,18 @@ export default function PrivacyPage() {
             aanvinkt, bewaren we je brief niet. Download of kopieer hem dan zelf als je hem wilt houden.
           </p>
 
+          <h3 className="font-semibold text-[var(--foreground)]">Cookies en browseropslag</h3>
+          <p>
+            BriefKompas gebruikt noodzakelijke sessie-opslag in je browser om de intake tussen pagina&apos;s te laten
+            werken. Met je toestemming bewaren we je intakevoortgang ook lokaal in dezelfde browser, zodat je met
+            teruggaan of later verdergaan je invoer terugvindt. We gebruiken hiervoor geen trackingcookies en we
+            plaatsen inhoudelijke zaakgegevens niet in cookies die met serververzoeken worden meegestuurd.
+          </p>
+          <p>
+            Kies je voor &quot;Alleen deze sessie&quot;, dan bewaren we de voortgang alleen tijdelijk in het actieve
+            browservenster. Je kunt lokale opslag wissen via de instellingen van je browser.
+          </p>
+
           <h3 className="font-semibold text-[var(--foreground)]">Tijdelijke opslag alleen na opt-in</h3>
           <p>
             Alleen als je daar expliciet voor kiest, slaan we je brief en de bijbehorende intakegegevens tijdelijk op

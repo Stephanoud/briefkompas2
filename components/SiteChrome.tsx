@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Container from "@/components/Container";
+import { StorageConsentBanner } from "@/components/StorageConsentBanner";
 
 export default function SiteChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -54,6 +55,7 @@ export default function SiteChrome({ children }: { children: ReactNode }) {
       )}
 
       <main className={isLoginPage ? "flex-1 w-full" : "flex-1 w-full py-8 sm:py-10"}>{children}</main>
+      {!isLoginPage && <StorageConsentBanner />}
 
       {!isLoginPage && (
         <footer className="w-full border-t border-[var(--border)] bg-white/70">

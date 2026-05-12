@@ -1,13 +1,15 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getFlowActionLabel, getFlowDocumentLabel, getFlowLabel, isFlow } from "@/lib/flow";
 import { getMissingGenerationInfo, humanizeMissingInfoField } from "@/lib/intake/completeness";
+import { readStoredIntake, writeStoredIntake } from "@/lib/browser-persistence";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Alert } from "@/components/index";
+import { MissingIntakeFieldsForm } from "@/components/MissingIntakeFieldsForm";
 import { Flow, IntakeFormData } from "@/types";
 
 function truncatePreview(value: string, maxLength = 320): string {
@@ -72,16 +74,15 @@ export default function ReviewPage() {
   const rawFlow = params?.flow;
   const flow = isFlow(Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) ? (Array.isArray(rawFlow) ? rawFlow[0] : rawFlow) : null;
   const appStore = useAppStore();
-  const cachedIntake =
-    typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_intake") : null;
   let intakeData: IntakeFormData | null = appStore.intakeData;
+  const [inlineIntakeData, setInlineIntakeData] = useState<IntakeFormData | null>(null);
 
-  if (!intakeData && cachedIntake) {
-    try {
-      intakeData = JSON.parse(cachedIntake) as IntakeFormData;
-    } catch {
-      intakeData = null;
-    }
+  if (!intakeData && flow) {
+    intakeData = readStoredIntake(flow) as IntakeFormData | null;
+  }
+
+  if (inlineIntakeData) {
+    intakeData = inlineIntakeData;
   }
 
   if (!flow || !intakeData) {
@@ -99,6 +100,13 @@ export default function ReviewPage() {
 
   const missingProductInfo = getMissingGenerationInfo(flow, intakeData);
   const canContinueToProduct = missingProductInfo.length === 0;
+
+  const handleMissingInfoSave = (updatedIntakeData: IntakeFormData) => {
+    const withFlow = { ...updatedIntakeData, flow };
+    appStore.setIntakeData(withFlow);
+    writeStoredIntake(withFlow);
+    setInlineIntakeData(withFlow);
+  };
 
   const handleEdit = () => {
     router.push(`/intake/${flow}`);
@@ -228,6 +236,14 @@ export default function ReviewPage() {
             <li key={String(field.field)}>{humanizeMissingInfoField(field)}</li>
           ))}
         </ul>
+        <div className="mt-4">
+          <MissingIntakeFieldsForm
+            key={missingProductInfo.map((field) => String(field.field)).join("|")}
+            fields={missingProductInfo}
+            intakeData={intakeData}
+            onSave={handleMissingInfoSave}
+          />
+        </div>
       </Alert>
     );
   };

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store";
+import { readStoredIntake, writeStoredIntake } from "@/lib/browser-persistence";
 import {
   WOO_SUBJECT_CLARIFICATION_OPTIONS,
   getStepsByFlow,
@@ -581,6 +582,7 @@ export default function IntakePage() {
   const appStore = useAppStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const submitInFlightRef = useRef(false);
+  const hasCheckedStoredProgressRef = useRef(false);
   const [stage, setStage] = useState<IntakeStage>("substantive");
   const [routeCheckResult, setRouteCheckResult] = useState<DecisionProcedureAssessment | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -660,6 +662,80 @@ export default function IntakePage() {
       : (supportsDecisionUpload(activeFlow) ? 1 : 0) +
         (questionsCompleted ? steps.length : Math.min(currentStepIndex + 1, steps.length));
   const isIntakeReady = stage === "substantive" && questionsCompleted;
+
+  useEffect(() => {
+    if (hasCheckedStoredProgressRef.current) {
+      return;
+    }
+
+    hasCheckedStoredProgressRef.current = true;
+    const storedIntake = readStoredIntake(activeFlow);
+    const hasStoredPayload =
+      Boolean(storedIntake?.files?.besluit) ||
+      Object.keys(storedIntake ?? {}).some((key) => key !== "flow" && key !== "files");
+
+    if (!storedIntake || storedIntake.flow !== activeFlow || !hasStoredPayload) {
+      return;
+    }
+
+    const restoredData = {
+      ...storedIntake,
+      flow: activeFlow,
+      files: storedIntake.files ?? {},
+    };
+    const nextStepIndex =
+      supportsDecisionUpload(activeFlow) && !restoredData.files?.besluit
+        ? 0
+        : findNextUnsatisfiedStepIndex(steps, restoredData);
+    const restoredInterpretation = createInitialIntakeInterpretation(activeFlow);
+    const nextStep = steps[nextStepIndex];
+    const nextQuestion =
+      nextStep && restoredData.files?.besluit
+        ? getContextualQuestion({
+            flow: activeFlow,
+            step: nextStep,
+            interpretation: restoredInterpretation,
+            intakeData: restoredData,
+          })
+        : null;
+
+    setIntakeData(restoredData);
+    appStore.setIntakeData(restoredData as IntakeFormData);
+    setInterpretationState(restoredInterpretation);
+    setCurrentStepIndex(nextStepIndex);
+    setMessages([
+      {
+        id: `intro-${activeFlow}`,
+        role: "assistant",
+        content: buildIntroMessage(activeFlow, restoredInterpretation, routeFlowValue),
+        timestamp: new Date(),
+      },
+      {
+        id: `restore-${activeFlow}`,
+        role: "assistant",
+        content: nextQuestion
+          ? `Ik heb je eerdere intakegegevens teruggezet. We gaan verder bij het eerstvolgende ontbrekende punt. ${nextQuestion}`
+          : "Ik heb je eerdere intakegegevens teruggezet. Controleer de gegevens en ga verder naar het overzicht zodra alles klopt.",
+        timestamp: new Date(),
+      },
+    ]);
+  }, [activeFlow, appStore, routeFlowValue, steps]);
+
+  useEffect(() => {
+    const hasPayload =
+      Boolean(intakeData.files?.besluit) ||
+      Object.keys(intakeData).some((key) => key !== "flow" && key !== "files");
+
+    if (!hasPayload) {
+      return;
+    }
+
+    writeStoredIntake({
+      ...intakeData,
+      flow: activeFlow,
+      files: intakeData.files ?? {},
+    });
+  }, [activeFlow, intakeData]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1804,7 +1880,7 @@ export default function IntakePage() {
     if (!isIntakeReady) return;
     const finalizedData = { ...intakeData, flow: activeFlow } as IntakeFormData;
     appStore.setIntakeData(finalizedData);
-    sessionStorage.setItem("briefkompas_intake", JSON.stringify(finalizedData));
+    writeStoredIntake(finalizedData);
     router.push(`/review/${activeFlow}`);
   };
 

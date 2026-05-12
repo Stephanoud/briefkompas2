@@ -174,6 +174,54 @@ test.describe("Auth routing and result recovery", () => {
     await expect(page.getByRole("button", { name: "Ga naar betaling" })).toHaveCount(0);
   });
 
+  test("ontbrekende gegevens kunnen direct bij blokkade worden aangevuld", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.sessionStorage.setItem("briefkompas_product", "basis");
+      window.sessionStorage.setItem(
+        "briefkompas_intake",
+        JSON.stringify({
+          flow: "woo",
+          bestuursorgaan: "Gemeente Amsterdam",
+          wooOnderwerp: "Subsidies en wijkprojecten",
+          wooPeriode: "januari 2023 tot januari 2024",
+          files: {},
+        })
+      );
+    });
+
+    await page.goto("/pricing/woo");
+
+    await expect(page.getByText(/Productkeuze geblokkeerd/)).toBeVisible();
+    await page.getByLabel(/welke documenten of documentsoorten/i).fill("emails, notulen en besluitenlijsten");
+    await page.getByRole("button", { name: "Aanvullingen opslaan" }).click();
+
+    await expect(page.getByRole("heading", { name: "Kies je pakket" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Geselecteerd" })).toBeVisible();
+  });
+
+  test("intake wordt na opslagtoestemming uit lokale browseropslag hersteld", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("briefkompas_storage_consent", "accepted");
+      window.localStorage.setItem(
+        "briefkompas_intake",
+        JSON.stringify({
+          flow: "woo",
+          bestuursorgaan: "Gemeente Utrecht",
+          wooOnderwerp: "Handhavingsrapporten horeca",
+          wooPeriode: "2024",
+          wooDocumenten: "rapporten en e-mails",
+          files: {},
+        })
+      );
+    });
+
+    await page.goto("/review/woo");
+
+    await expect(page.getByText("Gemeente Utrecht")).toBeVisible();
+    await expect(page.getByText("Handhavingsrapporten horeca")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Ga naar productkeuze ->" })).toBeEnabled();
+  });
+
   test("bij generatie-fout kan gebruiker terug zonder productkeuze te verliezen", async ({ page }) => {
     await page.addInitScript(() => {
       window.sessionStorage.setItem("briefkompas_product", "basis");

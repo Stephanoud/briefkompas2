@@ -1,3 +1,5 @@
+import { hasPersistentStorageConsent } from "@/lib/browser-persistence";
+
 export const DELIVERY_EMAIL_SESSION_KEY = "briefkompas_delivery_email";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
@@ -15,7 +17,11 @@ export function readStoredDeliveryEmail(): string {
     return "";
   }
 
-  return sessionStorage.getItem(DELIVERY_EMAIL_SESSION_KEY) ?? "";
+  return (
+    sessionStorage.getItem(DELIVERY_EMAIL_SESSION_KEY) ??
+    (hasPersistentStorageConsent() ? localStorage.getItem(DELIVERY_EMAIL_SESSION_KEY) : null) ??
+    ""
+  );
 }
 
 export function writeStoredDeliveryEmail(value: string) {
@@ -23,5 +29,9 @@ export function writeStoredDeliveryEmail(value: string) {
     return;
   }
 
-  sessionStorage.setItem(DELIVERY_EMAIL_SESSION_KEY, normalizeDeliveryEmail(value));
+  const normalized = normalizeDeliveryEmail(value);
+  sessionStorage.setItem(DELIVERY_EMAIL_SESSION_KEY, normalized);
+  if (hasPersistentStorageConsent()) {
+    localStorage.setItem(DELIVERY_EMAIL_SESSION_KEY, normalized);
+  }
 }

@@ -4,18 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { clearStoredGeneratedLetter, writeStoredGeneratedLetter } from "@/lib/generatedLetterSession";
 import { clearStoredResultDraft } from "@/lib/resultDraftSession";
+import { readStoredIntake, readStoredProduct, writeStoredIntake } from "@/lib/browser-persistence";
 import { getFlowDocumentLabel, isFlow } from "@/lib/flow";
 import { isValidDeliveryEmail, normalizeDeliveryEmail, readStoredDeliveryEmail } from "@/lib/delivery-email";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { LoadingSpinner, Alert, Input, Textarea } from "@/components/index";
-import { Flow, IntakeFormData, Product } from "@/types";
+import { Flow, IntakeFormData } from "@/types";
 
 const toFlow = (value: string | null | undefined): Flow | null => (isFlow(value) ? value : null);
-
-const toProduct = (value: string | null): Product | null =>
-  value === "basis" || value === "uitgebreid" ? value : null;
 
 type MissingInfoField = {
   field: keyof IntakeFormData | "decisionDocument" | "procedureType";
@@ -42,20 +40,7 @@ function isNeedsMoreInfoPayload(value: unknown): value is NeedsMoreInfoPayload {
 }
 
 function readCachedIntake(): IntakeFormData | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const cachedIntake = sessionStorage.getItem("briefkompas_intake");
-  if (!cachedIntake) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(cachedIntake) as IntakeFormData;
-  } catch {
-    return null;
-  }
+  return readStoredIntake() as IntakeFormData | null;
 }
 
 export default function GeneratePage() {
@@ -86,8 +71,7 @@ export default function GeneratePage() {
     requestStartedRef.current = attempt;
 
     const generateLetter = async () => {
-      const cachedProduct =
-        typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_product") : null;
+      const cachedProduct = readStoredProduct();
       const deliveryEmail = normalizeDeliveryEmail(readStoredDeliveryEmail());
 
       let resolvedIntakeData = intakeData;
@@ -95,7 +79,7 @@ export default function GeneratePage() {
         resolvedIntakeData = readCachedIntake();
       }
 
-      const resolvedProduct = product ?? toProduct(cachedProduct);
+      const resolvedProduct = product ?? cachedProduct;
 
       if (!flow || !resolvedIntakeData || !resolvedProduct) {
         setError(
@@ -218,9 +202,7 @@ export default function GeneratePage() {
     });
 
     setIntakeData(updatedIntake);
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("briefkompas_intake", JSON.stringify(updatedIntake));
-    }
+    writeStoredIntake(updatedIntake);
 
     setBlockingInfo(null);
     setMissingValues({});

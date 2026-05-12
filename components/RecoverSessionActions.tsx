@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
+import { clearStoredProduct, writeStoredIntake, writeStoredProduct } from "@/lib/browser-persistence";
 import { writeStoredGeneratedLetter } from "@/lib/generatedLetterSession";
 import { writeStoredResultDraft } from "@/lib/resultDraftSession";
 import { useAppStore } from "@/lib/store";
@@ -24,13 +25,13 @@ export function RecoverSessionActions({ payload }: RecoverSessionActionsProps) {
     setIsRestoring(true);
 
     try {
-      sessionStorage.setItem("briefkompas_intake", JSON.stringify(payload.intakeData));
+      writeStoredIntake(payload.intakeData);
 
       if (payload.product) {
-        sessionStorage.setItem("briefkompas_product", payload.product);
+        writeStoredProduct(payload.product);
         setProduct(payload.product);
       } else {
-        sessionStorage.removeItem("briefkompas_product");
+        clearStoredProduct();
       }
 
       setFlow(payload.flow);

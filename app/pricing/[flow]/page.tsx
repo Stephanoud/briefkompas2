@@ -6,11 +6,18 @@ import { getFlowDocumentLabel, getFlowLabel, isFlow, supportsDecisionUpload } fr
 import { extractTextFromPdfInBrowser } from "@/lib/client-pdf-extraction";
 import { getAttachmentKindLabel, inferAttachmentKind } from "@/lib/intake/procedural-attachments";
 import { getMissingGenerationInfo, humanizeMissingInfoField } from "@/lib/intake/completeness";
+import {
+  readStoredIntake,
+  readStoredProduct,
+  writeStoredIntake,
+  writeStoredProduct,
+} from "@/lib/browser-persistence";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { Alert, UploadBox } from "@/components/index";
+import { MissingIntakeFieldsForm } from "@/components/MissingIntakeFieldsForm";
 import { Flow, IntakeFormData, Product, UploadedFileRef } from "@/types";
 import { getPriceFormatted, TEST_PRICING_LABEL } from "@/lib/utils";
 import {
@@ -26,11 +33,7 @@ const toProduct = (value: unknown): Product | null =>
   value === "basis" || value === "uitgebreid" ? value : null;
 
 function getStoredProduct(): Product | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return toProduct(sessionStorage.getItem("briefkompas_product"));
+  return readStoredProduct();
 }
 
 function getStoredBijlagen(): UploadedFileRef[] {
@@ -42,20 +45,7 @@ function getStoredBijlagen(): UploadedFileRef[] {
 }
 
 function getStoredIntakeData(): Partial<IntakeFormData> {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
-  const cachedIntake = sessionStorage.getItem("briefkompas_intake");
-  if (!cachedIntake) {
-    return {};
-  }
-
-  try {
-    return JSON.parse(cachedIntake) as Partial<IntakeFormData>;
-  } catch {
-    return {};
-  }
+  return readStoredIntake() ?? {};
 }
 
 function trimExtractedAttachmentText(value?: string | null, maxLength = 4000): string | undefined {
@@ -93,16 +83,19 @@ export default function PricingPage() {
   const [deliveryEmailError, setDeliveryEmailError] = useState("");
   const [isAnalyzingBijlagen, setIsAnalyzingBijlagen] = useState(false);
   const [error, setError] = useState("");
+  const [inlineIntakeData, setInlineIntakeData] = useState<IntakeFormData | null>(null);
 
   const storedIntakeData = getStoredIntakeData();
   const pricingIntakeData = activeFlow
     ? ({
         ...storedIntakeData,
         ...appStore.intakeData,
+        ...inlineIntakeData,
         flow: activeFlow,
         files: {
           ...storedIntakeData.files,
           ...appStore.intakeData?.files,
+          ...inlineIntakeData?.files,
           bijlagen,
         },
       } as IntakeFormData)
@@ -114,9 +107,7 @@ export default function PricingPage() {
   const handleSelectProduct = (product: Product) => {
     setSelectedProduct(product);
     appStore.setProduct(product);
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("briefkompas_product", product);
-    }
+    writeStoredProduct(product);
     setError("");
   };
 
@@ -215,8 +206,8 @@ export default function PricingPage() {
 
     appStore.setIntakeData(mergedIntakeData as IntakeFormData);
     appStore.setProduct(checkoutProduct);
-    sessionStorage.setItem("briefkompas_intake", JSON.stringify(mergedIntakeData));
-    sessionStorage.setItem("briefkompas_product", checkoutProduct);
+    writeStoredIntake(mergedIntakeData as IntakeFormData);
+    writeStoredProduct(checkoutProduct);
     writeStoredDeliveryEmail(normalizedDeliveryEmail);
     setDeliveryEmail(normalizedDeliveryEmail);
     setDeliveryEmailError("");
@@ -227,6 +218,14 @@ export default function PricingPage() {
       checkoutProduct,
       deliveryEmail: normalizedDeliveryEmail,
     };
+  };
+
+  const handleMissingInfoSave = (updatedIntakeData: IntakeFormData) => {
+    const updatedWithFlow = activeFlow ? { ...updatedIntakeData, flow: activeFlow } : updatedIntakeData;
+    appStore.setIntakeData(updatedWithFlow);
+    writeStoredIntake(updatedWithFlow);
+    setInlineIntakeData(updatedWithFlow);
+    setError("");
   };
 
   const handleContinueToPayment = async () => {
@@ -325,11 +324,21 @@ export default function PricingPage() {
               beschikbare brief kan worden gemaakt.
             </Alert>
             {missingProductInfo.length > 0 && (
-              <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-[var(--muted-strong)]">
-                {missingProductInfo.map((field) => (
-                  <li key={String(field.field)}>{humanizeMissingInfoField(field)}</li>
-                ))}
-              </ul>
+              <>
+                <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-[var(--muted-strong)]">
+                  {missingProductInfo.map((field) => (
+                    <li key={String(field.field)}>{humanizeMissingInfoField(field)}</li>
+                  ))}
+                </ul>
+                {pricingIntakeData && (
+                  <MissingIntakeFieldsForm
+                    key={missingProductInfo.map((field) => String(field.field)).join("|")}
+                    fields={missingProductInfo}
+                    intakeData={pricingIntakeData}
+                    onSave={handleMissingInfoSave}
+                  />
+                )}
+              </>
             )}
             <div className="flex flex-col gap-3 md:flex-row">
               <Button

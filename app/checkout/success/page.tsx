@@ -8,18 +8,16 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { Alert, LoadingSpinner } from "@/components/Alerts";
-import { Flow, IntakeFormData, Product } from "@/types";
+import { Flow, IntakeFormData } from "@/types";
 import {
   isValidDeliveryEmail,
   normalizeDeliveryEmail,
   readStoredDeliveryEmail,
   writeStoredDeliveryEmail,
 } from "@/lib/delivery-email";
+import { readStoredIntake, readStoredProduct } from "@/lib/browser-persistence";
 
 const toFlow = (value: string | null): Flow | null => (isFlow(value) ? value : null);
-
-const toProduct = (value: string | null): Product | null =>
-  value === "basis" || value === "uitgebreid" ? value : null;
 
 function CheckoutContent() {
   const router = useRouter();
@@ -37,10 +35,8 @@ function CheckoutContent() {
   const [deliveryEmailError, setDeliveryEmailError] = useState("");
 
   useEffect(() => {
-    const storedProduct =
-      typeof window !== "undefined" ? toProduct(sessionStorage.getItem("briefkompas_product")) : null;
-    const cachedIntake =
-      typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_intake") : null;
+    const storedProduct = readStoredProduct();
+    const cachedIntake = activeFlow ? readStoredIntake(activeFlow) : readStoredIntake();
 
     setSessionId(sessionId);
 
@@ -53,11 +49,7 @@ function CheckoutContent() {
     }
 
     if (cachedIntake) {
-      try {
-        setIntakeData(JSON.parse(cachedIntake) as IntakeFormData);
-      } catch {
-        // Ignore malformed session data and let downstream validation handle it.
-      }
+      setIntakeData(cachedIntake as IntakeFormData);
     }
   }, [activeFlow, sessionId, setFlow, setIntakeData, setProduct, setSessionId]);
 
