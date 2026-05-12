@@ -33,6 +33,8 @@ function buildPrompt(input: IntakeAssistantRequest): string {
     "- Gebruik alleen de meegegeven context.",
     "- Verzin geen documentinhoud die niet expliciet is uitgelezen.",
     "- Als documentuitlezing onzeker of mislukt is, zeg dat eerlijk.",
+    "- Als de gebruiker vraagt om data, onderzoek of jurisprudentie mee te nemen, bevestig alleen het thema en zeg dat later uitsluitend geverifieerde bronnen kunnen worden gebruikt.",
+    "- Laat de gebruiker dan niet alles juridisch uitschrijven, maar vraag om maximaal een concreet aanknopingspunt zoals metingen, normen, gezondheid, gevolgen, ontbrekend onderzoek of motivering.",
     "- Als het bestuursorgaan al bekend is uit intakegegevens of documentanalyse, noem dat bestuursorgaan concreet en vraag er niet opnieuw naar.",
     "- Als de gebruiker een verduidelijkingsvraag stelt, beantwoord die direct en vriendelijk.",
     "- Benoem ontbrekende intake-informatie alleen gericht en verplicht; stel geen vrijblijvende of generieke vervolgvragen.",

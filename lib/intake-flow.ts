@@ -351,7 +351,7 @@ export const bezwaarSteps: ChatStep[] = [
   {
     id: "gronden",
     question:
-      "Waarom ben je het niet eens met het besluit? Beschrijf zo uitgebreid mogelijk wat volgens jou onjuist is.",
+      "Wat moet het bezwaar zeker meenemen over waarom het besluit niet klopt? Je mag steekwoorden gebruiken, zoals onjuiste feiten, ontbrekend onderzoek, motivering, belangenafweging, persoonlijke gevolgen of relevante jurisprudentie.",
     field: "gronden",
     required: true,
     validation: (value) => normalizeInput(value).length >= 3,
@@ -359,7 +359,7 @@ export const bezwaarSteps: ChatStep[] = [
   {
     id: "persoonlijke_omstandigheden",
     question:
-      "Zijn er relevante persoonlijke omstandigheden? (bijv. financiele moeilijkheden, gezondheid - dit is optioneel)",
+      "Welke persoonlijke gevolgen of belangen moet het bezwaar meenemen? Denk aan gezondheid, wonen, inkomen, gezin, bedrijf of andere concrete gevolgen. Dit is optioneel.",
     field: "persoonlijkeOmstandigheden",
     required: false,
     validation: () => true,
@@ -394,7 +394,7 @@ export const zienswijzeSteps: ChatStep[] = [
   {
     id: "gronden",
     question:
-      "Welke bezwaren of aandachtspunten wil je in je zienswijze naar voren brengen?",
+      "Welke bezwaren of aandachtspunten moet je zienswijze zeker meenemen? Je mag steekwoorden gebruiken, zoals onderzoek, geluid, verkeer, privacy, leefomgeving, motivering of relevante jurisprudentie.",
     field: "gronden",
     required: true,
     validation: (value) => normalizeInput(value).length >= 8,
@@ -429,7 +429,7 @@ export const beroepZonderBezwaarSteps: ChatStep[] = [
   {
     id: "gronden",
     question:
-      "Waarom is dit besluit volgens jou onjuist en waarom wil je dat de rechter ingrijpt?",
+      "Wat moet het beroepschrift zeker meenemen over waarom dit besluit onjuist is? Denk aan onjuiste feiten, ontbrekend onderzoek, motivering, belangenafweging/evenredigheid, persoonlijke gevolgen of relevante jurisprudentie.",
     field: "gronden",
     required: true,
     validation: (value) => normalizeInput(value).length >= 8,
@@ -480,7 +480,7 @@ export const beroepNaBezwaarSteps: ChatStep[] = [
   {
     id: "gronden",
     question:
-      "Wat is er volgens jou nog steeds onjuist in de beslissing op bezwaar? Licht vooral toe wat onvoldoende is weerlegd of meegewogen.",
+      "Wat moet het beroepschrift zeker meenemen over wat nog steeds onjuist is in de beslissing op bezwaar? Denk aan punten die onvoldoende zijn weerlegd, ontbrekend onderzoek, motivering, belangenafweging/evenredigheid, persoonlijke gevolgen of relevante jurisprudentie.",
     field: "gronden",
     required: true,
     validation: (value) => normalizeInput(value).length >= 8,

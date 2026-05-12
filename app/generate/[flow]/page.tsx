@@ -5,16 +5,58 @@ import { useParams, useRouter } from "next/navigation";
 import { clearStoredGeneratedLetter, writeStoredGeneratedLetter } from "@/lib/generatedLetterSession";
 import { clearStoredResultDraft } from "@/lib/resultDraftSession";
 import { getFlowDocumentLabel, isFlow } from "@/lib/flow";
+import { isValidDeliveryEmail, normalizeDeliveryEmail, readStoredDeliveryEmail } from "@/lib/delivery-email";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
-import { LoadingSpinner, Alert } from "@/components/index";
+import { LoadingSpinner, Alert, Input, Textarea } from "@/components/index";
 import { Flow, IntakeFormData, Product } from "@/types";
 
 const toFlow = (value: string | null | undefined): Flow | null => (isFlow(value) ? value : null);
 
 const toProduct = (value: string | null): Product | null =>
   value === "basis" || value === "uitgebreid" ? value : null;
+
+type MissingInfoField = {
+  field: keyof IntakeFormData | "decisionDocument" | "procedureType";
+  label: string;
+  question: string;
+  inputType: "text" | "textarea" | "upload";
+};
+
+type NeedsMoreInfoPayload = {
+  status: "needs_more_info";
+  blocking: true;
+  missingFields: MissingInfoField[];
+  message: string;
+  error?: string;
+};
+
+function isNeedsMoreInfoPayload(value: unknown): value is NeedsMoreInfoPayload {
+  const payload = value as Partial<NeedsMoreInfoPayload>;
+  return (
+    payload?.status === "needs_more_info" &&
+    payload.blocking === true &&
+    Array.isArray(payload.missingFields)
+  );
+}
+
+function readCachedIntake(): IntakeFormData | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const cachedIntake = sessionStorage.getItem("briefkompas_intake");
+  if (!cachedIntake) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(cachedIntake) as IntakeFormData;
+  } catch {
+    return null;
+  }
+}
 
 export default function GeneratePage() {
   const router = useRouter();
@@ -32,6 +74,9 @@ export default function GeneratePage() {
   const setGeneratedLetter = useAppStore((state) => state.setGeneratedLetter);
   const setLoading = useAppStore((state) => state.setLoading);
   const setError = useAppStore((state) => state.setError);
+  const [blockingInfo, setBlockingInfo] = useState<NeedsMoreInfoPayload | null>(null);
+  const [missingValues, setMissingValues] = useState<Record<string, string>>({});
+  const [blockingError, setBlockingError] = useState("");
 
   useEffect(() => {
     if (requestStartedRef.current === attempt) {
@@ -41,18 +86,13 @@ export default function GeneratePage() {
     requestStartedRef.current = attempt;
 
     const generateLetter = async () => {
-      const cachedIntake =
-        typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_intake") : null;
       const cachedProduct =
         typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_product") : null;
+      const deliveryEmail = normalizeDeliveryEmail(readStoredDeliveryEmail());
 
       let resolvedIntakeData = intakeData;
-      if (!resolvedIntakeData && cachedIntake) {
-        try {
-          resolvedIntakeData = JSON.parse(cachedIntake) as IntakeFormData;
-        } catch {
-          resolvedIntakeData = null;
-        }
+      if (!resolvedIntakeData) {
+        resolvedIntakeData = readCachedIntake();
       }
 
       const resolvedProduct = product ?? toProduct(cachedProduct);
@@ -64,6 +104,13 @@ export default function GeneratePage() {
         return;
       }
 
+      if (!isValidDeliveryEmail(deliveryEmail)) {
+        setError(
+          "Vul eerst een geldig e-mailadres in waar de brief en gebruikte gegevens naartoe mogen."
+        );
+        return;
+      }
+
       setFlow(flow);
       setProduct(resolvedProduct);
       setIntakeData(resolvedIntakeData);
@@ -71,6 +118,8 @@ export default function GeneratePage() {
       try {
         setLoading(true);
         setError(null);
+        setBlockingInfo(null);
+        setBlockingError("");
         clearStoredGeneratedLetter();
         clearStoredResultDraft();
 
@@ -81,10 +130,17 @@ export default function GeneratePage() {
             intakeData: resolvedIntakeData,
             product: resolvedProduct,
             flow,
+            deliveryEmail,
           }),
         });
 
         const data = await response.json();
+
+        if (isNeedsMoreInfoPayload(data)) {
+          setBlockingInfo(data);
+          setMissingValues({});
+          return;
+        }
 
         if (!response.ok) {
           throw new Error(data.error || "Fout bij genereren brief");
@@ -120,6 +176,151 @@ export default function GeneratePage() {
     setLoading,
     setProduct,
   ]);
+
+  const handleMissingInfoSubmit = () => {
+    if (!blockingInfo) {
+      return;
+    }
+
+    const uploadField = blockingInfo.missingFields.find((field) => field.inputType === "upload");
+    if (uploadField) {
+      router.push(flow ? `/intake/${flow}` : "/start-brief");
+      return;
+    }
+
+    const missingAnswers = blockingInfo.missingFields.filter(
+      (field) => !missingValues[String(field.field)]?.trim()
+    );
+
+    if (missingAnswers.length > 0) {
+      setBlockingError(
+        `Vul alle verplichte velden in: ${missingAnswers.map((field) => field.label).join(", ")}.`
+      );
+      return;
+    }
+
+    const currentIntake = intakeData ?? readCachedIntake();
+    if (!currentIntake) {
+      setBlockingError("Je intakegegevens konden niet worden bijgewerkt. Ga terug naar de intake.");
+      return;
+    }
+
+    const updatedIntake = { ...currentIntake };
+    blockingInfo.missingFields.forEach((field) => {
+      if (field.field === "decisionDocument" || field.field === "procedureType") {
+        return;
+      }
+
+      const value = missingValues[String(field.field)]?.trim();
+      if (value) {
+        (updatedIntake as Record<string, unknown>)[field.field] = value;
+      }
+    });
+
+    setIntakeData(updatedIntake);
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("briefkompas_intake", JSON.stringify(updatedIntake));
+    }
+
+    setBlockingInfo(null);
+    setMissingValues({});
+    setBlockingError("");
+    setError(null);
+    setAttempt((current) => current + 1);
+  };
+
+  if (blockingInfo) {
+    const uploadField = blockingInfo.missingFields.find((field) => field.inputType === "upload");
+
+    return (
+      <div className="mx-auto max-w-2xl">
+        <Card title="Verplichte aanvulling nodig">
+          <div className="space-y-5">
+            <Alert type="warning" title="Briefgeneratie geblokkeerd">
+              {blockingInfo.message}
+            </Alert>
+
+            {uploadField ? (
+              <div className="rounded-xl border border-[var(--border)] bg-white p-4">
+                <p className="text-sm font-semibold text-[var(--foreground)]">{uploadField.question}</p>
+                <p className="mt-2 text-sm leading-6 text-[var(--muted-strong)]">
+                  De brief kan pas worden gemaakt nadat het besluit of ontwerpbesluit is toegevoegd.
+                </p>
+                <Button
+                  type="button"
+                  onClick={() => router.push(flow ? `/intake/${flow}` : "/start-brief")}
+                  className="mt-4"
+                >
+                  Besluit uploaden
+                </Button>
+              </div>
+            ) : (
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleMissingInfoSubmit();
+                }}
+              >
+                {blockingInfo.missingFields.map((field) => {
+                  const fieldKey = String(field.field);
+                  const value = missingValues[fieldKey] ?? "";
+
+                  return field.inputType === "textarea" ? (
+                    <Textarea
+                      key={fieldKey}
+                      label={field.question}
+                      value={value}
+                      onChange={(event) => {
+                        setMissingValues((current) => ({
+                          ...current,
+                          [fieldKey]: event.target.value,
+                        }));
+                        setBlockingError("");
+                      }}
+                    />
+                  ) : (
+                    <Input
+                      key={fieldKey}
+                      label={field.question}
+                      value={value}
+                      onChange={(event) => {
+                        setMissingValues((current) => ({
+                          ...current,
+                          [fieldKey]: event.target.value,
+                        }));
+                        setBlockingError("");
+                      }}
+                    />
+                  );
+                })}
+
+                {blockingError && (
+                  <Alert type="error" title="Nog niet compleet">
+                    {blockingError}
+                  </Alert>
+                )}
+
+                <div className="flex flex-col gap-3 md:flex-row">
+                  <Button type="submit" className="flex-1">
+                    Aanvullen en brief maken
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => router.push(flow ? `/review/${flow}` : "/start-brief")}
+                    className="flex-1"
+                  >
+                    Terug naar overzicht
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   if (error) {
     return (

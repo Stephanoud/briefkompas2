@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { isFlow } from "@/lib/flow";
 import { generateStripeLineItem, isTestBypassDiscountCode } from "@/lib/utils";
+import { isValidDeliveryEmail, normalizeDeliveryEmail } from "@/lib/delivery-email";
 import { Flow, Product } from "@/types";
 
 export const runtime = "nodejs";
@@ -49,6 +50,8 @@ export async function POST(req: NextRequest) {
     const flowFromBody = body.flow;
     const productFromBody = body.product ?? body.selectedProduct ?? body.package;
     const discountCode = typeof body.discountCode === "string" ? body.discountCode : null;
+    const deliveryEmail =
+      typeof body.deliveryEmail === "string" ? normalizeDeliveryEmail(body.deliveryEmail) : "";
 
     const flow = isFlow(flowFromBody)
       ? flowFromBody
@@ -58,6 +61,13 @@ export async function POST(req: NextRequest) {
     if (!flow || !product) {
       return NextResponse.json(
         { error: "Ontbrekende of ongeldige flow/product. Vernieuw de pagina en kies je pakket opnieuw." },
+        { status: 400 }
+      );
+    }
+
+    if (!isValidDeliveryEmail(deliveryEmail)) {
+      return NextResponse.json(
+        { error: "Vul een geldig e-mailadres in voor toezending van de brief." },
         { status: 400 }
       );
     }
@@ -88,7 +98,7 @@ export async function POST(req: NextRequest) {
       success_url: `${appUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}&flow=${flow}`,
       cancel_url: `${appUrl}/pricing/${flow}`,
       locale: "nl",
-      customer_email: undefined,
+      customer_email: deliveryEmail,
     });
 
     return NextResponse.json({

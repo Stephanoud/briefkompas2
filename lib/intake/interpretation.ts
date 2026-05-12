@@ -501,6 +501,30 @@ function getEffectiveProcedureObject(
   return interpretation.procedureObject;
 }
 
+function buildKnownCaseText(intakeData: Partial<IntakeFormData>, interpretation: IntakeInterpretationState): string {
+  return [
+    intakeData.besluitDocumentType,
+    intakeData.besluitSamenvatting,
+    intakeData.besluitTekst,
+    intakeData.gronden,
+    intakeData.persoonlijkeOmstandigheden,
+    intakeData.besluitAnalyse?.onderwerp,
+    intakeData.besluitAnalyse?.rechtsgrond,
+    intakeData.besluitAnalyse?.besluitInhoud,
+    ...(intakeData.besluitAnalyse?.dragendeOverwegingen ?? []).flatMap((item) => [item.passage, item.duiding]),
+    interpretation.knownFacts.grounds,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ")
+    .toLowerCase();
+}
+
+function hasSoundNuisanceSignal(value: string): boolean {
+  return /\b(geluid|geluids|geluidsoverlast|geluidhinder|geluidsnorm|decibel|akoestisch|woon- en leefklimaat|leefklimaat)\b/i.test(
+    value
+  );
+}
+
 export function getContextualQuestion(params: {
   flow: Flow;
   step: ChatStep;
@@ -509,6 +533,7 @@ export function getContextualQuestion(params: {
 }): string {
   const { flow, step, interpretation, intakeData } = params;
   const effectiveProcedureObject = getEffectiveProcedureObject(interpretation, intakeData);
+  const knownCaseText = buildKnownCaseText(intakeData, interpretation);
 
   if (flow === "woo") {
     if (step.id === "bestuursorgaan") {
@@ -522,22 +547,28 @@ export function getContextualQuestion(params: {
   }
 
   if (flow === "zienswijze") {
-    if (step.id === "gronden" && interpretation.knownFacts.grounds?.toLowerCase().includes("geluid")) {
-      return "Welke concrete bezwaren wil je in je zienswijze noemen, bijvoorbeeld over geluid, verkeer, privacy of leefomgeving?";
+    if (step.id === "gronden" && hasSoundNuisanceSignal(knownCaseText)) {
+      return "Welke punten moet je zienswijze zeker meenemen over geluid? Denk aan meetgegevens of geluidsnormen, cumulatie van geluid, woon- en leefklimaat, gezondheid, alternatieven/maatregelen, motivering/belangenafweging of relevante jurisprudentie.";
     }
     return step.question;
   }
 
   if (flow === "beroep_zonder_bezwaar") {
+    if (step.id === "gronden" && hasSoundNuisanceSignal(knownCaseText)) {
+      return "Welke punten moet het beroepschrift zeker meenemen over geluid? Denk aan meetgegevens of geluidsnormen, cumulatie van geluid, woon- en leefklimaat, gezondheid, alternatieven/maatregelen, motivering/belangenafweging of relevante jurisprudentie.";
+    }
     if (step.id === "gronden" && interpretation.procedureObject === "vergunning") {
-      return "Waarom is dit primaire vergunningbesluit volgens jou onjuist en waarom wil je dat de rechtbank ingrijpt?";
+      return "Welke punten moet het beroepschrift zeker meenemen over waarom dit vergunningbesluit onjuist is? Denk aan feiten, onderzoek, motivering, belangenafweging/evenredigheid, gevolgen of relevante jurisprudentie.";
     }
     return step.question;
   }
 
   if (flow === "beroep_na_bezwaar") {
     if (step.id === "gronden") {
-      return "Wat heeft het bestuursorgaan in de beslissing op bezwaar volgens jou nog steeds niet goed uitgelegd of meegewogen?";
+      if (hasSoundNuisanceSignal(knownCaseText)) {
+        return "Welke punten moet het beroepschrift zeker meenemen over geluid die in bezwaar nog onvoldoende zijn uitgelegd of meegewogen? Denk aan meetgegevens of geluidsnormen, cumulatie, woon- en leefklimaat, gezondheid, alternatieven/maatregelen of relevante jurisprudentie.";
+      }
+      return "Welke punten moet het beroepschrift zeker meenemen over wat het bestuursorgaan nog steeds niet goed heeft uitgelegd of meegewogen? Denk aan feiten, onderzoek, motivering, belangenafweging/evenredigheid, persoonlijke gevolgen of relevante jurisprudentie.";
     }
     if (step.id === "doel") {
       return "Wat wil je dat de rechtbank doet met de beslissing op bezwaar?";
@@ -583,14 +614,17 @@ export function getContextualQuestion(params: {
       return step.question;
 
     case "gronden":
+      if (hasSoundNuisanceSignal(knownCaseText)) {
+        return "Welke punten moet het bezwaar zeker meenemen over geluid? Denk aan meetgegevens of geluidsnormen, cumulatie van geluid, woon- en leefklimaat, gezondheid, alternatieven/maatregelen, motivering/belangenafweging of relevante jurisprudentie.";
+      }
       if (interpretation.knownFacts.grounds?.toLowerCase().includes("persoonlijke situatie")) {
         return "Je gaf al aan dat je persoonlijke situatie niet is meegewogen. Wat is er volgens jou precies over het hoofd gezien?";
       }
       if (effectiveProcedureObject === "vergunning") {
-        return "Waarom ben je het niet eens met de weigering of afwijzing van de vergunning?";
+        return "Welke punten moet het bezwaar zeker meenemen over waarom de vergunningweigering onjuist is? Denk aan feiten, onderzoek, motivering, belangenafweging/evenredigheid, gevolgen of relevante jurisprudentie.";
       }
       if (effectiveProcedureObject === "uitkering") {
-        return "Waarom klopt dit besluit over je uitkering volgens jou niet?";
+        return "Welke punten moet het bezwaar zeker meenemen over waarom dit uitkeringsbesluit niet klopt? Denk aan feiten, onderzoek, motivering, persoonlijke gevolgen, evenredigheid of relevante jurisprudentie.";
       }
       return step.question;
 

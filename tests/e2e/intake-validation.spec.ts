@@ -32,13 +32,13 @@ async function mockDecisionExtraction(page: Page) {
         extracted: true,
         datumBesluit: "1 april 2026",
         kenmerk: "BK-2026-001",
-        samenvatting: "Afwijzing van een omgevingsvergunning.",
-        extractedText: "Uw aanvraag voor een omgevingsvergunning is afgewezen.",
+        samenvatting: "Afwijzing van een aanvraag.",
+        extractedText: "Uw aanvraag is afgewezen.",
         analysisSource: "image",
         documentType: "beschikking",
         decisionAnalysis: {
-          onderwerp: "Omgevingsvergunning",
-          besluitInhoud: "De gevraagde omgevingsvergunning is geweigerd.",
+          onderwerp: "Aanvraag",
+          besluitInhoud: "De gevraagde aanvraag is geweigerd.",
         },
         analysisStatus: "read",
         readability: "high",
@@ -55,6 +55,18 @@ async function uploadMockDecision(page: Page) {
   });
 
   await expect(page.getByText(/Bestand ontvangen/)).toBeVisible();
+  await expect(page.getByText("Controleer gegevens uit het besluit")).toBeVisible();
+
+  const confirmButtons = page.getByRole("button", { name: "Juist" });
+  for (let index = 0; index < 20; index += 1) {
+    if ((await confirmButtons.count()) === 0) {
+      break;
+    }
+
+    await confirmButtons.first().click();
+  }
+
+  await expect(confirmButtons).toHaveCount(0);
   await expect(page.getByPlaceholder("Typ je antwoord...")).toBeVisible();
 }
 

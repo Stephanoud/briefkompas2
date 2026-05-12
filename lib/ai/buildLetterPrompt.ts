@@ -1,7 +1,7 @@
 import { Product, IntakeFormData } from "@/types";
 import { PromptPayload } from "@/lib/legal/types";
 
-function sanitize(value?: string): string {
+function sanitize(value?: string | null): string {
   return (value ?? "onbekend").trim() || "onbekend";
 }
 
@@ -16,15 +16,6 @@ export function buildLetterPrompt(params: {
     intakeData.files?.bijlagen
       ?.map((file) => file.name.trim())
       .filter(Boolean) ?? [];
-  const postLetterStructure = [
-    "Direct na de brief: kopje Wat de overheid mogelijk zal aanvoeren met 2 tot 3 realistische tegenwerpingen vanuit het bestuursorgaan",
-    "Daarna: kopje Hoe u daarop kunt reageren met evenveel korte, direct bruikbare reacties",
-    "Daarna: kopje Wat gebeurt hierna? met een korte procedure-uitleg",
-    "Daarna: kopje Waar moet u op letten? met algemene aandachtspunten over termijnen, reactie en mogelijke mondelinge toelichting",
-    "Daarna: kopje Als uw bezwaar/beroep wordt afgewezen: met de eerstvolgende neutraal geformuleerde vervolgstap",
-    "Daarna: kopje Praktische tip: met 1 tot 2 concrete acties",
-  ];
-
   const structureInstructions =
     payload.caseType === "niet_tijdig_beslissen"
       ? [
@@ -36,7 +27,6 @@ export function buildLetterPrompt(params: {
           "Toelichting waarom beroep openstaat",
           "Verzoek om een beslistermijn op te leggen voor zover dat uit het dossier volgt",
           "Slotformule",
-          ...postLetterStructure,
         ]
       : payload.flow === "woo"
       ? [
@@ -48,7 +38,6 @@ export function buildLetterPrompt(params: {
           "Periode en gevraagde documenten",
           "Verzoek om ontvangstbevestiging en vorm van verstrekking",
           "Slotformule",
-          ...postLetterStructure,
         ]
       : payload.flow === "zienswijze"
         ? [
@@ -61,7 +50,6 @@ export function buildLetterPrompt(params: {
             "Zienswijzen en argumenten",
             "Verzoek tot aanpassing",
             "Slotformule",
-            ...postLetterStructure,
           ]
         : payload.flow === "beroep_zonder_bezwaar"
           ? [
@@ -74,7 +62,6 @@ export function buildLetterPrompt(params: {
               "Beroepsgronden",
               "Verzoek",
               "Slotformule",
-              ...postLetterStructure,
             ]
           : payload.flow === "beroep_na_bezwaar"
             ? [
@@ -87,7 +74,6 @@ export function buildLetterPrompt(params: {
                 "Beroepsgronden",
                 "Verzoek",
                 "Slotformule",
-                ...postLetterStructure,
               ]
             : [
                 "Afzender met placeholders",
@@ -98,8 +84,7 @@ export function buildLetterPrompt(params: {
                 "Gronden van bezwaar",
                 "Verzoek",
                 "Slotformule",
-                ...postLetterStructure,
-                "Pas daarna een gestructureerde dossierbijlage voor de behandelaar",
+                "Daarna eventueel een gestructureerde dossierbijlage voor de behandelaar",
               ];
 
   const promptPayload = {
@@ -140,14 +125,14 @@ export function buildLetterPrompt(params: {
       ? "Gebruik de besluitanalyse en de geextraheerde feiten actief in de brief en verwerk deze herkenbaar."
       : payload.decisionAnalysisStatus === "partial"
         ? "Gebruik de besluitanalyse waar die betrouwbaar is, maar formuleer voorzichtig bij onderdelen die niet volledig uit het besluit blijken."
-        : "Het besluit is onvoldoende uitgelezen. Verzint geen details uit het besluit en baseer je dan op de intake plus algemene Awb-grondslagen.";
+        : "Het besluit is beperkt uitgelezen. Gebruik de aangevulde kerngegevens en de intake, maar verzin geen details uit het besluit.";
 
   const bezwaarDossierInstructions =
     payload.flow === "bezwaar"
       ? [
           "",
           "Dossierbijlage bij bezwaar (verplicht):",
-          "- Voeg na de nabrief-secties een gestructureerde bijlage toe die functioneert als dossieroverzicht voor de behandelaar.",
+          "- Voeg na de hoofdbrief een gestructureerde bijlage toe die functioneert als dossieroverzicht voor de behandelaar.",
           "- Gebruik exact deze kopjes in deze volgorde, volledig in hoofdletters:",
           "- BIJLAGE A - SAMENVATTING VAN HET GESCHIL",
           "- BIJLAGE B - FEITEN EN CONTEXT",
@@ -194,6 +179,8 @@ export function buildLetterPrompt(params: {
     "- Stel een serieuze conceptbrief op die eruitziet als een echte formele brief.",
     "- Combineer intakegegevens en besluitanalyse tot een logisch en juridisch samenhangend betoog.",
     "- Werk zelfstandig de meest verdedigbare argumenten uit voor zover ze worden gedragen door intake, besluitanalyse en gevalideerde bronnen.",
+    "- Als de zaak deels onzeker is maar de basisinformatie aanwezig is, ga dan verder met relevante, voorzichtige extrapolaties uit de intake en het besluit in plaats van een kale basisbrief te maken.",
+    "- Benoem aannames niet als vaststaand feit in de brief; formuleer ze voorzichtig en dossiergedragen.",
     "- Lever een schone, verzendklare brieftekst die direct bruikbaar is in e-mail of PDF zonder nabewerking.",
     "",
     "Interne werkvolgorde (niet uitschrijven in de output):",
@@ -214,6 +201,14 @@ export function buildLetterPrompt(params: {
     `- Datum besluit: ${sanitize(intakeData.datumBesluit)}`,
     `- Kenmerk: ${sanitize(intakeData.kenmerk)}`,
     `- Categorie: ${sanitize(intakeData.categorie)}`,
+    `- Onderwerp besluit: ${sanitize(intakeData.besluitOnderwerp ?? intakeData.besluitAnalyse?.onderwerp)}`,
+    `- Beslissing of maatregel: ${sanitize(intakeData.beslissingOfMaatregel ?? intakeData.besluitAnalyse?.besluitInhoud)}`,
+    `- Belangrijkste reden of motivering: ${sanitize(
+      intakeData.belangrijksteMotivering ??
+        intakeData.besluitAnalyse?.dragendeOverwegingen?.[0]?.duiding ??
+        intakeData.besluitAnalyse?.rechtsgrond
+    )}`,
+    `- Relevante termijn: ${sanitize(intakeData.relevanteTermijn ?? intakeData.besluitAnalyse?.termijnen)}`,
     `- Doel: ${sanitize(intakeData.doel)}`,
     `- Gronden uit intake: ${sanitize(intakeData.gronden)}`,
     `- Persoonlijke omstandigheden: ${sanitize(intakeData.persoonlijkeOmstandigheden)}`,
@@ -261,13 +256,7 @@ export function buildLetterPrompt(params: {
     "- Als een uitspraak de overheid helpt en validatedAuthorities niet expliciet distinguishable=yes aangeeft, laat je die uitspraak volledig weg.",
     "- Gebruik in een gewone burgerbrief meestal maximaal 1 tot 2 uitspraken en alleen compact gekoppeld aan een concrete grond.",
     "- Gebruik liever geen uitspraak dan een zwakke, generieke of onzekere uitspraak.",
-    "- Voeg direct na de brief een korte sectie toe met de titel 'Wat de overheid mogelijk zal aanvoeren:' met 2 tot 3 realistische tegenwerpingen vanuit het bestuursorgaan.",
-    "- Voeg direct daarna een sectie toe met de titel 'Hoe u daarop kunt reageren:' met evenveel korte, praktische en direct bruikbare reacties.",
-    "- Gebruik in die tegenwerpingen geen stropoppen; neem alleen realistische verweren op die passen bij besluit, module en dragende motivering.",
-    "- Voeg daarna direct de procedure-uitleg toe met exact de kopjes 'Wat gebeurt hierna?', 'Waar moet u op letten?', 'Als uw bezwaar/beroep wordt afgewezen:' en 'Praktische tip:'.",
-    "- Formuleer de procedure-uitleg neutraal, niet als juridisch advies, met zinnen als 'In het algemeen geldt dat...' en 'U kunt overwegen om...'.",
-    "- Noem bij 'Waar moet u op letten?' alleen algemene of dossiergedragen aandachtspunten over termijnen, reactie van het bestuursorgaan of de rechtbank en een mogelijke uitnodiging om het standpunt mondeling toe te lichten.",
-    "- Plaats deze nabrief-secties altijd direct na de brief en voor een eventuele dossierbijlage.",
+    "- Voeg geen nabrief-secties toe zoals 'Wat de overheid mogelijk zal aanvoeren', 'Hoe u daarop kunt reageren', 'Wat gebeurt hierna?', 'Waar moet u op letten?', 'Als uw bezwaar/beroep wordt afgewezen' of 'Praktische tip'. Die informatie wordt buiten de brief apart in de interface getoond.",
     "- Als in het besluit zelf een rechtsgrond zichtbaar is, mag je die beschrijven, maar verzin geen extra artikelnummer of sectorspecifieke regeling.",
     "- Geen hallucinaties: geen niet-verifieerbare ECLI's, geen nieuwe wetten, geen verzonnen feiten, geen verzonnen termijnen.",
     "- Doe bij niet tijdig beslissen niet alsof ingebrekestelling, ontvangst, tweewekentermijn of toepasselijkheid van een dwangsom vaststaan als dat niet expliciet uit dossierinput blijkt.",

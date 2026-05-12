@@ -128,6 +128,18 @@ function extractListMatches(xml: string, pattern: RegExp, maxItems = 5): string[
     .slice(0, maxItems);
 }
 
+function extractRelevantCaseLawSnippet(xml: string): string | null {
+  const paragraphs = extractListMatches(xml, /<para[^>]*>([\s\S]*?)<\/para>/gi, 120);
+  const highPriorityPattern =
+    /\b(evenredig|onevenredig|belangenafweging|motivering|zorgvuldig|zorgvuldigheid|geluid|geluidhinder|geluidsoverlast|woon- en leefklimaat|leefklimaat|cumulatie)\b/i;
+
+  return (
+    paragraphs.find((paragraph) => highPriorityPattern.test(paragraph)) ??
+    paragraphs.find((paragraph) => /\bonderzoek\b/i.test(paragraph)) ??
+    null
+  );
+}
+
 function tokenize(value: string): string[] {
   return value
     .toLowerCase()
@@ -497,7 +509,12 @@ async function fetchOfficialCaseLaw(ecli: string): Promise<{
     const officialTitle = extractFirstMatch(xml, [/<dcterms:title[^>]*>([\s\S]*?)<\/dcterms:title>/i]);
     const courtName = extractFirstMatch(xml, [/<dcterms:creator[^>]*>([\s\S]*?)<\/dcterms:creator>/i]);
     const decisionDate = extractFirstMatch(xml, [/<dcterms:date[^>]*>([\s\S]*?)<\/dcterms:date>/i]);
-    const holding = extractFirstMatch(xml, [/<inhoudsindicatie[^>]*>([\s\S]*?)<\/inhoudsindicatie>/i]);
+    const abstract = extractFirstMatch(xml, [/<inhoudsindicatie[^>]*>([\s\S]*?)<\/inhoudsindicatie>/i]);
+    const relevantSnippet = extractRelevantCaseLawSnippet(xml);
+    const holding = [relevantSnippet, abstract]
+      .filter((value): value is string => Boolean(value))
+      .filter((value, index, values) => values.indexOf(value) === index)
+      .join(" ");
     const subjects = extractListMatches(xml, /<dcterms:subject[^>]*>([\s\S]*?)<\/dcterms:subject>/gi, 4);
 
     return {
@@ -506,7 +523,7 @@ async function fetchOfficialCaseLaw(ecli: string): Promise<{
       officialTitle: officialTitle ?? undefined,
       courtName: courtName ?? undefined,
       decisionDate: decisionDate ?? undefined,
-      holding,
+      holding: holding || null,
       subjects,
     };
   } catch {

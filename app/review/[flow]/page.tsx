@@ -1,7 +1,9 @@
 "use client";
 
+import { type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getFlowActionLabel, getFlowDocumentLabel, getFlowLabel, isFlow } from "@/lib/flow";
+import { getMissingGenerationInfo, humanizeMissingInfoField } from "@/lib/intake/completeness";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
@@ -15,10 +17,41 @@ function truncatePreview(value: string, maxLength = 320): string {
   return `${value.slice(0, maxLength - 3).trimEnd()}...`;
 }
 
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function splitIntoReadablePoints(value: string): string[] {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) {
+    return [];
+  }
+
+  const explicitLines = normalized
+    .split(/\n+|(?:^|\s)[-*]\s+/)
+    .map((part) => normalizeWhitespace(part))
+    .filter((part) => part.length > 0);
+
+  if (explicitLines.length > 1) {
+    return explicitLines;
+  }
+
+  const sentenceParts = normalized
+    .split(/(?<=[.!?])\s+(?=[A-ZÀ-ÖØ-Þ0-9])/)
+    .map((part) => normalizeWhitespace(part))
+    .filter((part) => part.length > 0);
+
+  if (sentenceParts.length > 1 && normalized.length > 180) {
+    return sentenceParts;
+  }
+
+  return [normalized];
+}
+
 function getDecisionStatusLabel(status?: IntakeFormData["besluitAnalyseStatus"]): string {
   if (status === "read") return "Besluit gelezen";
   if (status === "partial") return "Besluit deels gelezen";
-  return "Alleen intake gebruikt";
+  return "Besluitinformatie aanvullen";
 }
 
 function getProcedureAdviceLabel(value?: IntakeFormData["procedureAdvies"]): string | null {
@@ -27,6 +60,11 @@ function getProcedureAdviceLabel(value?: IntakeFormData["procedureAdvies"]): str
   if (value === "niet_tijdig_beslissen") return "Niet tijdig beslissen";
   return getFlowActionLabel(value);
 }
+
+type ReviewAnalysisRow = {
+  label: string;
+  content: ReactNode | null;
+};
 
 export default function ReviewPage() {
   const router = useRouter();
@@ -59,23 +97,138 @@ export default function ReviewPage() {
     );
   }
 
+  const missingProductInfo = getMissingGenerationInfo(flow, intakeData);
+  const canContinueToProduct = missingProductInfo.length === 0;
+
   const handleEdit = () => {
     router.push(`/intake/${flow}`);
   };
 
   const handleContinue = () => {
+    if (!canContinueToProduct) {
+      return;
+    }
+
     router.push(`/pricing/${flow}`);
   };
 
   const renderField = (label: string, value: string | boolean | undefined | null) => {
     if (value === undefined || value === null || value === "") return null;
     const displayValue = typeof value === "boolean" ? (value ? "Ja" : "Nee") : value;
+    const points = typeof displayValue === "string" ? splitIntoReadablePoints(displayValue) : [displayValue];
+    const shouldUseBullets =
+      typeof displayValue === "string" &&
+      (points.length > 1 || displayValue.length > 140);
 
     return (
-      <div className="flex items-start justify-between border-b border-gray-200 py-2 last:border-0">
-        <span className="text-sm font-medium text-gray-600">{label}</span>
-        <span className="max-w-sm text-right text-sm font-semibold text-gray-900">{displayValue}</span>
+      <li className="rounded-xl border border-gray-200 bg-white p-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">{label}</p>
+        {shouldUseBullets ? (
+          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm font-medium leading-6 text-gray-900">
+            {points.map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm font-semibold leading-6 text-gray-900">{displayValue}</p>
+        )}
+      </li>
+    );
+  };
+
+  const renderAnalysisContent = (value?: string | string[] | null) => {
+    if (!value || (Array.isArray(value) && value.length === 0)) {
+      return null;
+    }
+
+    const points = Array.isArray(value)
+      ? value.map((item) => normalizeWhitespace(item)).filter(Boolean)
+      : splitIntoReadablePoints(value);
+
+    if (points.length === 0) {
+      return null;
+    }
+
+    return (
+      <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-[var(--muted-strong)]">
+        {points.map((point) => (
+          <li key={point}>{point}</li>
+        ))}
+      </ul>
+    );
+  };
+
+  const renderDecisionAnalysisTable = () => {
+    const rows: ReviewAnalysisRow[] = [
+      { label: "Onderwerp", content: renderAnalysisContent(intakeData.besluitAnalyse?.onderwerp) },
+      { label: "Rechtsgrond", content: renderAnalysisContent(intakeData.besluitAnalyse?.rechtsgrond) },
+      { label: "Besluitinhoud", content: renderAnalysisContent(intakeData.besluitAnalyse?.besluitInhoud) },
+      {
+        label: "Dragende overwegingen",
+        content: intakeData.besluitAnalyse?.dragendeOverwegingen?.length ? (
+          <div className="space-y-2">
+            {intakeData.besluitAnalyse.dragendeOverwegingen.map((item) => (
+              <div key={`${item.passage}-${item.duiding}`} className="rounded-lg border border-[var(--border)] bg-white p-3">
+                <p className="text-sm leading-6 text-[var(--muted-strong)]">{item.duiding}</p>
+                <p className="mt-1 text-xs leading-5 text-[var(--muted)]">Passage: {item.passage}</p>
+              </div>
+            ))}
+          </div>
+        ) : null,
+      },
+      { label: "Wettelijke grondslagen", content: renderAnalysisContent(intakeData.besluitAnalyse?.wettelijkeGrondslagen) },
+      { label: "Procedurele aanwijzingen", content: renderAnalysisContent(intakeData.besluitAnalyse?.procedureleAanwijzingen) },
+      { label: "Rechtsmiddelenclausule", content: renderAnalysisContent(intakeData.besluitAnalyse?.rechtsmiddelenclausule) },
+      { label: "Bijlagenlijst", content: renderAnalysisContent(intakeData.besluitAnalyse?.bijlagenLijst) },
+      {
+        label: "Inventarislijst of documenttabel",
+        content: renderAnalysisContent(intakeData.besluitAnalyse?.inventarislijstOfDocumenttabel),
+      },
+      { label: "Eerdere correspondentie", content: renderAnalysisContent(intakeData.besluitAnalyse?.correspondentieVerwijzingen) },
+      { label: "Samenvatting", content: renderAnalysisContent(intakeData.besluitSamenvatting) },
+      { label: "Tekstfragment", content: renderAnalysisContent(intakeData.besluitTekst ? truncatePreview(intakeData.besluitTekst) : null) },
+    ].filter((row) => row.content);
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
+        <div className="max-h-80 overflow-y-auto">
+          <table className="min-w-full table-fixed border-collapse">
+            <tbody className="divide-y divide-[var(--border)]">
+              {rows.map((row) => (
+                <tr key={row.label} className="align-top">
+                  <th className="w-40 bg-[var(--surface-soft)] px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                    {row.label}
+                  </th>
+                  <td className="px-3 py-3">{row.content}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
+    );
+  };
+
+  const renderMissingProductInfo = () => {
+    if (canContinueToProduct) {
+      return null;
+    }
+
+    return (
+      <Alert type="warning" title="Productkeuze nog geblokkeerd">
+        <span className="block">
+          De applicatie maakt geen generieke brief. Vul eerst deze gegevens aan:
+        </span>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          {missingProductInfo.map((field) => (
+            <li key={String(field.field)}>{humanizeMissingInfoField(field)}</li>
+          ))}
+        </ul>
+      </Alert>
     );
   };
 
@@ -170,94 +323,20 @@ export default function ReviewPage() {
             <h3 className="mb-3 font-semibold text-gray-900">
               Intake voor {getFlowDocumentLabel(flow)}
             </h3>
-            <div className="space-y-2 rounded bg-gray-50 p-4">
+            <ul className="space-y-3 rounded-xl bg-gray-50 p-4">
               {renderFlowFields(flow)}
               {renderDecisionSummary()}
-            </div>
+            </ul>
           </div>
 
           {(intakeData.besluitSamenvatting || intakeData.besluitTekst || intakeData.besluitAnalyse) && flow !== "woo" && (
             <div className="rounded border border-[var(--border)] bg-white p-4">
               <h4 className="text-sm font-semibold text-[var(--foreground)]">Uit het besluit gehaald</h4>
-              {intakeData.besluitAnalyse?.onderwerp && (
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                  <span className="font-semibold text-[var(--foreground)]">Onderwerp:</span>{" "}
-                  {intakeData.besluitAnalyse.onderwerp}
-                </p>
-              )}
-              {intakeData.besluitAnalyse?.rechtsgrond && (
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                  <span className="font-semibold text-[var(--foreground)]">Rechtsgrond:</span>{" "}
-                  {intakeData.besluitAnalyse.rechtsgrond}
-                </p>
-              )}
-              {intakeData.besluitAnalyse?.besluitInhoud && (
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                  <span className="font-semibold text-[var(--foreground)]">Besluitinhoud:</span>{" "}
-                  {intakeData.besluitAnalyse.besluitInhoud}
-                </p>
-              )}
-              {intakeData.besluitAnalyse?.dragendeOverwegingen?.length ? (
-                <div className="mt-3 space-y-2 text-sm leading-relaxed text-[var(--muted-strong)]">
-                  <p className="font-semibold text-[var(--foreground)]">Dragende overwegingen:</p>
-                  {intakeData.besluitAnalyse.dragendeOverwegingen.map((item) => (
-                    <div key={`${item.passage}-${item.duiding}`} className="rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-                      <p>{item.duiding}</p>
-                      <p className="mt-1 text-xs text-[var(--muted)]">Passage: {item.passage}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {intakeData.besluitAnalyse?.wettelijkeGrondslagen?.length ? (
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                  <span className="font-semibold text-[var(--foreground)]">Wettelijke grondslagen:</span>{" "}
-                  {intakeData.besluitAnalyse.wettelijkeGrondslagen.join(", ")}
-                </p>
-              ) : null}
-              {intakeData.besluitAnalyse?.procedureleAanwijzingen?.length ? (
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                  <span className="font-semibold text-[var(--foreground)]">Procedurele aanwijzingen:</span>{" "}
-                  {intakeData.besluitAnalyse.procedureleAanwijzingen.join(", ")}
-                </p>
-              ) : null}
-              {intakeData.besluitAnalyse?.rechtsmiddelenclausule ? (
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                  <span className="font-semibold text-[var(--foreground)]">Rechtsmiddelenclausule:</span>{" "}
-                  {intakeData.besluitAnalyse.rechtsmiddelenclausule}
-                </p>
-              ) : null}
-              {intakeData.besluitAnalyse?.bijlagenLijst?.length ? (
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                  <span className="font-semibold text-[var(--foreground)]">Bijlagenlijst:</span>{" "}
-                  {intakeData.besluitAnalyse.bijlagenLijst.join(", ")}
-                </p>
-              ) : null}
-              {intakeData.besluitAnalyse?.inventarislijstOfDocumenttabel?.length ? (
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                  <span className="font-semibold text-[var(--foreground)]">Inventarislijst of documenttabel:</span>{" "}
-                  {intakeData.besluitAnalyse.inventarislijstOfDocumenttabel.join(", ")}
-                </p>
-              ) : null}
-              {intakeData.besluitAnalyse?.correspondentieVerwijzingen?.length ? (
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                  <span className="font-semibold text-[var(--foreground)]">Eerdere correspondentie:</span>{" "}
-                  {intakeData.besluitAnalyse.correspondentieVerwijzingen.join(", ")}
-                </p>
-              ) : null}
-              {intakeData.besluitSamenvatting && (
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted-strong)]">
-                  <span className="font-semibold text-[var(--foreground)]">Samenvatting:</span>{" "}
-                  {intakeData.besluitSamenvatting}
-                </p>
-              )}
-              {intakeData.besluitTekst && (
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
-                  <span className="font-semibold text-[var(--foreground)]">Tekstfragment:</span>{" "}
-                  {truncatePreview(intakeData.besluitTekst)}
-                </p>
-              )}
+              <div className="mt-3">{renderDecisionAnalysisTable()}</div>
             </div>
           )}
+
+          {renderMissingProductInfo()}
 
           <Alert type="info">
             Controleer of feiten, data, bestuursorgaan en gewenste uitkomst kloppen. Daarna ga je door
@@ -269,8 +348,8 @@ export default function ReviewPage() {
           <Button variant="secondary" onClick={handleEdit} className="flex-1">
             Terug naar intake
           </Button>
-          <Button onClick={handleContinue} className="flex-1">
-            Ga naar productkeuze {"->"}
+          <Button onClick={handleContinue} disabled={!canContinueToProduct} className="flex-1">
+            {canContinueToProduct ? "Ga naar productkeuze ->" : "Vul intake eerst aan"}
           </Button>
         </div>
       </Card>

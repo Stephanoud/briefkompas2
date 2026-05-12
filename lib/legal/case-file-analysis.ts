@@ -1271,6 +1271,57 @@ function buildTargetedQuestions(params: {
     }
   }
 
+  if (guard.caseType === "omgevingswet_vergunning") {
+    if (!/(omgevingsplan|bestemmingsplan|bopa|afwijking|strijd met|vergunningvoorschrift)/.test(knownText)) {
+      pushQuestion(
+        questions,
+        "Op welke regel of voorwaarde baseert het bestuursorgaan de weigering of vergunningverlening precies?"
+      );
+    }
+
+    if (!/(geluid|geluidhinder|geluidsoverlast|geluidsnorm|akoestisch|decibel|woon- en leefklimaat|leefklimaat)/.test(knownText)) {
+      pushQuestion(
+        questions,
+        "Spelen geluid, verkeer, privacy, uitzicht of andere gevolgen voor het woon- en leefklimaat een rol?"
+      );
+    } else {
+      if (!/(meting|meetgegevens|akoestisch onderzoek|geluidrapport|geluidsrapport|decibel|db\b|geluidsnorm)/.test(knownText)) {
+        pushQuestion(
+          questions,
+          "Welke metingen, geluidsnormen of akoestische rapporten ondersteunen uw punt over geluidsoverlast?"
+        );
+      }
+
+      if (!/(cumulatie|cumulatief|andere geluidbronnen|wegverkeer|indirecte hinder|directe hinder)/.test(knownText)) {
+        pushQuestion(
+          questions,
+          "Moet ook cumulatie van geluid of indirecte hinder, zoals verkeer van en naar de locatie, worden meegenomen?"
+        );
+      }
+
+      if (!/(gezondheid|slaap|stress|woon- en leefklimaat|leefklimaat|onbewoonbaar|hinder)/.test(knownText)) {
+        pushQuestion(
+          questions,
+          "Welke concrete gevolgen heeft de geluidsoverlast voor uw gezondheid, slaap of woon- en leefklimaat?"
+        );
+      }
+    }
+
+    if (!/(alternatief|minder belastend|maatregel|voorschrift|beperking|voorwaarde)/.test(knownText)) {
+      pushQuestion(
+        questions,
+        "Zijn er minder belastende alternatieven of voorschriften die het bestuursorgaan had moeten onderzoeken?"
+      );
+    }
+
+    if (!/(evenredig|onevenredig|belangenafweging|motivering|zorgvuldig|onderzoek)/.test(knownText)) {
+      pushQuestion(
+        questions,
+        "Laat het besluit concreet zien hoe uw belangen zijn afgewogen tegen het doel van het besluit?"
+      );
+    }
+  }
+
   if (guard.caseType === "handhaving") {
     if (!/(verzoeker|om handhaving gevraagd|last opgelegd|aangeschrevene|onder dwangsom)/.test(knownText)) {
       pushQuestion(
@@ -1589,6 +1640,26 @@ function buildUncertainties(params: {
 
   if (guard.missingFields.length > 0) {
     items.push(`Nog ontbrekend voor volledige positionering: ${guard.missingFields.map(humanizeField).join(", ")}.`);
+  }
+
+  if (guard.softSignals.includes("case_type_uncertain")) {
+    items.push("De zaak is inhoudelijk verder uitgewerkt op basis van het meest waarschijnlijke algemene bestuursrechtelijke kader.");
+  }
+
+  if (guard.softSignals.includes("document_case_type_conflict")) {
+    items.push("Omdat document en intake niet volledig hetzelfde beeld geven, zijn sectorspecifieke aannames vermeden.");
+  }
+
+  if (
+    guard.softSignals.includes("missing_source_set") ||
+    guard.softSignals.includes("missing_or_incompatible_source_set") ||
+    guard.softSignals.includes("general_source_set_used")
+  ) {
+    items.push("Bij onduidelijke bronselectie is uitgegaan van algemene Awb-uitgangspunten en alleen dossiergedragen feiten.");
+  }
+
+  if (guard.softSignals.some((signal) => signal.startsWith("late_decision_"))) {
+    items.push("Voor niet tijdig beslissen zijn alleen punten gebruikt die voldoende uit de intake of stukken blijken; ontbrekende procesdrempels zijn niet als vaststaand gepresenteerd.");
   }
 
   if (flow !== "woo" && !intakeData.files?.besluit) {

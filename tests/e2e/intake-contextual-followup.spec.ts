@@ -115,10 +115,10 @@ async function uploadMockDecision(page: Page) {
 
   await expect(page.getByText(/Bestand ontvangen/)).toBeVisible();
   await expect(page.getByText("Controleer gegevens uit het besluit")).toBeVisible();
-  await expect(page.getByRole("button", { name: "[✓ Juist]" }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "[✗ Onjuist]" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Juist" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Onjuist" }).first()).toBeVisible();
 
-  const confirmButtons = page.getByRole("button", { name: "[✓ Juist]" });
+  const confirmButtons = page.getByRole("button", { name: "Juist" });
   for (let index = 0; index < 20; index += 1) {
     if ((await confirmButtons.count()) === 0) {
       break;
@@ -162,7 +162,9 @@ test.describe("Contextual intake follow-up", () => {
     await answerInput.fill("Ik wil een geweigerde vergunning laten herzien");
     await nextButton.click();
 
-    await expect(page.getByText("Waarom ben je het niet eens met de weigering of afwijzing van de vergunning?")).toBeVisible();
+    await expect(
+      page.getByText("Welke punten moet het bezwaar zeker meenemen over waarom de vergunningweigering onjuist is?")
+    ).toBeVisible();
     await expect(page.getByText("Wat wil je bereiken met dit bezwaar?")).toHaveCount(0);
   });
 
@@ -196,7 +198,7 @@ test.describe("Contextual intake follow-up", () => {
     await expect(page.getByText(/Om wat voor soort zaak gaat het/)).toHaveCount(0);
     await expect(page.getByText("Welke hoofdpunten had je al in bezwaar aangevoerd?")).toHaveCount(0);
     await expect(
-      page.getByText("Wat heeft het bestuursorgaan in de beslissing op bezwaar volgens jou nog steeds niet goed uitgelegd of meegewogen?")
+      page.getByText("Welke punten moet het beroepschrift zeker meenemen over wat het bestuursorgaan nog steeds niet goed heeft uitgelegd of meegewogen?")
     ).toBeVisible();
   });
 
@@ -209,7 +211,7 @@ test.describe("Contextual intake follow-up", () => {
     const nextButton = page.getByRole("button", { name: "Volgende" });
 
     await expect(
-      page.getByText("Wat heeft het bestuursorgaan in de beslissing op bezwaar volgens jou nog steeds niet goed uitgelegd of meegewogen?")
+      page.getByText("Welke punten moet het beroepschrift zeker meenemen over wat het bestuursorgaan nog steeds niet goed heeft uitgelegd of meegewogen?")
     ).toBeVisible();
     await expect(page.getByText("Welke hoofdpunten had je al in bezwaar aangevoerd?")).toHaveCount(0);
 

@@ -60,6 +60,8 @@ export function buildSavedLetterDocumentPayload(params: {
       generationMode: params.generatedLetter.generationMode,
       guardReasons: params.generatedLetter.guardReasons,
       caseAnalysis: params.generatedLetter.caseAnalysis,
+      supportSections: params.generatedLetter.supportSections,
+      emailDelivery: params.generatedLetter.emailDelivery,
     },
     manualReferences: params.manualReferences,
   };

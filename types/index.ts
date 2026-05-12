@@ -10,7 +10,7 @@ export type Product = "basis" | "uitgebreid";
 export type DecisionDocumentSource = "pdf" | "image";
 export type DecisionAnalysisStatus = "read" | "partial" | "failed";
 export type DecisionReadability = "high" | "medium" | "low";
-export type LetterGenerationMode = "validated" | "safe_generic_ai" | "static_fallback";
+export type LetterGenerationMode = "validated" | "dynamic_ai";
 export type RechtsmiddelenClausule = "bezwaar" | "beroep" | "zienswijze" | "onbekend";
 export type ProcedureAdvice = Flow | "bezwaarfase" | "niet_tijdig_beslissen";
 export type AttachmentDocumentKind =
@@ -215,6 +215,19 @@ export interface GeneratedLetter {
   generationMode?: LetterGenerationMode;
   guardReasons?: string[];
   caseAnalysis?: CaseFileAnalysisSummary;
+  supportSections?: GeneratedLetterSupportSection[];
+  emailDelivery?: GeneratedLetterEmailDelivery;
+}
+
+export interface GeneratedLetterSupportSection {
+  title: string;
+  items: string[];
+}
+
+export interface GeneratedLetterEmailDelivery {
+  to: string;
+  status: "sent" | "skipped" | "failed";
+  message?: string;
 }
 
 export interface DecisionExtractionResult {

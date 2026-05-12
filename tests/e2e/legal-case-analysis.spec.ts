@@ -6,7 +6,6 @@ import { classifyCase } from "@/lib/intake/classifyCase";
 import { determineRoute } from "@/lib/intake/determineRoute";
 import { evaluateLateDecisionGate } from "@/lib/legal/late-decision";
 import { validateAuthorities } from "@/lib/sources/validateAuthorities";
-import { buildSafeFallbackLetter } from "@/app/api/generate-letter/route";
 import { SelectedSourceSet } from "@/lib/legal/types";
 import { ReferenceItem } from "@/src/types/references";
 
@@ -74,7 +73,7 @@ test.describe("Legal case analysis", () => {
       guard: {
         ok: false,
         fallbackMode: "none",
-        generationMode: "safe_generic_ai",
+        generationMode: "dynamic_ai",
         reasons: ["route_uncertain"],
         hardBlockers: [],
         softSignals: ["route_uncertain"],
@@ -1223,29 +1222,7 @@ test.describe("Legal case analysis", () => {
     ).toBeTruthy();
   });
 
-  test("28. safe fallback plaatst tegenwerpingen en procedureuitleg direct na de brief", () => {
-    const letter = buildSafeFallbackLetter({
-      flow: "bezwaar",
-      caseType: "algemeen_bestuursrecht",
-      intakeData: {
-        flow: "bezwaar",
-        bestuursorgaan: "Gemeente Amsterdam",
-        categorie: "vergunning",
-        doel: "herroepen",
-        gronden: "De motivering klopt niet en relevante feiten zijn gemist.",
-        files: {},
-      },
-    });
-
-    expect(letter).toContain("Wat de overheid mogelijk zal aanvoeren:");
-    expect(letter).toContain("Hoe u daarop kunt reageren:");
-    expect(letter).toContain("Wat gebeurt hierna?");
-    expect(letter).toContain("Waar moet u op letten?");
-    expect(letter).toContain("Praktische tip:");
-    expect(letter.indexOf("Praktische tip:")).toBeLessThan(letter.indexOf("BIJLAGE A - SAMENVATTING VAN HET GESCHIL"));
-  });
-
-  test("29. prompt instrueert de nabrief-secties direct na de brief", () => {
+  test("29. prompt instrueert dat nabrief-secties buiten de brief blijven", () => {
     const prompt = buildLetterPrompt({
       intakeData: {
         flow: "bezwaar",
@@ -1268,10 +1245,9 @@ test.describe("Legal case analysis", () => {
       },
     });
 
-    expect(prompt).toContain("Wat de overheid mogelijk zal aanvoeren:");
-    expect(prompt).toContain("Hoe u daarop kunt reageren:");
-    expect(prompt).toContain("Wat gebeurt hierna?");
-    expect(prompt).toContain("Plaats deze nabrief-secties altijd direct na de brief en voor een eventuele dossierbijlage.");
+    expect(prompt).toContain("Voeg geen nabrief-secties toe");
+    expect(prompt).toContain("Die informatie wordt buiten de brief apart in de interface getoond.");
+    expect(prompt).not.toContain("Plaats deze nabrief-secties altijd direct na de brief");
   });
 
   test("30. detecteert relevante aanvullende argumenten zonder generieke checklist", () => {

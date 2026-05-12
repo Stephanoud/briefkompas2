@@ -5,12 +5,20 @@ import { useParams, useRouter } from "next/navigation";
 import { getFlowDocumentLabel, getFlowLabel, isFlow, supportsDecisionUpload } from "@/lib/flow";
 import { extractTextFromPdfInBrowser } from "@/lib/client-pdf-extraction";
 import { getAttachmentKindLabel, inferAttachmentKind } from "@/lib/intake/procedural-attachments";
+import { getMissingGenerationInfo, humanizeMissingInfoField } from "@/lib/intake/completeness";
 import { useAppStore } from "@/lib/store";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
+import { Input } from "@/components/Input";
 import { Alert, UploadBox } from "@/components/index";
 import { Flow, IntakeFormData, Product, UploadedFileRef } from "@/types";
 import { getPriceFormatted, TEST_PRICING_LABEL } from "@/lib/utils";
+import {
+  isValidDeliveryEmail,
+  normalizeDeliveryEmail,
+  readStoredDeliveryEmail,
+  writeStoredDeliveryEmail,
+} from "@/lib/delivery-email";
 
 const toFlow = (value: unknown): Flow | null => (isFlow(value) ? value : null);
 
@@ -30,16 +38,23 @@ function getStoredBijlagen(): UploadedFileRef[] {
     return [];
   }
 
+  return getStoredIntakeData().files?.bijlagen ?? [];
+}
+
+function getStoredIntakeData(): Partial<IntakeFormData> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
   const cachedIntake = sessionStorage.getItem("briefkompas_intake");
   if (!cachedIntake) {
-    return [];
+    return {};
   }
 
   try {
-    const parsed = JSON.parse(cachedIntake) as Partial<IntakeFormData>;
-    return parsed.files?.bijlagen ?? [];
+    return JSON.parse(cachedIntake) as Partial<IntakeFormData>;
   } catch {
-    return [];
+    return {};
   }
 }
 
@@ -74,8 +89,27 @@ export default function PricingPage() {
   const [bijlagen, setBijlagen] = useState<UploadedFileRef[]>(
     () => appStore.intakeData?.files?.bijlagen ?? getStoredBijlagen()
   );
+  const [deliveryEmail, setDeliveryEmail] = useState(() => readStoredDeliveryEmail());
+  const [deliveryEmailError, setDeliveryEmailError] = useState("");
   const [isAnalyzingBijlagen, setIsAnalyzingBijlagen] = useState(false);
   const [error, setError] = useState("");
+
+  const storedIntakeData = getStoredIntakeData();
+  const pricingIntakeData = activeFlow
+    ? ({
+        ...storedIntakeData,
+        ...appStore.intakeData,
+        flow: activeFlow,
+        files: {
+          ...storedIntakeData.files,
+          ...appStore.intakeData?.files,
+          bijlagen,
+        },
+      } as IntakeFormData)
+    : null;
+  const missingProductInfo =
+    activeFlow && pricingIntakeData ? getMissingGenerationInfo(activeFlow, pricingIntakeData) : [];
+  const canOfferProduct = Boolean(activeFlow && pricingIntakeData && missingProductInfo.length === 0);
 
   const handleSelectProduct = (product: Product) => {
     setSelectedProduct(product);
@@ -148,17 +182,14 @@ export default function PricingPage() {
       return null;
     }
 
-    const cachedIntake =
-      typeof window !== "undefined" ? sessionStorage.getItem("briefkompas_intake") : null;
-    let parsedCachedIntake: Partial<IntakeFormData> = {};
-
-    if (cachedIntake) {
-      try {
-        parsedCachedIntake = JSON.parse(cachedIntake) as Partial<IntakeFormData>;
-      } catch {
-        parsedCachedIntake = {};
-      }
+    const normalizedDeliveryEmail = normalizeDeliveryEmail(deliveryEmail);
+    if (!isValidDeliveryEmail(normalizedDeliveryEmail)) {
+      setDeliveryEmailError("Vul een geldig e-mailadres in.");
+      setError("Vul eerst het e-mailadres in waar de brief en gebruikte gegevens naartoe mogen.");
+      return null;
     }
+
+    const parsedCachedIntake = getStoredIntakeData();
 
     const mergedIntakeData: Partial<IntakeFormData> = {
       ...parsedCachedIntake,
@@ -171,15 +202,30 @@ export default function PricingPage() {
       },
     };
 
+    const missingRequiredFields = getMissingGenerationInfo(checkoutFlow, mergedIntakeData as IntakeFormData);
+
+    if (missingRequiredFields.length > 0) {
+      setError(
+        `De intake mist nog basisinformatie: ${missingRequiredFields
+          .map(humanizeMissingInfoField)
+          .join(", ")}. Vul dit eerst aan voordat je betaalt of genereert.`
+      );
+      return null;
+    }
+
     appStore.setIntakeData(mergedIntakeData as IntakeFormData);
     appStore.setProduct(checkoutProduct);
     sessionStorage.setItem("briefkompas_intake", JSON.stringify(mergedIntakeData));
     sessionStorage.setItem("briefkompas_product", checkoutProduct);
+    writeStoredDeliveryEmail(normalizedDeliveryEmail);
+    setDeliveryEmail(normalizedDeliveryEmail);
+    setDeliveryEmailError("");
     setError("");
 
     return {
       checkoutFlow,
       checkoutProduct,
+      deliveryEmail: normalizedDeliveryEmail,
     };
   };
 
@@ -197,6 +243,7 @@ export default function PricingPage() {
           flow: checkoutContext.checkoutFlow,
           product: checkoutContext.checkoutProduct,
           selectedProduct: checkoutContext.checkoutProduct,
+          deliveryEmail: checkoutContext.deliveryEmail,
         }),
       });
 
@@ -245,9 +292,13 @@ export default function PricingPage() {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Kies je pakket</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          {canOfferProduct ? "Kies je pakket" : "Intake nog niet compleet"}
+        </h1>
         <p className="text-gray-600">
-          Selecteer het pakket dat het beste past bij je {activeFlow ? getFlowLabel(activeFlow) : "traject"}.
+          {canOfferProduct
+            ? `Selecteer het pakket dat het beste past bij je ${activeFlow ? getFlowLabel(activeFlow) : "traject"}.`
+            : "Vul eerst de ontbrekende zaakgegevens aan voordat er een productkeuze wordt getoond."}
         </p>
       </div>
 
@@ -263,166 +314,227 @@ export default function PricingPage() {
         </Alert>
       )}
 
-      <div className="grid md:grid-cols-2 gap-6 mb-8">
+      {!canOfferProduct ? (
         <Card
-          className={`cursor-pointer transition-all ${
-            selectedProduct === "basis" ? "ring-2 ring-blue-500 bg-blue-50" : "hover:shadow-lg"
-          }`}
-          onClick={() => handleSelectProduct("basis")}
+          title="Intake nog niet compleet"
+          subtitle="We bieden pas een product aan wanneer er genoeg zaakgegevens zijn voor een dossiergerichte brief."
         >
-          <div className="mb-4">
-            <h3 className="text-2xl font-bold text-gray-900">Basis</h3>
-            <p className="text-3xl font-bold text-blue-600">{getPriceFormatted("basis")}</p>
-            <p className="text-sm text-gray-600">eenmalige betaling - {TEST_PRICING_LABEL}</p>
-          </div>
-
-          <div className="space-y-3 mb-6">
-            <h4 className="font-semibold text-gray-900">Inclusief:</h4>
-            <ul className="space-y-2 text-sm">
-              <li className="flex items-center gap-2">
-                <span className="text-green-600">&#10003;</span>
-                <span>Geleide chatbot intake</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-green-600">&#10003;</span>
-                <span>{decisionUploadLabel}</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-green-600">&#10003;</span>
-                <span>{standardLetterLabel}</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-green-600">&#10003;</span>
-                <span>Download als PDF en DOCX</span>
-              </li>
-            </ul>
-          </div>
-
-          <Button variant={selectedProduct === "basis" ? "primary" : "secondary"} className="w-full">
-            {selectedProduct === "basis" ? "Geselecteerd" : "Selecteer"}
-          </Button>
-        </Card>
-
-        <Card
-          className={`cursor-pointer transition-all ${
-            selectedProduct === "uitgebreid" ? "ring-2 ring-blue-500 bg-blue-50" : "hover:shadow-lg"
-          }`}
-          onClick={() => handleSelectProduct("uitgebreid")}
-        >
-          <div className="mb-4">
-            <div className="inline-block bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-semibold mb-2">
-              AANBEVOLEN
-            </div>
-            <h3 className="text-2xl font-bold text-gray-900">Uitgebreid</h3>
-            <p className="text-3xl font-bold text-blue-600">{getPriceFormatted("uitgebreid")}</p>
-            <p className="text-sm text-gray-600">eenmalige betaling - {TEST_PRICING_LABEL}</p>
-          </div>
-
-          <div className="space-y-3 mb-6">
-            <h4 className="font-semibold text-gray-900">Alles van Basis, plus:</h4>
-            <ul className="space-y-2 text-sm">
-              <li className="flex items-center gap-2">
-                <span className="text-blue-600">+</span>
-                <span>Tot 5 bijlagen</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-blue-600">+</span>
-                <span>Samenvatting van besluit</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-blue-600">+</span>
-                <span>{expandedFeatureLabel}</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-blue-600">+</span>
-                <span>Editable jurisprudentiekolom</span>
-              </li>
-            </ul>
-          </div>
-
-          <Button
-            className="w-full"
-            variant={selectedProduct === "uitgebreid" ? "primary" : "secondary"}
-          >
-            {selectedProduct === "uitgebreid" ? "Geselecteerd" : "Selecteer"}
-          </Button>
-        </Card>
-      </div>
-
-      {selectedProduct === "uitgebreid" && (
-        <Card title="Optionele extra bijlagen" subtitle="Tot 5 bestanden">
-          <UploadBox
-            label="Upload extra bijlagen (PDF's)"
-            accept=".pdf"
-            multiple
-            maxSize={25 * 1024 * 1024}
-            helperText="Upload bij beroep bij voorkeur ook je eerdere bezwaarbrief, nadere bezwaargronden of zienswijze. Als zo'n stuk herkenbaar is, nemen we die context mee naast het besluit."
-            onFileSelect={handleBijlagenSelect}
-            uploadedFiles={bijlagen}
-            disabled={isAnalyzingBijlagen}
-          />
-
-          {isAnalyzingBijlagen && (
-            <Alert type="info" title="Bijlagen worden geanalyseerd">
-              We kijken of een geuploade bijlage waarschijnlijk een bezwaarbrief, zienswijze of ander relevant processtuk is.
+          <div className="space-y-4">
+            <Alert type="warning" title="Productkeuze geblokkeerd">
+              De applicatie maakt geen generieke brief. Vul eerst de ontbrekende gegevens aan, zodat de beste
+              beschikbare brief kan worden gemaakt.
             </Alert>
-          )}
-
-          {bijlagen.length > 0 && (
-            <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm font-semibold text-blue-900 mb-2">{bijlagen.length} bijlage(n) geselecteerd</p>
-              <ul className="space-y-1">
-                {bijlagen.map((file) => (
-                  <li key={file.path} className="flex justify-between items-center text-sm">
-                    <span className="text-blue-800">
-                      {file.name}
-                      {getAttachmentKindLabel(file.attachmentKind) && (
-                        <span className="ml-2 text-xs text-blue-600">
-                          ({getAttachmentKindLabel(file.attachmentKind)})
-                        </span>
-                      )}
-                    </span>
-                    <button
-                      onClick={() => handleRemoveBijlage(file.path)}
-                      className="text-red-600 hover:text-red-700 font-semibold"
-                    >
-                      Verwijderen
-                    </button>
-                  </li>
+            {missingProductInfo.length > 0 && (
+              <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-[var(--muted-strong)]">
+                {missingProductInfo.map((field) => (
+                  <li key={String(field.field)}>{humanizeMissingInfoField(field)}</li>
                 ))}
               </ul>
+            )}
+            <div className="flex flex-col gap-3 md:flex-row">
+              <Button
+                variant="secondary"
+                onClick={() => router.push(activeFlow ? `/review/${activeFlow}` : "/start-brief")}
+                className="flex-1"
+              >
+                Terug naar overzicht
+              </Button>
+              <Button
+                onClick={() => router.push(activeFlow ? `/intake/${activeFlow}` : "/start-brief")}
+                className="flex-1"
+              >
+                Intake aanvullen
+              </Button>
             </div>
-          )}
+          </div>
         </Card>
+      ) : (
+        <>
+          <div className="grid md:grid-cols-2 gap-6 mb-8">
+            <Card
+              className={`cursor-pointer transition-all ${
+                selectedProduct === "basis" ? "ring-2 ring-blue-500 bg-blue-50" : "hover:shadow-lg"
+              }`}
+              onClick={() => handleSelectProduct("basis")}
+            >
+              <div className="mb-4">
+                <h3 className="text-2xl font-bold text-gray-900">Basis</h3>
+                <p className="text-3xl font-bold text-blue-600">{getPriceFormatted("basis")}</p>
+                <p className="text-sm text-gray-600">eenmalige betaling - {TEST_PRICING_LABEL}</p>
+              </div>
+
+              <div className="space-y-3 mb-6">
+                <h4 className="font-semibold text-gray-900">Inclusief:</h4>
+                <ul className="space-y-2 text-sm">
+                  <li className="flex items-center gap-2">
+                    <span className="text-green-600">&#10003;</span>
+                    <span>Geleide chatbot intake</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-green-600">&#10003;</span>
+                    <span>{decisionUploadLabel}</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-green-600">&#10003;</span>
+                    <span>{standardLetterLabel}</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-green-600">&#10003;</span>
+                    <span>Download als PDF en DOCX</span>
+                  </li>
+                </ul>
+              </div>
+
+              <Button variant={selectedProduct === "basis" ? "primary" : "secondary"} className="w-full">
+                {selectedProduct === "basis" ? "Geselecteerd" : "Selecteer"}
+              </Button>
+            </Card>
+
+            <Card
+              className={`cursor-pointer transition-all ${
+                selectedProduct === "uitgebreid" ? "ring-2 ring-blue-500 bg-blue-50" : "hover:shadow-lg"
+              }`}
+              onClick={() => handleSelectProduct("uitgebreid")}
+            >
+              <div className="mb-4">
+                <div className="inline-block bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-semibold mb-2">
+                  AANBEVOLEN
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900">Uitgebreid</h3>
+                <p className="text-3xl font-bold text-blue-600">{getPriceFormatted("uitgebreid")}</p>
+                <p className="text-sm text-gray-600">eenmalige betaling - {TEST_PRICING_LABEL}</p>
+              </div>
+
+              <div className="space-y-3 mb-6">
+                <h4 className="font-semibold text-gray-900">Alles van Basis, plus:</h4>
+                <ul className="space-y-2 text-sm">
+                  <li className="flex items-center gap-2">
+                    <span className="text-blue-600">+</span>
+                    <span>Tot 5 bijlagen</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-blue-600">+</span>
+                    <span>Samenvatting van besluit</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-blue-600">+</span>
+                    <span>{expandedFeatureLabel}</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="text-blue-600">+</span>
+                    <span>Editable jurisprudentiekolom</span>
+                  </li>
+                </ul>
+              </div>
+
+              <Button
+                className="w-full"
+                variant={selectedProduct === "uitgebreid" ? "primary" : "secondary"}
+              >
+                {selectedProduct === "uitgebreid" ? "Geselecteerd" : "Selecteer"}
+              </Button>
+            </Card>
+          </div>
+
+          {selectedProduct === "uitgebreid" && (
+            <Card title="Optionele extra bijlagen" subtitle="Tot 5 bestanden">
+              <UploadBox
+                label="Upload extra bijlagen (PDF's)"
+                accept=".pdf"
+                multiple
+                maxSize={25 * 1024 * 1024}
+                helperText="Upload bij beroep bij voorkeur ook je eerdere bezwaarbrief, nadere bezwaargronden of zienswijze. Als zo'n stuk herkenbaar is, nemen we die context mee naast het besluit."
+                onFileSelect={handleBijlagenSelect}
+                uploadedFiles={bijlagen}
+                disabled={isAnalyzingBijlagen}
+              />
+
+              {isAnalyzingBijlagen && (
+                <Alert type="info" title="Bijlagen worden geanalyseerd">
+                  We kijken of een geuploade bijlage waarschijnlijk een bezwaarbrief, zienswijze of ander relevant processtuk is.
+                </Alert>
+              )}
+
+              {bijlagen.length > 0 && (
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                  <p className="text-sm font-semibold text-blue-900 mb-2">{bijlagen.length} bijlage(n) geselecteerd</p>
+                  <ul className="space-y-1">
+                    {bijlagen.map((file) => (
+                      <li key={file.path} className="flex justify-between items-center text-sm">
+                        <span className="text-blue-800">
+                          {file.name}
+                          {getAttachmentKindLabel(file.attachmentKind) && (
+                            <span className="ml-2 text-xs text-blue-600">
+                              ({getAttachmentKindLabel(file.attachmentKind)})
+                            </span>
+                          )}
+                        </span>
+                        <button
+                          onClick={() => handleRemoveBijlage(file.path)}
+                          className="text-red-600 hover:text-red-700 font-semibold"
+                        >
+                          Verwijderen
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Card>
+          )}
+
+          <Card
+            title="E-mailadres voor toezending"
+            subtitle="We sturen de gegenereerde brief en de gebruikte intake- en documentgegevens naar dit adres."
+          >
+            <Input
+              type="email"
+              label="E-mailadres"
+              value={deliveryEmail}
+              onChange={(event) => {
+                setDeliveryEmail(event.target.value);
+                setDeliveryEmailError("");
+                setError("");
+              }}
+              error={deliveryEmailError}
+              autoComplete="email"
+              placeholder="naam@example.nl"
+              required
+            />
+            <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
+              Dit adres is verplicht om door te gaan naar betaling of de testversie.
+            </p>
+          </Card>
+
+          <div className="mt-8 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-soft)] px-5 py-4">
+            <p className="text-sm font-semibold text-[var(--foreground)]">Test versie</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Gebruik deze route als je de flow wilt controleren zonder Stripe-betaling. De gekozen productvariant blijft wel actief.
+            </p>
+          </div>
+
+          <div className="mt-8 flex flex-col gap-3 md:flex-row">
+            <Button variant="secondary" onClick={() => router.back()} className="flex-1">
+              Terug
+            </Button>
+            <Button
+              onClick={handleContinueToPayment}
+              disabled={!selectedProduct || !activeFlow || isAnalyzingBijlagen || !deliveryEmail.trim()}
+              className="flex-1"
+            >
+              Ga naar betaling
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleContinueToTestVersion}
+              disabled={!selectedProduct || !activeFlow || isAnalyzingBijlagen || !deliveryEmail.trim()}
+              className="flex-1"
+            >
+              Verder naar test versie
+            </Button>
+          </div>
+        </>
       )}
-
-      <div className="mt-8 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface-soft)] px-5 py-4">
-        <p className="text-sm font-semibold text-[var(--foreground)]">Test versie</p>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Gebruik deze route als je de flow wilt controleren zonder Stripe-betaling. De gekozen productvariant blijft wel actief.
-        </p>
-      </div>
-
-      <div className="mt-8 flex flex-col gap-3 md:flex-row">
-        <Button variant="secondary" onClick={() => router.back()} className="flex-1">
-          Terug
-        </Button>
-        <Button
-          onClick={handleContinueToPayment}
-          disabled={!selectedProduct || !activeFlow || isAnalyzingBijlagen}
-          className="flex-1"
-        >
-          Ga naar betaling
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={handleContinueToTestVersion}
-          disabled={!selectedProduct || !activeFlow || isAnalyzingBijlagen}
-          className="flex-1"
-        >
-          Verder naar test versie
-        </Button>
-      </div>
     </div>
   );
 }

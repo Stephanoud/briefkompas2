@@ -28,6 +28,27 @@ export const bezwaarAwbCore: ReferencePack = {
       flow: "bezwaar",
     },
     {
+      id: "rvs-2022-285-harderwijk-evenredigheid",
+      title: "ABRvS 2 februari 2022",
+      sourceType: "jurisprudentie",
+      ecli: "ECLI:NL:RVS:2022:285",
+      citation: "ABRvS 2 februari 2022, ECLI:NL:RVS:2022:285",
+      topic: "evenredigheid en concrete belangenafweging",
+      principle:
+        "Bij besluiten met beleidsruimte moeten doel, geschiktheid, noodzaak, evenwichtigheid en de concrete gevolgen voor belanghebbenden zichtbaar worden meegewogen.",
+      keywords: [
+        "evenredigheid",
+        "belangenafweging",
+        "persoonlijke omstandigheden",
+        "gezondheid",
+        "gevolgen",
+        "noodzaak",
+        "evenwichtigheid",
+        "Harderwijk",
+      ],
+      flow: "bezwaar",
+    },
+    {
       id: "awb-3-46-motivering",
       title: "Artikel 3:46 Awb",
       sourceType: "wet",
@@ -36,6 +57,29 @@ export const bezwaarAwbCore: ReferencePack = {
       principle:
         "Een besluit moet berusten op een draagkrachtige, kenbare en controleerbare motivering.",
       keywords: ["motivering", "ondeugdelijk", "onvoldoende onderbouwd", "reden", "uitleg"],
+      flow: "bezwaar",
+    },
+    {
+      id: "rvs-2022-3903-geluid-woon-leefklimaat",
+      title: "ABRvS 21 december 2022",
+      sourceType: "jurisprudentie",
+      ecli: "ECLI:NL:RVS:2022:3903",
+      citation: "ABRvS 21 december 2022, ECLI:NL:RVS:2022:3903",
+      topic: "geluidhinder en woon- en leefklimaat",
+      principle:
+        "Bij geluidhinder moet het bestuursorgaan onderzoeken of directe, indirecte en cumulatieve geluidbelasting het woon- en leefklimaat aanvaardbaar laten en dat deugdelijk motiveren.",
+      keywords: [
+        "geluid",
+        "geluidsoverlast",
+        "geluidhinder",
+        "geluidsnorm",
+        "geluidsmetingen",
+        "akoestisch onderzoek",
+        "cumulatie",
+        "woon- en leefklimaat",
+        "motivering",
+        "zorgvuldigheid",
+      ],
       flow: "bezwaar",
     },
     {

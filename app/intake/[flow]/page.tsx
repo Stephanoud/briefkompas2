@@ -506,6 +506,38 @@ function getDocumentAnalysisPresentation(status?: IntakeFormData["besluitAnalyse
   };
 }
 
+function buildGroundsExpansionPrompt(data: Partial<IntakeFormData>, flow: Flow): string {
+  const knownText = [
+    data.besluitDocumentType,
+    data.besluitSamenvatting,
+    data.besluitTekst,
+    data.besluitAnalyse?.onderwerp,
+    data.besluitAnalyse?.rechtsgrond,
+    data.besluitAnalyse?.besluitInhoud,
+    ...(data.besluitAnalyse?.dragendeOverwegingen ?? []).flatMap((item) => [item.passage, item.duiding]),
+    data.gronden,
+    data.persoonlijkeOmstandigheden,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ")
+    .toLowerCase();
+  const isSoundCase = /\b(geluid|geluids|geluidsoverlast|geluidhinder|geluidsnorm|decibel|akoestisch|woon- en leefklimaat|leefklimaat)\b/i.test(
+    knownText
+  );
+  const routeLabel =
+    flow === "beroep_na_bezwaar" || flow === "beroep_zonder_bezwaar"
+      ? "beroepschrift"
+      : flow === "zienswijze"
+        ? "zienswijze"
+        : "bezwaar";
+
+  if (isSoundCase) {
+    return `Ik heb dit genoteerd. Wil je dat je ${routeLabel} ook specifiek ingaat op geluidsmetingen of geluidsnormen, cumulatie van geluid, woon- en leefklimaat, gezondheid, alternatieven of maatregelen, motivering/belangenafweging of relevante jurisprudentie? Typ steekwoorden die ik moet meenemen, of typ 'ja, doorgaan'.`;
+  }
+
+  return `Ik heb dit genoteerd. Wil je dat je ${routeLabel} ook specifiek ingaat op ontbrekend onderzoek of bewijs, onjuiste feiten, motivering, belangenafweging/evenredigheid, persoonlijke gevolgen of relevante jurisprudentie? Typ steekwoorden die ik moet meenemen, of typ 'ja, doorgaan'.`;
+}
+
 function buildIntroMessage(
   flow: Flow,
   interpretation: IntakeInterpretationState,
@@ -1114,7 +1146,7 @@ export default function IntakePage() {
       case "doel":
         return "Vul de gewenste uitkomst in: intrekking, herziening, aanpassing, verlaging of een nieuw besluit.";
       case "gronden":
-        return "Vul in waarom het besluit volgens jou niet klopt: wat is onjuist, niet meegewogen of te zwaar?";
+        return "Vul in welke punten de brief moet meenemen: wat is feitelijk onjuist, onvoldoende onderzocht, niet goed gemotiveerd, niet afgewogen of te zwaar voor jou?";
       case "documenten":
         return "Vul in welke stukken je zoekt, zoals e-mails, memo's, rapporten, notulen of besluiten.";
       case "digitale_verstrekking":
@@ -1411,9 +1443,7 @@ export default function IntakePage() {
       }
 
       setPendingGrondenConfirmation(combined);
-      addAssistantMessage(
-        "Dank je. Als dit alles is, typ dan 'ja, doorgaan'. Wil je nog aanvullen, typ dan verder of kies een van de voorbeeldopties hieronder."
-      );
+      addAssistantMessage(buildGroundsExpansionPrompt({ ...intakeData, gronden: combined }, activeFlow));
       setCurrentInput("");
       return;
     }
@@ -1519,9 +1549,7 @@ export default function IntakePage() {
       setPendingGrondenConfirmation(trimmedInput);
       setCurrentInput("");
       setValidationError("");
-      addAssistantMessage(
-        "Je toelichting is nog vrij kort. Weet je zeker dat je niet meer wilt toelichten? Meer specifieke informatie leidt tot een brief die beter aansluit op jouw specifieke situatie. Antwoord met 'ja, doorgaan' of 'nee, ik wil meer toelichten'."
-      );
+      addAssistantMessage(buildGroundsExpansionPrompt({ ...intakeData, gronden: trimmedInput }, activeFlow));
       return;
     }
 
@@ -1789,6 +1817,96 @@ export default function IntakePage() {
       !hasPendingMetadataConfirmations &&
       !questionsCompleted &&
       currentStepIndex < steps.length);
+  const metadataConfirmationPanel = hasPendingMetadataConfirmations ? (
+    <div className="rounded-xl border border-[var(--border)] bg-white p-4">
+      <div className="mb-4">
+        <h3 className="font-semibold text-[var(--foreground)]">Controleer gegevens uit het besluit</h3>
+        <p className="mt-1 text-sm leading-6 text-[var(--muted-strong)]">
+          Bevestig de gevonden gegevens. Corrigeer alleen wat niet klopt; daarna gaat de intake verder met
+          de ontbrekende punten.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {pendingMetadataConfirmations.map((item) => {
+          const isCorrectionOpen = metadataCorrectionOpen[item.id];
+          const correctionValue = metadataCorrectionValues[item.id] ?? item.value;
+
+          return (
+            <div key={item.id} className="rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                {item.label}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[var(--foreground)]">{item.value}</p>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button type="button" size="sm" onClick={() => confirmMetadataItem(item)}>
+                  Juist
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setMetadataCorrectionOpen((current) => ({
+                      ...current,
+                      [item.id]: true,
+                    }));
+                    setMetadataCorrectionValues((current) => ({
+                      ...current,
+                      [item.id]: item.value,
+                    }));
+                    setMetadataCorrectionError("");
+                  }}
+                >
+                  Onjuist
+                </Button>
+              </div>
+
+              {isCorrectionOpen && (
+                <div className="mt-3 space-y-3">
+                  {item.multiline ? (
+                    <Textarea
+                      label={item.correctionPrompt}
+                      value={correctionValue}
+                      onChange={(event) => {
+                        setMetadataCorrectionValues((current) => ({
+                          ...current,
+                          [item.id]: event.target.value,
+                        }));
+                        setMetadataCorrectionError("");
+                      }}
+                    />
+                  ) : (
+                    <Input
+                      label={item.correctionPrompt}
+                      value={correctionValue}
+                      onChange={(event) => {
+                        setMetadataCorrectionValues((current) => ({
+                          ...current,
+                          [item.id]: event.target.value,
+                        }));
+                        setMetadataCorrectionError("");
+                      }}
+                    />
+                  )}
+                  <Button type="button" size="sm" onClick={() => saveMetadataCorrection(item)}>
+                    Correctie opslaan
+                  </Button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {metadataCorrectionError && (
+        <Alert type="error" title="Correctie nodig" className="mt-4">
+          {metadataCorrectionError}
+        </Alert>
+      )}
+    </div>
+  ) : null;
 
   return (
     <div className="max-w-2xl mx-auto min-h-[78vh] flex flex-col justify-center">
@@ -1888,97 +2006,6 @@ export default function IntakePage() {
                 </div>
               </Alert>
             )}
-
-            {hasPendingMetadataConfirmations && (
-              <div className="rounded-xl border border-[var(--border)] bg-white p-4">
-                <div className="mb-4">
-                  <h3 className="font-semibold text-[var(--foreground)]">Controleer gegevens uit het besluit</h3>
-                  <p className="mt-1 text-sm leading-6 text-[var(--muted-strong)]">
-                    Bevestig de gevonden gegevens. Corrigeer alleen wat niet klopt; daarna gaat de intake verder met
-                    de ontbrekende punten.
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  {pendingMetadataConfirmations.map((item) => {
-                    const isCorrectionOpen = metadataCorrectionOpen[item.id];
-                    const correctionValue = metadataCorrectionValues[item.id] ?? item.value;
-
-                    return (
-                      <div key={item.id} className="rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-                          {item.label}
-                        </p>
-                        <p className="mt-2 text-sm leading-6 text-[var(--foreground)]">{item.value}</p>
-
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Button type="button" size="sm" onClick={() => confirmMetadataItem(item)}>
-                            [✓ Juist]
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => {
-                              setMetadataCorrectionOpen((current) => ({
-                                ...current,
-                                [item.id]: true,
-                              }));
-                              setMetadataCorrectionValues((current) => ({
-                                ...current,
-                                [item.id]: item.value,
-                              }));
-                              setMetadataCorrectionError("");
-                            }}
-                          >
-                            [✗ Onjuist]
-                          </Button>
-                        </div>
-
-                        {isCorrectionOpen && (
-                          <div className="mt-3 space-y-3">
-                            {item.multiline ? (
-                              <Textarea
-                                label={item.correctionPrompt}
-                                value={correctionValue}
-                                onChange={(event) => {
-                                  setMetadataCorrectionValues((current) => ({
-                                    ...current,
-                                    [item.id]: event.target.value,
-                                  }));
-                                  setMetadataCorrectionError("");
-                                }}
-                              />
-                            ) : (
-                              <Input
-                                label={item.correctionPrompt}
-                                value={correctionValue}
-                                onChange={(event) => {
-                                  setMetadataCorrectionValues((current) => ({
-                                    ...current,
-                                    [item.id]: event.target.value,
-                                  }));
-                                  setMetadataCorrectionError("");
-                                }}
-                              />
-                            )}
-                            <Button type="button" size="sm" onClick={() => saveMetadataCorrection(item)}>
-                              Correctie opslaan
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {metadataCorrectionError && (
-                  <Alert type="error" title="Correctie nodig" className="mt-4">
-                    {metadataCorrectionError}
-                  </Alert>
-                )}
-              </div>
-            )}
           </div>
         )}
 
@@ -2004,6 +2031,8 @@ export default function IntakePage() {
           ))}
           <div ref={messagesEndRef} />
         </div>
+
+        {metadataConfirmationPanel && <div className="mb-4">{metadataConfirmationPanel}</div>}
 
         {shouldShowAnswerInput ? (
           <div className="space-y-3 mb-4">

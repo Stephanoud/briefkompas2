@@ -128,6 +128,10 @@ export function buildIntakeAssistantDeterministicReply(input: IntakeAssistantReq
       ? ` Nog verplicht aan te vullen: ${joinHumanList(missingFacts)}.`
       : "";
 
+  if (/\b(jurisprudentie|uitspraak|arresten|data|onderzoek|bronnen|online)\b/i.test(normalizedMessage)) {
+    return `Ik neem dit als thema mee. De brief gebruikt alleen bronnen of jurisprudentie die later veilig kunnen worden geverifieerd; help mij vooral met concrete aanknopingspunten zoals metingen, normen, gezondheid, gevolgen, ontbrekend onderzoek of motivering.${missingFactsLine}`;
+  }
+
   if (
     /\b(wat|welke|kon|kun)\b.*\b(uitlezen|uitgelezen|gelezen|gevonden)\b/i.test(normalizedMessage) ||
     /\bwat kon je wel\b/i.test(normalizedMessage)

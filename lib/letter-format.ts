@@ -46,6 +46,36 @@ const KNOWN_HEADINGS = new Set(
   ].map((heading) => heading.toLowerCase())
 );
 
+const POST_LETTER_SUPPORT_HEADINGS = new Set(
+  [
+    "wat de overheid mogelijk zal aanvoeren",
+    "wat het bestuursorgaan mogelijk zal aanvoeren",
+    "wat de gemeente mogelijk zal aanvoeren",
+    "wat de inspecteur mogelijk zal aanvoeren",
+    "wat toeslagen mogelijk zal aanvoeren",
+    "hoe u daarop kunt reageren",
+    "hoe je daarop kunt reageren",
+    "wat gebeurt hierna",
+    "waar moet u op letten",
+    "waar moet je op letten",
+    "als uw bezwaar/beroep wordt afgewezen",
+    "als uw bezwaar wordt afgewezen",
+    "als je bezwaar wordt afgewezen",
+    "als uw beroep wordt afgewezen",
+    "als je beroep wordt afgewezen",
+    "praktische tip",
+  ].map((heading) => heading.toLowerCase())
+);
+
+const POST_LETTER_SUPPORT_HEADING_PATTERNS = [
+  /^wat\s+(de\s+overheid|het\s+bestuursorgaan|de\s+gemeente|de\s+inspecteur|toeslagen)\s+mogelijk\s+zal\s+aanvoeren\b/i,
+  /^hoe\s+(u|je)\s+daarop\s+kunt\s+reageren\b/i,
+  /^wat\s+gebeurt\s+hierna\b/i,
+  /^waar\s+moet\s+(u|je)\s+op\s+letten\b/i,
+  /^als\s+(uw|je)\s+(bezwaar|beroep|bezwaar\/beroep)\s+wordt\s+afgewezen\b/i,
+  /^praktische\s+tip\b/i,
+];
+
 const ORDERED_LIST_PATTERN = /^\d+\.\s+/;
 const UNORDERED_LIST_PATTERN = /^[-*]\s+/;
 
@@ -89,6 +119,20 @@ function shouldExcludeLineFromDelivery(line: string): boolean {
   return DELIVERY_EXCLUDED_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
+function isPostLetterSupportHeading(line: string): boolean {
+  const normalized = stripInlineMarkdown(line)
+    .replace(/^[-*]\s+/, "")
+    .replace(/^\d+\.\s+/, "")
+    .replace(/[:?.!]$/, "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    POST_LETTER_SUPPORT_HEADINGS.has(normalized) ||
+    POST_LETTER_SUPPORT_HEADING_PATTERNS.some((pattern) => pattern.test(normalized))
+  );
+}
+
 export function sanitizeLetterText(letterText: string): string {
   const normalized = letterText
     .replace(/\r\n/g, "\n")
@@ -113,8 +157,15 @@ export function cleanLetterTextForDelivery(letterText: string): string {
     return "";
   }
 
-  return sanitized
-    .split("\n")
+  const deliveryLines: string[] = [];
+  for (const line of sanitized.split("\n")) {
+    if (isPostLetterSupportHeading(line)) {
+      break;
+    }
+    deliveryLines.push(line);
+  }
+
+  return deliveryLines
     .filter((line) => !shouldExcludeLineFromDelivery(line))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")

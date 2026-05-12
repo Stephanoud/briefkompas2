@@ -141,14 +141,13 @@ export interface SourceMapConfig {
     };
     routing: {
       decisionDocumentOverridesGenericWebsite: boolean;
-      fallbackToSafeDraftOnConflict: boolean;
     };
   };
 }
 
 export interface GenerationGuardResult {
   ok: boolean;
-  fallbackMode: "none" | "safe_generic";
+  fallbackMode: "none";
   generationMode: LetterGenerationMode;
   reasons: string[];
   hardBlockers: string[];

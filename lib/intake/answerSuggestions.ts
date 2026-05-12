@@ -12,9 +12,13 @@ const answerSuggestionsByStepId: Record<string, string[]> = {
   ],
   gronden: [
     "Feiten in het besluit kloppen niet.",
+    "Neem mee dat onderzoek, metingen of bewijs ontbreken.",
+    "Neem mee dat geluidsnormen of meetgegevens onvoldoende zijn onderbouwd.",
     "Het besluit houdt onvoldoende rekening met mijn persoonlijke situatie.",
     "De gevolgen van dit besluit zijn voor mij onevenredig zwaar.",
     "Belangrijke informatie of stukken zijn niet meegewogen.",
+    "Het besluit is te algemeen of onvoldoende gemotiveerd.",
+    "Controleer of relevante jurisprudentie over motivering of evenredigheid past.",
     "Ik ben niet (goed) gehoord voordat het besluit is genomen.",
   ],
   digitale_verstrekking: ["ja", "nee"],

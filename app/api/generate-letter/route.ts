@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { Flow, IntakeFormData, Product } from "@/types";
+import { Flow, GeneratedLetterSupportSection, IntakeFormData, Product } from "@/types";
 import { getReferences } from "@/src/data/references";
 import { ReferenceItem } from "@/src/types/references";
 import { generateLetter } from "@/lib/ai/generateLetter";
@@ -13,8 +13,10 @@ import { determineRoute } from "@/lib/intake/determineRoute";
 import { getMissingRequiredFields } from "@/lib/intake/requiredFields";
 import { buildCaseFileAnalysis } from "@/lib/legal/case-file-analysis";
 import { evaluateLateDecisionGate } from "@/lib/legal/late-decision";
-import { CaseType, GenerationGuardResult, PromptPayload } from "@/lib/legal/types";
+import { CaseType, GenerationGuardResult, PromptPayload, RouteType, SelectedSourceSet } from "@/lib/legal/types";
 import { cleanLetterTextForDelivery } from "@/lib/letter-format";
+import { isValidDeliveryEmail, normalizeDeliveryEmail } from "@/lib/delivery-email";
+import { sendGeneratedLetterEmail } from "@/lib/email-delivery-server";
 import { loadSourceSet } from "@/lib/sources/loadSourceSet";
 import { validateAuthorities } from "@/lib/sources/validateAuthorities";
 import { validateSourceSet } from "@/lib/sources/validateSourceSet";
@@ -27,10 +29,6 @@ function getOpenAIClient() {
     return null;
   }
   return new OpenAI({ apiKey });
-}
-
-function sanitize(value?: string): string {
-  return (value ?? "onbekend").trim() || "onbekend";
 }
 
 function detectOrgType(value?: string): ReferenceItem["orgType"] | undefined {
@@ -74,6 +72,72 @@ function buildReferenceKeywords(data: IntakeFormData, flow: Flow): string[] {
     .filter((keyword) => keyword.length >= 3);
 }
 
+function humanizeRequiredField(field: string): string {
+  switch (field) {
+    case "bestuursorgaan":
+      return "bestuursorgaan";
+    case "categorie":
+      return "soort besluit";
+    case "doel":
+      return "gewenste uitkomst";
+    case "gronden":
+      return "waarom het besluit volgens de intake niet klopt";
+    case "persoonlijkeOmstandigheden":
+      return "persoonlijke omstandigheden of belang";
+    case "besluitSamenvatting":
+      return "korte omschrijving van het besluit";
+    case "eerdereBezwaargronden":
+      return "eerdere bezwaargronden";
+    case "wooOnderwerp":
+      return "Woo-onderwerp";
+    case "wooPeriode":
+      return "Woo-periode";
+    case "wooDocumenten":
+      return "gevraagde Woo-documenten";
+    default:
+      return field;
+  }
+}
+
+function getGenericRouteForFlow(flow: Flow, caseType: CaseType): RouteType {
+  if (caseType === "niet_tijdig_beslissen") {
+    return flow === "woo" ? "woo_niet_tijdig_beslissen" : "beroep_niet_tijdig_beslissen";
+  }
+
+  if (flow === "woo") return "woo_verzoek";
+  if (flow === "zienswijze") return "zienswijze_bestuursrecht";
+  if (flow === "beroep_zonder_bezwaar") return "beroep_rechtstreeks_bestuursrecht";
+  if (flow === "beroep_na_bezwaar") return "beroep_na_bezwaar_bestuursrecht";
+  return "bezwaar_bestuursrecht";
+}
+
+function getGeneralSourceSet(flow: Flow, caseType: CaseType): SelectedSourceSet | null {
+  const generalCaseType: CaseType =
+    caseType === "woo" || flow === "woo"
+      ? "woo"
+      : caseType === "niet_tijdig_beslissen"
+        ? "niet_tijdig_beslissen"
+        : "algemeen_bestuursrecht";
+
+  return loadSourceSet(generalCaseType, getGenericRouteForFlow(flow, generalCaseType));
+}
+
+function buildGuardRetryPrompt(params: {
+  basePrompt: string;
+  violations: string[];
+}): string {
+  return [
+    params.basePrompt,
+    "",
+    "HERSTELRONDE VOOR VEILIGE GENERATIE:",
+    `De vorige concepttekst werd afgekeurd op deze punten: ${params.violations.join(", ")}.`,
+    "Genereer de brief opnieuw als bruikbare conceptbrief.",
+    "Gebruik geen ECLI's, jurisprudentieclaims, termijnen, hoorzittingen, correspondentie of rol/status van de gebruiker tenzij die letterlijk in de intake of besluitanalyse staat.",
+    "Als een onderdeel onzeker is, formuleer voorzichtig vanuit de beschikbare intake: 'voor zover uit de stukken blijkt' of 'volgens de beschikbare gegevens'.",
+    "Laat geen juridisch relevant punt liggen alleen omdat de dossieruitlezing beperkt is; werk met de concrete gronden, het doel en de bekende besluitinformatie.",
+  ].join("\n");
+}
+
 function getDecisionStatusLabel(data: IntakeFormData): string {
   if (data.besluitAnalyseStatus === "read") {
     return "besluit gelezen";
@@ -81,7 +145,7 @@ function getDecisionStatusLabel(data: IntakeFormData): string {
   if (data.besluitAnalyseStatus === "partial") {
     return "besluit deels gelezen";
   }
-  return "alleen intake gebruikt";
+  return "besluitinformatie aangevuld";
 }
 
 function hasText(value?: string | null): value is string {
@@ -92,160 +156,266 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function ensureSentence(value: string): string {
-  const normalized = normalizeWhitespace(value);
-  if (!normalized) {
-    return "";
-  }
+const NEEDS_MORE_INFO_MESSAGE =
+  "Om een juridisch bruikbare brief te maken ontbreekt nog verplichte informatie. Vul dit eerst aan of upload het besluit.";
 
-  return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
-}
-
-function shorten(value: string, maxLength = 220): string {
-  const normalized = normalizeWhitespace(value);
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, maxLength - 3).trimEnd()}...`;
-}
-
-function splitIntoPoints(value?: string | null, maxItems = 5): string[] {
-  if (!hasText(value)) {
-    return [];
-  }
-
-  return [...new Set(
-    value
-      .replace(/\r\n/g, "\n")
-      .split(/\n+|;|(?:\.\s+)/)
-      .map((part) => normalizeWhitespace(part))
-      .filter((part) => part.length >= 8)
-  )].slice(0, maxItems);
-}
-
-function buildBestredenBesluitLabel(data: IntakeFormData): string {
-  const rawType = hasText(data.besluitDocumentType)
-    ? data.besluitDocumentType
-    : hasText(data.categorie)
-      ? `${data.categorie} besluit`
-      : "bestreden besluit";
-  const datePart = hasText(data.datumBesluit) ? ` van ${data.datumBesluit}` : "";
-
-  return `${normalizeWhitespace(rawType)}${datePart}`;
-}
-
-function buildDesiredOutcome(data: IntakeFormData): string {
-  if (hasText(data.doel)) {
-    return ensureSentence(shorten(data.doel, 180));
-  }
-
-  return "[gewenste uitkomst invullen].";
-}
-
-function buildDisputeCore(data: IntakeFormData): string {
-  const lines: string[] = [];
-
-  if (hasText(data.besluitSamenvatting)) {
-    lines.push(ensureSentence(shorten(data.besluitSamenvatting, 200)));
-  } else {
-    lines.push(`Het bezwaar richt zich tegen ${buildBestredenBesluitLabel(data)}.`);
-  }
-
-  if (hasText(data.gronden)) {
-    lines.push(
-      `Volgens de intake is het besluit onjuist of onvolledig omdat ${shorten(data.gronden, 180).replace(/[.!?]+$/, "")}.`
-    );
-  } else {
-    lines.push("Indiener vraagt om een volledige heroverweging van het besluit.");
-  }
-
-  return lines.join(" ");
-}
-
-interface EvidenceEntry {
+type MissingCriticalInfoField = {
+  field: keyof IntakeFormData | "decisionDocument" | "procedureType";
   label: string;
-  relevance: string;
-}
+  question: string;
+  inputType: "text" | "textarea" | "upload";
+};
 
 interface AuthorityResponsePair {
   counterargument: string;
   rebuttal: string;
 }
 
-function buildEvidenceOverview(data: IntakeFormData): {
-  sent: EvidenceEntry[];
-  mentionedNotSent: EvidenceEntry[];
-} {
-  const sent: EvidenceEntry[] = [];
-  const mentionedNotSent: EvidenceEntry[] = [];
-
-  if (data.files?.besluit?.name) {
-    sent.push({
-      label: `Kopie van het bestreden besluit (${data.files.besluit.name})`,
-      relevance: "Toont welk besluit wordt bestreden en welke datum en kenmerken daarbij horen.",
-    });
-  } else {
-    mentionedNotSent.push({
-      label: hasText(data.datumBesluit) || hasText(data.kenmerk) || hasText(data.besluitDocumentType)
-        ? `Bestreden besluit (${buildBestredenBesluitLabel(data)})`
-        : "Bestreden besluit",
-      relevance: "Vormt het object van dit bezwaar en is in de hoofdbrief en samenvatting beschreven.",
-    });
-  }
-
-  (data.files?.bijlagen ?? []).forEach((file) => {
-    sent.push({
-      label: file.name,
-      relevance: "Door indiener meegestuurd ter onderbouwing van de feiten, gevolgen of context van het bezwaar.",
-    });
-  });
-
-  if (sent.length === 0 && mentionedNotSent.length === 0) {
-    mentionedNotSent.push({
-      label: "Bestreden besluit",
-      relevance: "Vormt het object van dit bezwaar.",
-    });
-  }
-
-  return { sent, mentionedNotSent };
+function firstText(...values: Array<string | null | undefined>): string | undefined {
+  return values.map((value) => (hasText(value) ? normalizeWhitespace(value) : "")).find(Boolean);
 }
 
-function buildLegalGrounds(data: IntakeFormData): Array<{ title: string; paragraphs: string[] }> {
-  const grounds: Array<{ title: string; paragraphs: string[] }> = [
-    {
-      title: "1. MOTIVERINGSGEBREK",
-      paragraphs: [
-        hasText(data.gronden)
-          ? `Voor zover nu kenbaar maakt het besluit niet voldoende inzichtelijk waarom het bestuursorgaan tot deze uitkomst is gekomen, mede in het licht van het bezwaar dat ${shorten(data.gronden, 180).replace(/[.!?]+$/, "")}.`
-          : "Voor zover nu kenbaar maakt het bestreden besluit niet dragend duidelijk waarom deze uitkomst gerechtvaardigd is.",
-        "Een besluit moet berusten op een kenbare en deugdelijke motivering, zodat controleerbaar is hoe de feiten en belangen zijn gewogen.",
-      ],
-    },
-    {
-      title: "2. ZORGVULDIGHEIDSBEGINSEL",
-      paragraphs: [
-        hasText(data.persoonlijkeOmstandigheden)
-          ? `De intake noemt als relevante feitelijke situatie: ${ensureSentence(shorten(data.persoonlijkeOmstandigheden, 170))}`
-          : "In bezwaar moet het bestuursorgaan nagaan of alle relevante feiten, omstandigheden en stukken volledig in beeld zijn gebracht.",
-        "Als die gegevens niet of onvoldoende in de voorbereiding zijn betrokken, is de besluitvorming niet zorgvuldig geweest.",
-      ],
-    },
-  ];
+function getDecisionSubject(data: IntakeFormData): string | undefined {
+  return firstText(
+    data.besluitOnderwerp,
+    data.besluitAnalyse?.onderwerp,
+    data.besluitDocumentType,
+    data.besluitSamenvatting,
+    data.categorie
+  );
+}
 
-  if (hasText(data.persoonlijkeOmstandigheden) || hasText(data.doel)) {
-    grounds.push({
-      title: "3. EVENREDIGHEIDSBEGINSEL EN VOLLEDIGE HEROVERWEGING",
-      paragraphs: [
-        hasText(data.persoonlijkeOmstandigheden)
-          ? `De gevolgen van het besluit raken de indiener volgens de intake als volgt: ${ensureSentence(shorten(data.persoonlijkeOmstandigheden, 170))}`
-          : "In bezwaar moet worden beoordeeld of de nadelige gevolgen van het besluit in verhouding staan tot het doel ervan.",
-        `Dat vergt een concrete heroverweging van het verzoek om ${buildDesiredOutcome(data).replace(/[.!?]+$/, "")} en van eventuele minder bezwarende alternatieven.`,
-      ],
+function getDecisionAction(data: IntakeFormData): string | undefined {
+  return firstText(
+    data.beslissingOfMaatregel,
+    data.besluitAnalyse?.besluitInhoud,
+    data.besluitSamenvatting,
+    data.besluitAnalyse?.onderwerp
+  );
+}
+
+function getDecisionMotivation(data: IntakeFormData): string | undefined {
+  const considerations =
+    data.besluitAnalyse?.dragendeOverwegingen?.flatMap((item) => [item.duiding, item.passage]) ?? [];
+
+  return firstText(
+    data.belangrijksteMotivering,
+    ...considerations,
+    data.besluitAnalyse?.rechtsgrond,
+    data.besluitAnalyse?.besluitInhoud
+  );
+}
+
+function getDecisionTerm(data: IntakeFormData): string | undefined {
+  return firstText(
+    data.relevanteTermijn,
+    data.besluitAnalyse?.termijnen,
+    data.besluitAnalyse?.rechtsmiddelenclausule
+  );
+}
+
+function getDesiredOutcome(flow: Flow, data: IntakeFormData): string | undefined {
+  if (flow === "woo") {
+    return firstText(
+      data.doel,
+      data.wooDocumenten && data.wooOnderwerp
+        ? `openbaarmaking van ${data.wooDocumenten} over ${data.wooOnderwerp}`
+        : undefined
+    );
+  }
+
+  return firstText(data.doel);
+}
+
+function resolveIntakeDataForGeneration(data: IntakeFormData, flow: Flow): IntakeFormData {
+  if (flow === "woo") {
+    return data;
+  }
+
+  const bestuursorgaan = firstText(data.bestuursorgaan, data.besluitAnalyse?.bestuursorgaan);
+  const decisionSubject = getDecisionSubject(data);
+  const decisionAction = getDecisionAction(data);
+  const decisionMotivation = getDecisionMotivation(data);
+  const decisionTerm = getDecisionTerm(data);
+
+  return {
+    ...data,
+    bestuursorgaan: bestuursorgaan ?? data.bestuursorgaan,
+    categorie: firstText(data.categorie, data.besluitDocumentType, decisionSubject) ?? data.categorie,
+    besluitSamenvatting: firstText(data.besluitSamenvatting, decisionAction, decisionSubject),
+    besluitOnderwerp: decisionSubject ?? data.besluitOnderwerp,
+    beslissingOfMaatregel: decisionAction ?? data.beslissingOfMaatregel,
+    belangrijksteMotivering: decisionMotivation ?? data.belangrijksteMotivering,
+    relevanteTermijn: decisionTerm ?? data.relevanteTermijn,
+  };
+}
+
+function requiredFieldPrompt(field: string): MissingCriticalInfoField {
+  switch (field) {
+    case "bestuursorgaan":
+      return {
+        field: "bestuursorgaan",
+        label: "Bestuursorgaan",
+        question: "Geef aan welk bestuursorgaan dit besluit heeft genomen.",
+        inputType: "text",
+      };
+    case "categorie":
+      return {
+        field: "categorie",
+        label: "Soort besluit",
+        question: "Vul in om wat voor soort besluit het gaat.",
+        inputType: "text",
+      };
+    case "doel":
+      return {
+        field: "doel",
+        label: "Gewenste uitkomst",
+        question: "Vul de gewenste uitkomst in.",
+        inputType: "textarea",
+      };
+    case "gronden":
+      return {
+        field: "gronden",
+        label: "Waarom het besluit niet klopt",
+        question: "Vul in waarom je het niet eens bent met het besluit.",
+        inputType: "textarea",
+      };
+    case "persoonlijkeOmstandigheden":
+      return {
+        field: "persoonlijkeOmstandigheden",
+        label: "Geraakte belangen",
+        question: "Vul in welke belangen of omstandigheden door het besluit worden geraakt.",
+        inputType: "textarea",
+      };
+    case "besluitSamenvatting":
+      return {
+        field: "besluitSamenvatting",
+        label: "Kern van het besluit",
+        question: "Vul kort in wat het besluit of ontwerpbesluit inhoudt.",
+        inputType: "textarea",
+      };
+    case "eerdereBezwaargronden":
+      return {
+        field: "eerdereBezwaargronden",
+        label: "Eerdere bezwaargronden",
+        question: "Vul de hoofdpunten in die eerder in bezwaar zijn aangevoerd.",
+        inputType: "textarea",
+      };
+    case "wooOnderwerp":
+      return {
+        field: "wooOnderwerp",
+        label: "Woo-onderwerp",
+        question: "Vul het onderwerp van het Woo-verzoek in.",
+        inputType: "textarea",
+      };
+    case "wooPeriode":
+      return {
+        field: "wooPeriode",
+        label: "Woo-periode",
+        question: "Vul de periode in waarover de documenten moeten gaan.",
+        inputType: "text",
+      };
+    case "wooDocumenten":
+      return {
+        field: "wooDocumenten",
+        label: "Gevraagde documenten",
+        question: "Vul in welke documenten of documentsoorten moeten worden verstrekt.",
+        inputType: "textarea",
+      };
+    default:
+      return {
+        field: field as keyof IntakeFormData,
+        label: humanizeRequiredField(field),
+        question: `Vul ${humanizeRequiredField(field)} in.`,
+        inputType: "textarea",
+      };
+  }
+}
+
+function addMissingField(fields: MissingCriticalInfoField[], field: MissingCriticalInfoField) {
+  if (!fields.some((item) => item.field === field.field)) {
+    fields.push(field);
+  }
+}
+
+function getMissingCriticalInfo(flow: Flow, data: IntakeFormData): MissingCriticalInfoField[] {
+  const missingFields: MissingCriticalInfoField[] = [];
+
+  if (flow !== "woo" && !data.files?.besluit) {
+    addMissingField(missingFields, {
+      field: "decisionDocument",
+      label: "Besluit uploaden",
+      question:
+        flow === "zienswijze"
+          ? "Upload het ontwerpbesluit waarin de motivering staat."
+          : "Upload het besluit waarin de motivering staat.",
+      inputType: "upload",
+    });
+    return missingFields;
+  }
+
+  getMissingRequiredFields(flow, data).forEach((field) => {
+    addMissingField(missingFields, requiredFieldPrompt(field));
+  });
+
+  if (flow === "woo") {
+    return missingFields;
+  }
+
+  if (!hasText(data.datumBesluit)) {
+    addMissingField(missingFields, {
+      field: "datumBesluit",
+      label: "Datum besluit",
+      question: "Vul de datum van het besluit in.",
+      inputType: "text",
     });
   }
 
-  return grounds;
+  if (!hasText(data.bestuursorgaan)) {
+    addMissingField(missingFields, requiredFieldPrompt("bestuursorgaan"));
+  }
+
+  if (!hasText(getDecisionSubject(data))) {
+    addMissingField(missingFields, {
+      field: "besluitOnderwerp",
+      label: "Onderwerp besluit",
+      question: "Vul het onderwerp van het besluit in.",
+      inputType: "textarea",
+    });
+  }
+
+  if (!hasText(getDecisionAction(data))) {
+    addMissingField(missingFields, {
+      field: "beslissingOfMaatregel",
+      label: "Beslissing of maatregel",
+      question: "Vul in welke beslissing of maatregel in het besluit staat.",
+      inputType: "textarea",
+    });
+  }
+
+  if (!hasText(getDecisionMotivation(data))) {
+    addMissingField(missingFields, {
+      field: "belangrijksteMotivering",
+      label: "Belangrijkste reden of motivering",
+      question: "Vul de belangrijkste reden of motivering van het bestuursorgaan in.",
+      inputType: "textarea",
+    });
+  }
+
+  if (!hasText(getDecisionTerm(data))) {
+    addMissingField(missingFields, {
+      field: "relevanteTermijn",
+      label: "Relevante termijn",
+      question: "Vul de relevante bezwaar-, beroep- of reactietermijn in.",
+      inputType: "text",
+    });
+  }
+
+  if (!hasText(getDesiredOutcome(flow, data))) {
+    addMissingField(missingFields, requiredFieldPrompt("doel"));
+  }
+
+  return missingFields;
 }
 
 function buildAuthorityResponsePairs(params: {
@@ -526,174 +696,40 @@ function buildPracticalTips(params: {
   return tips.slice(0, 2);
 }
 
-function buildAfterLetterSupportSection(params: {
+function buildAfterLetterSupportSections(params: {
   flow: Flow;
   intakeData: IntakeFormData;
   caseType?: CaseType;
-}): string {
+}): GeneratedLetterSupportSection[] {
   const { flow, intakeData, caseType } = params;
   const pairs = buildAuthorityResponsePairs({ flow, intakeData, caseType }).slice(0, 3);
-  const procedureItems = buildAttentionItems({ flow, intakeData });
-  const practicalTips = buildPracticalTips({ intakeData });
 
   return [
-    "",
-    "Wat de overheid mogelijk zal aanvoeren:",
-    ...pairs.map((pair) => `- ${pair.counterargument}`),
-    "",
-    "Hoe u daarop kunt reageren:",
-    ...pairs.map((pair) => `- ${pair.rebuttal}`),
-    "",
-    "Wat gebeurt hierna?",
-    `- ${buildProcedureExplanation({ flow, caseType })}`,
-    "",
-    "Waar moet u op letten?",
-    ...procedureItems.map((item) => `- ${item}`),
-    "",
-    "Als uw bezwaar/beroep wordt afgewezen:",
-    `- ${buildRejectedNextStep({ flow, caseType })}`,
-    "",
-    "Praktische tip:",
-    ...practicalTips.map((tip) => `- ${tip}`),
-  ].join("\n");
-}
-
-function appendAfterLetterSupport(params: {
-  letterText: string;
-  flow: Flow;
-  intakeData: IntakeFormData;
-  caseType?: CaseType;
-  appendixText?: string;
-}): string {
-  const { letterText, flow, intakeData, caseType, appendixText } = params;
-
-  return [
-    letterText,
-    buildAfterLetterSupportSection({
-      flow,
-      intakeData,
-      caseType,
-    }),
-    appendixText ? `\n${appendixText}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function buildBezwaarAppendix(data: IntakeFormData): string {
-  const summaryLines = [
-    `- Bestreden besluit: ${buildBestredenBesluitLabel(data)}.`,
-    `- Bestuursorgaan: ${sanitize(data.bestuursorgaan)}.`,
-    `- Kern van het geschil: ${buildDisputeCore(data)}`,
-    `- Gewenste uitkomst: ${buildDesiredOutcome(data)}`,
-  ];
-
-  const groundPoints = splitIntoPoints(data.gronden, 3);
-  if (groundPoints.length > 0) {
-    groundPoints.forEach((ground, index) => {
-      summaryLines.push(`- Belangrijkste bezwaar ${index + 1}: ${ensureSentence(shorten(ground, 170))}`);
-    });
-  } else {
-    summaryLines.push("- Belangrijkste bezwaren: de motivering, zorgvuldigheid en heroverweging van het besluit worden betwist.");
-  }
-
-  if (hasText(data.persoonlijkeOmstandigheden)) {
-    summaryLines.push(`- Impact: ${ensureSentence(shorten(data.persoonlijkeOmstandigheden, 180))}`);
-  }
-
-  const facts: string[] = [];
-  let factIndex = 1;
-  facts.push(`${factIndex++}. Bestuursorgaan: ${sanitize(data.bestuursorgaan)}.`);
-  facts.push(`${factIndex++}. Bestreden besluit: ${buildBestredenBesluitLabel(data)}.`);
-
-  if (hasText(data.kenmerk)) {
-    facts.push(`${factIndex++}. Kenmerk of dossiernummer: ${data.kenmerk}.`);
-  }
-
-  if (hasText(data.besluitSamenvatting)) {
-    facts.push(`${factIndex++}. Volgens de intake houdt het besluit in: ${ensureSentence(shorten(data.besluitSamenvatting, 220))}`);
-  } else if (hasText(data.besluitAnalyse?.besluitInhoud)) {
-    facts.push(`${factIndex++}. Uit de besluituitlezing volgt als kern van het besluit: ${ensureSentence(shorten(data.besluitAnalyse.besluitInhoud, 220))}`);
-  }
-
-  if (hasText(data.persoonlijkeOmstandigheden)) {
-    facts.push(`${factIndex++}. Feitelijke situatie van indiener: ${ensureSentence(shorten(data.persoonlijkeOmstandigheden, 220))}`);
-  }
-
-  if (hasText(data.besluitAnalyse?.termijnen)) {
-    facts.push(`${factIndex++}. Relevante procedure-informatie uit het besluit: ${ensureSentence(shorten(data.besluitAnalyse.termijnen, 180))}`);
-  }
-
-  if (data.files?.besluit?.name) {
-    facts.push(`${factIndex++}. Een kopie van het bestreden besluit is als bestand beschikbaar gesteld: ${data.files.besluit.name}.`);
-  }
-
-  if ((data.files?.bijlagen ?? []).length > 0) {
-    facts.push(`${factIndex++}. Aanvullende meegestuurde stukken: ${(data.files?.bijlagen ?? []).map((file) => file.name).join(", ")}.`);
-  }
-
-  const evidence = buildEvidenceOverview(data);
-  const evidenceLines: string[] = [];
-
-  if (evidence.sent.length > 0) {
-    evidenceLines.push("MEEGEZONDEN STUKKEN", "");
-    evidence.sent.forEach((item, index) => {
-      evidenceLines.push(`${index + 1}. ${item.label}. Relevantie: ${item.relevance}`);
-    });
-  }
-
-  if (evidence.mentionedNotSent.length > 0) {
-    if (evidenceLines.length > 0) {
-      evidenceLines.push("", "WEL GENOEMD, NIET MEEGEZONDEN", "");
-    } else {
-      evidenceLines.push("WEL GENOEMD, NIET MEEGEZONDEN", "");
-    }
-
-    evidence.mentionedNotSent.forEach((item, index) => {
-      evidenceLines.push(`${index + 1}. ${item.label}. Relevantie: ${item.relevance}`);
-    });
-  }
-
-  const sections = [
-    "",
-    "BIJLAGE A - SAMENVATTING VAN HET GESCHIL",
-    "",
-    ...summaryLines,
-    "",
-    "BIJLAGE B - FEITEN EN CONTEXT",
-    "",
-    ...facts,
-    "",
-    "BIJLAGE C - JURIDISCHE BEZWAREN",
-    "",
-  ];
-
-  buildLegalGrounds(data).forEach((ground, index) => {
-    if (index > 0) {
-      sections.push("");
-    }
-    sections.push(ground.title, "");
-    ground.paragraphs.forEach((paragraph) => {
-      sections.push(paragraph, "");
-    });
-    sections.pop();
-  });
-
-  if (evidenceLines.length > 0) {
-    sections.push("", "BIJLAGE D - OVERZICHT BEWIJSSTUKKEN", "", ...evidenceLines);
-  }
-
-  if (hasText(data.doel)) {
-    sections.push(
-      "",
-      "BIJLAGE E - GEWENSTE OPLOSSING",
-      "",
-      `1. Primair verzoekt indiener om ${buildDesiredOutcome(data).replace(/[.!?]+$/, "")}.`,
-      "2. Subsidiair wordt verzocht om een nieuw besluit na volledige heroverweging, met een draagkrachtige motivering en een kenbare belangenafweging."
-    );
-  }
-
-  return sections.join("\n");
+    {
+      title: "Wat de overheid mogelijk zal aanvoeren",
+      items: pairs.map((pair) => pair.counterargument),
+    },
+    {
+      title: "Hoe u daarop kunt reageren",
+      items: pairs.map((pair) => pair.rebuttal),
+    },
+    {
+      title: "Wat gebeurt hierna?",
+      items: [buildProcedureExplanation({ flow, caseType })],
+    },
+    {
+      title: "Waar moet u op letten?",
+      items: buildAttentionItems({ flow, intakeData }),
+    },
+    {
+      title: "Als uw bezwaar/beroep wordt afgewezen",
+      items: [buildRejectedNextStep({ flow, caseType })],
+    },
+    {
+      title: "Praktische tip",
+      items: buildPracticalTips({ intakeData }),
+    },
+  ].filter((section) => section.items.length > 0);
 }
 
 function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
@@ -715,6 +751,10 @@ function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
     `Datum besluit: ${data.datumBesluit ?? "onbekend"}`,
     `Kenmerk: ${data.kenmerk ?? "onbekend"}`,
     `Categorie: ${data.categorie ?? "onbekend"}`,
+    `Onderwerp besluit: ${getDecisionSubject(data) ?? "onbekend"}`,
+    `Beslissing of maatregel: ${getDecisionAction(data) ?? "onbekend"}`,
+    `Belangrijkste reden of motivering: ${getDecisionMotivation(data) ?? "onbekend"}`,
+    `Relevante termijn: ${getDecisionTerm(data) ?? "onbekend"}`,
     `Doel: ${data.doel ?? "onbekend"}`,
     `Gronden uit intake: ${data.gronden ?? "onbekend"}`,
     `Persoonlijke omstandigheden: ${data.persoonlijkeOmstandigheden ?? "geen"}`,
@@ -790,377 +830,6 @@ function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
   return caseFacts;
 }
 
-function usesLateDecisionModule(intakeData: IntakeFormData, caseType?: CaseType): boolean {
-  return (
-    caseType === "niet_tijdig_beslissen" ||
-    Boolean(intakeData.nietTijdigBeslissen) ||
-    intakeData.procedureAdvies === "niet_tijdig_beslissen"
-  );
-}
-
-function buildLateDecisionFallbackLetter(params: {
-  intakeData: IntakeFormData;
-  guardReasons: string[];
-  caseType?: CaseType;
-}): string {
-  const { intakeData, guardReasons, caseType } = params;
-  const isWoo = intakeData.flow === "woo";
-  const procedureLabel = isWoo
-    ? "Woo-verzoek"
-    : intakeData.heeftBezwaarGemaakt || intakeData.eerdereBezwaargronden
-      ? "bezwaar"
-      : "aanvraag";
-
-  if (guardReasons.includes("late_decision_already_decided")) {
-    return [
-      "Op basis van de huidige dossierinformatie kan nog geen veilig concept wegens niet tijdig beslissen worden opgesteld.",
-      "",
-      "Er zijn aanwijzingen dat het bestuursorgaan inmiddels al een inhoudelijk besluit heeft genomen.",
-      "Upload dat latere besluit, zodat de zaak kan worden omgezet naar een inhoudelijk bezwaar of beroep.",
-    ].join("\n");
-  }
-
-  const needsIngebrekestellingDraft = guardReasons.some((reason) =>
-    [
-      "late_decision_missing_ingebrekestelling",
-      "late_decision_receipt_unverified",
-      "late_decision_two_week_wait_unverified",
-      "late_decision_deadline_unverified",
-    ].includes(reason)
-  );
-
-  if (needsIngebrekestellingDraft) {
-    return appendAfterLetterSupport({
-      letterText: [
-      "[Jouw naam]",
-      "[Jouw adres]",
-      "[Postcode en woonplaats]",
-      "[E-mailadres]",
-      "[Telefoonnummer]",
-      "",
-      "Aan:",
-      `${intakeData.bestuursorgaan}`,
-      "[Adres bestuursorgaan]",
-      "[Postcode en plaats]",
-      "",
-      "Betreft: Ingebrekestelling wegens niet tijdig beslissen",
-      "Datum: [vandaag invullen]",
-      "",
-      "Geacht bestuursorgaan,",
-      "",
-      `Hierbij stel ik u in gebreke wegens het uitblijven van een besluit op mijn ${procedureLabel}.`,
-      "",
-      `Volgens mijn gegevens dateert het onderliggende ${procedureLabel} van ${intakeData.datumBesluit ?? "[datum invullen]"}.`,
-      "Voor zover de geldende beslistermijn is verstreken, verzoek ik u alsnog zo spoedig mogelijk een besluit te nemen en de ontvangst van deze ingebrekestelling te bevestigen.",
-      "",
-      "Ik voeg waar mogelijk bewijs van verzending en ontvangst van deze ingebrekestelling toe.",
-      "",
-      "Hoogachtend,",
-      "",
-      "[Jouw naam]",
-    ].join("\n"),
-      flow: intakeData.flow,
-      intakeData,
-      caseType,
-    });
-  }
-
-  return appendAfterLetterSupport({
-    letterText: [
-    "[Jouw naam]",
-    "[Jouw adres]",
-    "[Postcode en woonplaats]",
-    "[E-mailadres]",
-    "[Telefoonnummer]",
-    "",
-    "Aan:",
-    "[Bevoegde rechtbank]",
-    "[Adres rechtbank]",
-    "[Postcode en plaats]",
-    "",
-    "Betreft: Beroep wegens niet tijdig beslissen",
-    "Datum: [vandaag invullen]",
-    "",
-    "Geachte rechtbank,",
-    "",
-    `Hierbij stel ik beroep in wegens het niet tijdig beslissen door ${sanitize(intakeData.bestuursorgaan)} op mijn ${procedureLabel}.`,
-    "",
-    `Volgens mijn gegevens is het onderliggende ${procedureLabel} ingediend op ${intakeData.datumBesluit ?? "[datum invullen]"}.`,
-    "Ook is een ingebrekestelling verzonden en ontvangen, maar een inhoudelijk besluit is uitgebleven.",
-    "",
-    "Ik verzoek de rechtbank vast te stellen dat niet tijdig is beslist en het bestuursorgaan op te dragen alsnog een besluit te nemen binnen een door de rechtbank te bepalen termijn.",
-    "",
-    "Hoogachtend,",
-    "",
-    "[Jouw naam]",
-  ].join("\n"),
-    flow: intakeData.flow,
-    intakeData,
-    caseType,
-  });
-}
-
-export function buildSafeFallbackLetter(params: {
-  flow: Flow;
-  intakeData: IntakeFormData;
-  caseType?: CaseType;
-  guardReasons?: string[];
-}): string {
-  const { flow, intakeData, caseType, guardReasons = [] } = params;
-  const relevantProceduralAttachments = getRelevantProceduralAttachments({
-    flow,
-    intakeData,
-    maxItems: 2,
-  });
-
-  if (usesLateDecisionModule(intakeData, caseType)) {
-    return buildLateDecisionFallbackLetter({
-      intakeData,
-      guardReasons,
-      caseType,
-    });
-  }
-
-  if (flow === "woo") {
-    return appendAfterLetterSupport({
-      letterText: [
-      "[Jouw naam]",
-      "[Jouw adres]",
-      "[Postcode en woonplaats]",
-      "[E-mailadres]",
-      "[Telefoonnummer]",
-      "",
-      "Aan:",
-      `${intakeData.bestuursorgaan}`,
-      "[Adres bestuursorgaan]",
-      "[Postcode en plaats]",
-      "",
-      "Betreft: Woo-verzoek",
-      "Datum: [vandaag invullen]",
-      "",
-      "Geacht bestuursorgaan,",
-      "",
-      "Hierbij verzoek ik op grond van de Wet open overheid om openbaarmaking van documenten over het volgende onderwerp.",
-      "",
-      `${intakeData.wooOnderwerp ?? "[onderwerp invullen]"}`,
-      "",
-      `Periode: ${intakeData.wooPeriode ?? "[periode invullen]"}`,
-      `Gevraagde documenten: ${intakeData.wooDocumenten ?? "[documentsoorten invullen]"}`,
-      "",
-      "Ik verzoek u de documenten, waar mogelijk, digitaal te verstrekken en de ontvangst van dit verzoek te bevestigen.",
-      "",
-      "Hoogachtend,",
-      "",
-      "[Jouw naam]",
-    ].join("\n"),
-      flow,
-      intakeData,
-      caseType,
-    });
-  }
-
-  if (flow === "zienswijze") {
-    return appendAfterLetterSupport({
-      letterText: [
-      "[Jouw naam]",
-      "[Jouw adres]",
-      "[Postcode en woonplaats]",
-      "[E-mailadres]",
-      "[Telefoonnummer]",
-      "",
-      "Aan:",
-      `${intakeData.bestuursorgaan}`,
-      "[Adres bestuursorgaan]",
-      "[Postcode en plaats]",
-      "",
-      `Betreft: Zienswijze over ${intakeData.categorie ?? "het ontwerpbesluit"}`,
-      "Datum: [vandaag invullen]",
-      "",
-      "Geacht bestuursorgaan,",
-      "",
-      "Hierbij dien ik een zienswijze in over het ontwerpbesluit dat op mijn situatie betrekking heeft.",
-      "",
-      `Volgens mijn gegevens gaat het om ${sanitize(intakeData.categorie)}.`,
-      intakeData.besluitSamenvatting
-        ? intakeData.besluitSamenvatting
-        : "De precieze inhoud van het ontwerpbesluit moet nog worden gecontroleerd aan de hand van de stukken.",
-      "",
-      `Mijn belang bij dit ontwerpbesluit is als volgt: ${sanitize(intakeData.persoonlijkeOmstandigheden)}.`,
-      "",
-      `Ik kan mij hiermee niet verenigen omdat ${sanitize(intakeData.gronden)}.`,
-      "",
-      `Ik verzoek u het ontwerpbesluit aan te passen in die zin dat ${sanitize(intakeData.doel)}.`,
-      "",
-      "Hoogachtend,",
-      "",
-      "[Jouw naam]",
-    ].join("\n"),
-      flow,
-      intakeData,
-      caseType,
-    });
-  }
-
-  if (flow === "beroep_zonder_bezwaar") {
-    return appendAfterLetterSupport({
-      letterText: [
-      "[Jouw naam]",
-      "[Jouw adres]",
-      "[Postcode en woonplaats]",
-      "[E-mailadres]",
-      "[Telefoonnummer]",
-      "",
-      "Aan:",
-      "[Bevoegde rechtbank]",
-      "[Adres rechtbank]",
-      "[Postcode en plaats]",
-      "",
-      "Betreft: Beroepschrift",
-      `Kenmerk: ${intakeData.kenmerk ?? "[kenmerk invullen]"}`,
-      `Datum besluit: ${intakeData.datumBesluit ?? "[datum invullen]"}`,
-      "Datum: [vandaag invullen]",
-      "",
-      "Geachte rechtbank,",
-      "",
-      `Hierbij stel ik beroep in tegen het besluit van ${sanitize(intakeData.bestuursorgaan)}.`,
-      "",
-      "Waarom direct beroep mogelijk is",
-      ensureSentence(
-        intakeData.procedureReden ??
-          "Op basis van de beschikbare gegevens lijkt direct beroep open te staan zonder voorafgaande bezwaarprocedure."
-      ),
-      ...(relevantProceduralAttachments.length > 0
-        ? [
-            "",
-            `Ik verwijs daarnaast naar eerder ingediende stukken uit de voorprocedure, waaronder ${relevantProceduralAttachments
-              .map((attachment) => attachment.fileName)
-              .join(", ")}.`,
-          ]
-        : []),
-      "",
-      "Feiten en besluit",
-      `Volgens mijn gegevens betreft het een ${sanitize(intakeData.categorie)}.`,
-      intakeData.besluitSamenvatting
-        ? intakeData.besluitSamenvatting
-        : "De kern van het primaire besluit moet nog nader worden getoetst aan de hand van het besluit zelf.",
-      "",
-      "Beroepsgronden",
-      `Ik ben het niet eens met het besluit omdat ${sanitize(intakeData.gronden)}.`,
-      "",
-      "Verzoek",
-      `Ik verzoek de rechtbank het besluit te vernietigen en te bepalen dat ${sanitize(intakeData.doel)}.`,
-      "",
-      "Hoogachtend,",
-      "",
-      "[Jouw naam]",
-    ].join("\n"),
-      flow,
-      intakeData,
-      caseType,
-    });
-  }
-
-  if (flow === "beroep_na_bezwaar") {
-    return appendAfterLetterSupport({
-      letterText: [
-      "[Jouw naam]",
-      "[Jouw adres]",
-      "[Postcode en woonplaats]",
-      "[E-mailadres]",
-      "[Telefoonnummer]",
-      "",
-      "Aan:",
-      "[Bevoegde rechtbank]",
-      "[Adres rechtbank]",
-      "[Postcode en plaats]",
-      "",
-      "Betreft: Beroepschrift tegen beslissing op bezwaar",
-      `Kenmerk: ${intakeData.kenmerk ?? "[kenmerk invullen]"}`,
-      `Datum beslissing op bezwaar: ${intakeData.datumBesluit ?? "[datum invullen]"}`,
-      "Datum: [vandaag invullen]",
-      "",
-      "Geachte rechtbank,",
-      "",
-      `Hierbij stel ik beroep in tegen de beslissing op bezwaar van ${sanitize(intakeData.bestuursorgaan)}.`,
-      "",
-      "Voorgeschiedenis",
-      intakeData.eerdereBezwaargronden
-        ? `In bezwaar heb ik onder meer aangevoerd dat ${intakeData.eerdereBezwaargronden}.`
-        : "In bezwaar zijn eerder inhoudelijke gronden aangevoerd tegen het primaire besluit.",
-      ...(relevantProceduralAttachments.length > 0
-        ? [
-            `Ter onderbouwing verwijs ik ook naar eerder overgelegde stukken, waaronder ${relevantProceduralAttachments
-              .map((attachment) => attachment.fileName)
-              .join(", ")}.`,
-          ]
-        : []),
-      "",
-      "Waarom de beslissing op bezwaar onjuist is",
-      `De beslissing op bezwaar blijft volgens mij onjuist omdat ${sanitize(intakeData.gronden)}.`,
-      "",
-      "Verzoek",
-      `Ik verzoek de rechtbank de beslissing op bezwaar te vernietigen en te bepalen dat ${sanitize(intakeData.doel)}.`,
-      "",
-      "Hoogachtend,",
-      "",
-      "[Jouw naam]",
-    ].join("\n"),
-      flow,
-      intakeData,
-      caseType,
-    });
-  }
-
-  const subject = intakeData.besluitDocumentType
-    ? `Bezwaarschrift tegen ${intakeData.besluitDocumentType}`
-    : "Bezwaarschrift";
-
-  return appendAfterLetterSupport({
-    letterText: [
-    "[Jouw naam]",
-    "[Jouw adres]",
-    "[Postcode en woonplaats]",
-    "[E-mailadres]",
-    "[Telefoonnummer]",
-    "",
-    "Aan:",
-    `${intakeData.bestuursorgaan}`,
-    "[Adres bestuursorgaan]",
-    "[Postcode en plaats]",
-    "",
-    `Betreft: ${subject}`,
-    `Kenmerk: ${intakeData.kenmerk ?? "[kenmerk invullen]"}`,
-    `Datum besluit: ${intakeData.datumBesluit ?? "[datum invullen]"}`,
-    "Datum: [vandaag invullen]",
-    "",
-    "Geacht bestuursorgaan,",
-    "",
-    "Hierbij maak ik bezwaar tegen het hierboven genoemde besluit.",
-    "",
-    "Feiten en besluit",
-    `Volgens mijn gegevens betreft het een ${intakeData.categorie ?? "bestuursrechtelijk"} besluit van ${intakeData.bestuursorgaan}.`,
-    intakeData.besluitSamenvatting
-      ? intakeData.besluitSamenvatting
-      : "De precieze inhoud van het bestreden besluit moet nog nader worden gecontroleerd aan de hand van het besluit zelf.",
-    "",
-    "Gronden van bezwaar",
-    `Ik ben het niet eens met het besluit omdat ${sanitize(intakeData.gronden)}.`,
-    "Ik verzoek u het besluit opnieuw en volledig te beoordelen en daarbij ook mijn persoonlijke belangen mee te wegen.",
-    "",
-    "Verzoek",
-    `Ik verzoek u het besluit te ${sanitize(intakeData.doel)} of daarvoor een nieuw besluit in de plaats te stellen.`,
-    "",
-    "Hoogachtend,",
-    "",
-    "[Jouw naam]",
-  ].join("\n"),
-    flow,
-    intakeData,
-    caseType,
-    appendixText: buildBezwaarAppendix(intakeData),
-  });
-}
-
 async function buildGuardResult(params: {
   intakeData: IntakeFormData;
   flow: Flow;
@@ -1169,8 +838,8 @@ async function buildGuardResult(params: {
   const { intakeData, flow, references } = params;
   const classification = classifyCase({ flow, intakeData });
   const routing = determineRoute({ flow, caseType: classification.caseType, intakeData });
-  const sourceSet = loadSourceSet(classification.caseType, routing.route);
-  const sourceSetValidation = validateSourceSet(sourceSet);
+  let sourceSet = loadSourceSet(classification.caseType, routing.route);
+  let sourceSetValidation = validateSourceSet(sourceSet);
   const baseMissingFields = getMissingRequiredFields(flow, intakeData);
   const missingFields =
     classification.caseType === "niet_tijdig_beslissen"
@@ -1195,19 +864,28 @@ async function buildGuardResult(params: {
   }
 
   if (classification.reasons.some((reason) => reason.toLowerCase().includes("documentsignalen wijzen op"))) {
-    hardBlockers.push("document_case_type_conflict");
+    softSignals.push("document_case_type_conflict");
   }
 
   if (routing.route === "handmatige_triage" || routing.confidence < 0.6) {
     softSignals.push("route_uncertain");
   }
 
-  if (!sourceSetValidation.ok) {
-    hardBlockers.push(...sourceSetValidation.reasons);
-  }
+  if (!sourceSetValidation.ok || !sourceSet) {
+    softSignals.push(...sourceSetValidation.reasons);
+    if (!sourceSet) {
+      softSignals.push("missing_source_set");
+    }
 
-  if (!sourceSet) {
-    hardBlockers.push("missing_source_set");
+    const generalSourceSet = getGeneralSourceSet(flow, classification.caseType);
+    const generalValidation = validateSourceSet(generalSourceSet);
+    if (generalSourceSet && generalValidation.ok) {
+      sourceSet = generalSourceSet;
+      sourceSetValidation = generalValidation;
+      softSignals.push("general_source_set_used");
+    } else {
+      hardBlockers.push("missing_usable_source_set");
+    }
   }
 
   if (missingFields.length > 0) {
@@ -1219,7 +897,7 @@ async function buildGuardResult(params: {
       ? evaluateLateDecisionGate(intakeData)
       : { hardBlockers: [], softSignals: [], auditTrail: [] };
 
-  hardBlockers.push(...lateDecisionGate.hardBlockers);
+  softSignals.push(...lateDecisionGate.hardBlockers);
   softSignals.push(...lateDecisionGate.softSignals);
 
   const auditTrail = [
@@ -1232,15 +910,11 @@ async function buildGuardResult(params: {
   ];
 
   const generationMode =
-    hardBlockers.length > 0
-      ? "static_fallback"
-      : softSignals.length > 0
-        ? "safe_generic_ai"
-        : "validated";
+    hardBlockers.length > 0 || softSignals.length > 0 ? "dynamic_ai" : "validated";
 
   return {
-    ok: generationMode === "validated",
-    fallbackMode: generationMode === "static_fallback" ? "safe_generic" : "none",
+    ok: hardBlockers.length === 0,
+    fallbackMode: "none",
     generationMode,
     reasons: [...softSignals, ...hardBlockers],
     hardBlockers,
@@ -1263,24 +937,50 @@ async function buildGuardResult(params: {
 
 export async function POST(req: NextRequest) {
   try {
+    const { intakeData: submittedIntakeData, product, flow, deliveryEmail: rawDeliveryEmail } = (await req.json()) as {
+      intakeData: IntakeFormData;
+      product: Product;
+      flow: Flow;
+      deliveryEmail?: string;
+    };
+
+    if (!submittedIntakeData || !product || !flow) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    const intakeData = resolveIntakeDataForGeneration(submittedIntakeData, flow);
+
+    const deliveryEmail =
+      typeof rawDeliveryEmail === "string" ? normalizeDeliveryEmail(rawDeliveryEmail) : "";
+    if (!isValidDeliveryEmail(deliveryEmail)) {
+      return NextResponse.json(
+        { error: "Vul een geldig e-mailadres in voor toezending van de brief." },
+        { status: 400 }
+      );
+    }
+
+    const missingCriticalInfo = getMissingCriticalInfo(flow, intakeData);
+    if (missingCriticalInfo.length > 0) {
+      return NextResponse.json(
+        {
+          status: "needs_more_info",
+          blocking: true,
+          missingFields: missingCriticalInfo,
+          message: NEEDS_MORE_INFO_MESSAGE,
+          error: NEEDS_MORE_INFO_MESSAGE,
+        },
+        { status: 422 }
+      );
+    }
+
     const openai = getOpenAIClient();
     if (!openai) {
       return NextResponse.json(
         { error: "OPENAI_API_KEY ontbreekt op de server." },
         { status: 500 }
-      );
-    }
-
-    const { intakeData, product, flow } = (await req.json()) as {
-      intakeData: IntakeFormData;
-      product: Product;
-      flow: Flow;
-    };
-
-    if (!intakeData || !product || !flow) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
       );
     }
 
@@ -1300,24 +1000,11 @@ export async function POST(req: NextRequest) {
       reviewedAuthorities: guard.reviewedAuthorities,
     });
 
-    if (guard.generationMode === "static_fallback" || !guard.selectedSourceSet) {
-      const fallbackLetter = cleanLetterTextForDelivery(buildSafeFallbackLetter({
-        flow,
-        intakeData,
-        caseType: guard.caseType,
-        guardReasons: guard.reasons,
-      }));
-
-      return NextResponse.json({
-        letter: {
-          letterText: fallbackLetter,
-          references: guard.validatedAuthorities,
-          generationMode: "static_fallback" as const,
-          guardReasons: guard.reasons,
-          caseAnalysis,
-        },
-        guard,
-      });
+    if (!guard.selectedSourceSet) {
+      return NextResponse.json(
+        { error: "De bronconfiguratie voor deze zaak kon niet veilig worden geladen. Probeer opnieuw of neem contact op." },
+        { status: 500 }
+      );
     }
 
     const payload: PromptPayload = {
@@ -1361,9 +1048,9 @@ export async function POST(req: NextRequest) {
       ],
     };
 
-    if (guard.generationMode === "safe_generic_ai") {
+    if (guard.generationMode === "dynamic_ai") {
       payload.disallowedBehaviors.push(
-        "Veilige modus actief: baseer je op algemene Awb-grondslagen en expliciet uit het besluit blijkende gegevens, zonder sectorspecifieke details te raden."
+        "Dossiergerichte voorzichtigheid actief: werk dynamisch met de beschikbare intake, besluitanalyse en juridische context, zonder ontbrekende details te raden."
       );
     }
 
@@ -1384,39 +1071,96 @@ export async function POST(req: NextRequest) {
     if (!cleanedLetterText.trim() || outputViolations.length > 0) {
       const violationReasons =
         outputViolations.length > 0 ? outputViolations : ["empty_generation_output"];
-      const fallbackLetter = cleanLetterTextForDelivery(buildSafeFallbackLetter({
+      const retryText = await generateLetter(openai, buildGuardRetryPrompt({
+        basePrompt: prompt,
+        violations: violationReasons,
+      }));
+      const cleanedRetryText = cleanLetterTextForDelivery(retryText);
+      const retryViolations = findLetterGuardViolations({
+        letterText: cleanedRetryText,
+        intakeData,
+        validatedAuthorities: guard.validatedAuthorities,
+      });
+
+      if (!cleanedRetryText.trim() || retryViolations.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "De brief kon niet veilig genoeg worden gegenereerd met de beschikbare gegevens. Vul de intake aan met concretere gronden, datum/termijn of besluitpassages en probeer opnieuw.",
+            guard: {
+              ...guard,
+              ok: false,
+              fallbackMode: "none",
+              generationMode: "dynamic_ai" as const,
+              reasons: [...guard.reasons, ...violationReasons, ...retryViolations],
+              softSignals: [...guard.softSignals, ...violationReasons, ...retryViolations],
+            },
+          },
+          { status: 422 }
+        );
+      }
+
+      const supportSections = buildAfterLetterSupportSections({
         flow,
         intakeData,
         caseType: guard.caseType,
+      });
+      const generatedLetter = {
+        letterText: cleanedRetryText,
+        references: guard.validatedAuthorities,
+        generationMode: "dynamic_ai" as const,
         guardReasons: [...guard.reasons, ...violationReasons],
-      }));
+        caseAnalysis,
+        supportSections,
+      };
+      const emailDelivery = await sendGeneratedLetterEmail({
+        to: deliveryEmail,
+        flow,
+        product,
+        intakeData,
+        generatedLetter,
+      });
 
       return NextResponse.json({
         letter: {
-          letterText: fallbackLetter,
-          references: guard.validatedAuthorities,
-          generationMode: "static_fallback" as const,
-          guardReasons: [...guard.reasons, ...violationReasons],
-          caseAnalysis,
+          ...generatedLetter,
+          emailDelivery,
         },
         guard: {
           ...guard,
           ok: false,
-          fallbackMode: "safe_generic",
-          generationMode: "static_fallback" as const,
+          fallbackMode: "none",
+          generationMode: "dynamic_ai" as const,
           reasons: [...guard.reasons, ...violationReasons],
-          hardBlockers: [...guard.hardBlockers, ...violationReasons],
+          softSignals: [...guard.softSignals, ...violationReasons],
         },
       });
     }
 
+    const generatedLetter = {
+      letterText: cleanedLetterText,
+      references: guard.validatedAuthorities,
+      generationMode: guard.generationMode,
+      guardReasons: guard.reasons,
+      caseAnalysis,
+      supportSections: buildAfterLetterSupportSections({
+        flow,
+        intakeData,
+        caseType: guard.caseType,
+      }),
+    };
+    const emailDelivery = await sendGeneratedLetterEmail({
+      to: deliveryEmail,
+      flow,
+      product,
+      intakeData,
+      generatedLetter,
+    });
+
     return NextResponse.json({
       letter: {
-        letterText: cleanedLetterText,
-        references: guard.validatedAuthorities,
-        generationMode: guard.generationMode,
-        guardReasons: guard.reasons,
-        caseAnalysis,
+        ...generatedLetter,
+        emailDelivery,
       },
       guard,
     });

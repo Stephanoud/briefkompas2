@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { getFlowDocumentLabel, getFlowLabel, isFlow } from "@/lib/flow";
@@ -22,13 +22,18 @@ import {
   Flow,
   GroundSupportEntry,
   GeneratedLetter,
+  GeneratedLetterSupportSection,
   IntakeFormData,
   LabeledLegalStatement,
-  LetterGenerationMode,
 } from "@/types";
 import { ReferenceItem } from "@/src/types/references";
 
 type DownloadFormat = "docx" | "pdf";
+
+type AnalysisTableRow = {
+  label: string;
+  content: ReactNode | null;
+};
 
 function getLetterChecklist(flow: Flow): string[] {
   if (flow === "woo") {
@@ -162,62 +167,74 @@ function getDecisionStatusPresentation(status?: DecisionAnalysisStatus) {
   }
 
   return {
-    title: "Alleen intake gebruikt",
+    title: "Besluitinformatie aanvullen",
     type: "warning" as const,
     description:
-      "Het besluit kon niet voldoende worden uitgelezen. De brief steunt daarom vooral op je intake. Upload een scherpere afbeelding of een doorzoekbare PDF als de inhoud ontbreekt.",
+      "Het besluit kon niet volledig worden uitgelezen. Verplichte kerngegevens moeten zijn aangevuld voordat de brief wordt gemaakt.",
   };
 }
 
-function getGenerationModePresentation(mode?: LetterGenerationMode) {
-  if (mode === "validated") {
-    return null;
-  }
-
-  if (mode === "safe_generic_ai") {
-    return {
-      title: "Veilige algemene juridische modus",
-      type: "info" as const,
-      description:
-        "De brief is wel met AI opgesteld, maar zonder sectorspecifieke aannames. De argumentatie leunt in die situatie vooral op algemene Awb-grondslagen en de gegevens die wel zeker zijn.",
-    };
-  }
-
-  return {
-    title: "Statische fallback gebruikt",
-    type: "warning" as const,
-    description:
-      "Door ontbrekende of onzekere gegevens kon geen volledige AI-generatie worden uitgevoerd. De tekst is daarom een veilige basisversie die je extra zorgvuldig moet nalopen.",
-  };
-}
-
-function renderDecisionRow(label: string, value?: string | null) {
+function renderTextCell(value?: string | null) {
   if (!value) {
     return null;
   }
 
   return (
-    <div className="border-b border-[var(--border)] py-2 last:border-b-0">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">{label}</p>
-      <p className="mt-1 text-sm leading-6 text-[var(--foreground)]">{value}</p>
-    </div>
+    <p className="text-sm leading-6 text-[var(--foreground)]">
+      {value}
+    </p>
   );
 }
 
-function renderStringList(title: string, items?: string[]) {
+function renderListCell(items?: string[]) {
   if (!items || items.length === 0) {
     return null;
   }
 
   return (
-    <div className="py-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">{title}</p>
-      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-[var(--foreground)]">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    </div>
+    <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-[var(--foreground)]">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+function renderAnalysisTable(params: {
+  title: string;
+  subtitle?: string;
+  rows: AnalysisTableRow[];
+}) {
+  const rows = params.rows.filter((row) => row.content);
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h4 className="text-base font-semibold text-[var(--foreground)]">{params.title}</h4>
+        {params.subtitle && (
+          <p className="mt-1 text-sm leading-5 text-[var(--muted)]">{params.subtitle}</p>
+        )}
+      </div>
+      <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
+        <div className="max-h-80 overflow-y-auto">
+          <table className="min-w-full table-fixed border-collapse">
+            <tbody className="divide-y divide-[var(--border)]">
+              {rows.map((row) => (
+                <tr key={row.label} className="align-top">
+                  <th className="w-44 bg-[var(--surface-soft)] px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                    {row.label}
+                  </th>
+                  <td className="px-3 py-3">{row.content}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -311,133 +328,211 @@ function renderAdditionalArgument(argument: AdditionalLegalArgument) {
   );
 }
 
-function renderAnalysisCard(analysis?: DecisionAnalysisSummary | null) {
-  if (!analysis) {
+function shortenAnalysisText(value: string, maxLength = 150): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function firstAnalysisText(...values: Array<string | null | undefined>): string | null {
+  return values.find((value): value is string => Boolean(value?.trim())) ?? null;
+}
+
+function renderCompactSection(title: string, items: string[]) {
+  if (items.length === 0) {
     return null;
   }
 
   return (
-    <Card title="Wat uit het besluit is gehaald" subtitle="Deze gegevens zijn gebruikt als basis voor de brief">
-      <div className="space-y-1">
-        {renderDecisionRow("Bestuursorgaan", analysis.bestuursorgaan)}
-        {renderDecisionRow("Onderwerp", analysis.onderwerp)}
-        {renderDecisionRow("Rechtsgrond", analysis.rechtsgrond)}
-        {renderDecisionRow("Besluitinhoud", analysis.besluitInhoud)}
-        {renderDecisionRow("Termijnen", analysis.termijnen)}
-        {renderDecisionRow("Rechtsmiddelenclausule", analysis.rechtsmiddelenclausule)}
-        {analysis.dragendeOverwegingen && analysis.dragendeOverwegingen.length > 0 && (
-          <div className="py-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-              Dragende overwegingen
-            </p>
-            <div className="mt-2 space-y-3">
+    <section className="space-y-1">
+      <h4 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">{title}</h4>
+      <ul className="list-disc space-y-1 pl-5 text-sm leading-5 text-[var(--muted-strong)]">
+        {items.map((item) => (
+          <li key={`${title}-${item}`}>{shortenAnalysisText(item)}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function renderFullDecisionAnalysis(analysis?: DecisionAnalysisSummary | null) {
+  if (!analysis) {
+    return null;
+  }
+
+  return renderAnalysisTable({
+    title: "Wat uit het besluit is gehaald",
+    subtitle: "Deze gegevens zijn gebruikt als basis voor de brief",
+    rows: [
+      { label: "Bestuursorgaan", content: renderTextCell(analysis.bestuursorgaan) },
+      { label: "Onderwerp", content: renderTextCell(analysis.onderwerp) },
+      { label: "Rechtsgrond", content: renderTextCell(analysis.rechtsgrond) },
+      { label: "Besluitinhoud", content: renderTextCell(analysis.besluitInhoud) },
+      { label: "Termijnen", content: renderTextCell(analysis.termijnen) },
+      { label: "Rechtsmiddelenclausule", content: renderTextCell(analysis.rechtsmiddelenclausule) },
+      {
+        label: "Dragende overwegingen",
+        content:
+          analysis.dragendeOverwegingen && analysis.dragendeOverwegingen.length > 0 ? (
+            <div className="space-y-3">
               {analysis.dragendeOverwegingen.map((item) => (
-                <div key={`${item.passage}-${item.duiding}`} className="rounded-2xl border border-[var(--border)] bg-white p-3">
+                <div key={`${item.passage}-${item.duiding}`} className="rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3">
                   <p className="text-sm leading-6 text-[var(--foreground)]">{item.duiding}</p>
                   <p className="mt-2 text-xs leading-5 text-[var(--muted)]">Passage: {item.passage}</p>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-        {renderStringList("Wettelijke grondslagen", analysis.wettelijkeGrondslagen)}
-        {renderStringList("Procedurele aanwijzingen", analysis.procedureleAanwijzingen)}
-        {renderStringList("Beleidsverwijzingen", analysis.beleidsReferenties)}
-        {renderStringList("Jurisprudentieverwijzingen", analysis.jurisprudentieReferenties)}
-        {renderStringList("Bijlageverwijzingen", analysis.bijlageReferenties)}
-        {renderStringList("Bijlagenlijst", analysis.bijlagenLijst)}
-        {renderStringList("Inventarislijst of documenttabel", analysis.inventarislijstOfDocumenttabel)}
-        {renderStringList("Verwijzingen naar eerdere correspondentie", analysis.correspondentieVerwijzingen)}
-        {analysis.aandachtspunten && analysis.aandachtspunten.length > 0 && (
-          <div className="py-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-              Aandachtspunten
-            </p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-[var(--foreground)]">
-              {analysis.aandachtspunten.map((point) => (
-                <li key={point}>{point}</li>
+          ) : null,
+      },
+      { label: "Wettelijke grondslagen", content: renderListCell(analysis.wettelijkeGrondslagen) },
+      { label: "Procedurele aanwijzingen", content: renderListCell(analysis.procedureleAanwijzingen) },
+      { label: "Beleidsverwijzingen", content: renderListCell(analysis.beleidsReferenties) },
+      { label: "Jurisprudentieverwijzingen", content: renderListCell(analysis.jurisprudentieReferenties) },
+      { label: "Bijlageverwijzingen", content: renderListCell(analysis.bijlageReferenties) },
+      { label: "Bijlagenlijst", content: renderListCell(analysis.bijlagenLijst) },
+      {
+        label: "Inventarislijst of documenttabel",
+        content: renderListCell(analysis.inventarislijstOfDocumenttabel),
+      },
+      {
+        label: "Eerdere correspondentie",
+        content: renderListCell(analysis.correspondentieVerwijzingen),
+      },
+      { label: "Aandachtspunten", content: renderListCell(analysis.aandachtspunten) },
+    ],
+  });
+}
+
+function renderSupportSections(sections?: GeneratedLetterSupportSection[]) {
+  if (!sections || sections.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card
+      title="Aandachtsblok"
+      subtitle="Deze punten horen niet bij de te verzenden brief en worden niet meegekopieerd of meegeexporteerd"
+    >
+      <div className="grid gap-3 md:grid-cols-2">
+        {sections.map((section) => (
+          <section key={section.title} className="rounded-xl border border-[var(--border)] bg-white p-4">
+            <h4 className="text-sm font-semibold text-[var(--foreground)]">{section.title}</h4>
+            <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-[var(--muted-strong)]">
+              {section.items.map((item) => (
+                <li key={item}>{item}</li>
               ))}
             </ul>
-          </div>
-        )}
+          </section>
+        ))}
       </div>
     </Card>
   );
 }
 
-function renderCaseAnalysisCard(caseAnalysis?: CaseFileAnalysisSummary | null) {
+function renderFullCaseAnalysis(caseAnalysis?: CaseFileAnalysisSummary | null) {
   if (!caseAnalysis) {
     return null;
   }
 
-  return (
-    <Card title="Zaakanalyse" subtitle="Deze samenvatting helpt om te zien waar de brief op leunt en waar nog frictie zit">
-      <div className="space-y-1">
-        {renderDecisionRow("Module", caseAnalysis.module)}
-        {renderDecisionRow("Procedurefase", caseAnalysis.procedurefase)}
-        {renderDecisionRow("Kernconflict", caseAnalysis.kernconflict)}
-        {renderDecisionRow("Toelichting", caseAnalysis.toelichting)}
-        {renderStringList("Primaire procesrisico's", caseAnalysis.primaireProcesrisicos)}
-        {renderStringList("Ontbrekende informatie", caseAnalysis.ontbrekendeInformatie)}
-        {renderStringList("Gerichte checkvragen", caseAnalysis.gerichteCheckvragen)}
-        {renderStringList("Waar nog onzekerheid zit", caseAnalysis.onzekerheden)}
-        {caseAnalysis.workflowProfile && (
-          <>
-            {renderStringList(
-              "Workflow: hallucinatieguards",
-              caseAnalysis.workflowProfile.hallucination_guards
-            )}
-            {renderStringList(
-              "Workflow: pre-output-checks",
-              caseAnalysis.workflowProfile.pre_output_checks
-            )}
-            {renderStringList(
-              "Workflow: abort of redirect",
-              caseAnalysis.workflowProfile.abort_or_redirect_conditions
-            )}
-          </>
-        )}
-        {caseAnalysis.jurisprudentieControle && (
-          <div className="border-b border-[var(--border)] py-2 last:border-b-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-              Jurisprudentiecontrole
-            </p>
-            <p className="mt-1 text-sm leading-6 text-[var(--foreground)]">
-              Verified: {caseAnalysis.jurisprudentieControle.verified} | Mixed: {caseAnalysis.jurisprudentieControle.mixed} | Not usable: {caseAnalysis.jurisprudentieControle.notUsable}
-            </p>
-          </div>
-        )}
-        {caseAnalysis.labeledStellingen && caseAnalysis.labeledStellingen.length > 0 && (
-          <div className="py-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-              Gelabelde juridische stellingen
-            </p>
-            <div className="mt-2 space-y-3">
+  return renderAnalysisTable({
+    title: "Zaakanalyse",
+    subtitle: "Samenvatting van zaaktype, risico's en juridische aanknopingspunten",
+    rows: [
+      { label: "Module", content: renderTextCell(caseAnalysis.module) },
+      { label: "Procedurefase", content: renderTextCell(caseAnalysis.procedurefase) },
+      { label: "Kernconflict", content: renderTextCell(caseAnalysis.kernconflict) },
+      { label: "Toelichting", content: renderTextCell(caseAnalysis.toelichting) },
+      { label: "Primaire procesrisico's", content: renderListCell(caseAnalysis.primaireProcesrisicos) },
+      { label: "Ontbrekende informatie", content: renderListCell(caseAnalysis.ontbrekendeInformatie) },
+      { label: "Gerichte checkvragen", content: renderListCell(caseAnalysis.gerichteCheckvragen) },
+      { label: "Waar nog onzekerheid zit", content: renderListCell(caseAnalysis.onzekerheden) },
+      {
+        label: "Gelabelde juridische stellingen",
+        content:
+          caseAnalysis.labeledStellingen && caseAnalysis.labeledStellingen.length > 0 ? (
+            <div className="space-y-3">
               {caseAnalysis.labeledStellingen.map((item) => renderLabeledStatement(item))}
             </div>
-          </div>
-        )}
-        {caseAnalysis.relevanteAanvullendeArgumenten && caseAnalysis.relevanteAanvullendeArgumenten.length > 0 && (
-          <div className="py-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-              Relevante aanvullende argumenten
-            </p>
-            <div className="mt-2 space-y-3">
+          ) : null,
+      },
+      {
+        label: "Aanvullende argumenten",
+        content:
+          caseAnalysis.relevanteAanvullendeArgumenten &&
+          caseAnalysis.relevanteAanvullendeArgumenten.length > 0 ? (
+            <div className="space-y-3">
               {caseAnalysis.relevanteAanvullendeArgumenten.map((argument) => renderAdditionalArgument(argument))}
             </div>
-          </div>
-        )}
-        {caseAnalysis.groundsMatrix && caseAnalysis.groundsMatrix.length > 0 && (
-          <div className="py-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
-              Grondmatrix
-            </p>
-            <div className="mt-2 space-y-3">
+          ) : null,
+      },
+      {
+        label: "Grondmatrix",
+        content:
+          caseAnalysis.groundsMatrix && caseAnalysis.groundsMatrix.length > 0 ? (
+            <div className="space-y-3">
               {caseAnalysis.groundsMatrix.map((ground) => renderGroundCard(ground))}
             </div>
-          </div>
-        )}
+          ) : null,
+      },
+    ],
+  });
+}
+
+function renderCompactAnalysisCard(params: {
+  flow: Flow;
+  intakeData?: IntakeFormData | null;
+  caseAnalysis?: CaseFileAnalysisSummary | null;
+}) {
+  const { flow, intakeData, caseAnalysis } = params;
+  const decisionAnalysis = intakeData?.besluitAnalyse;
+
+  if (!decisionAnalysis && !caseAnalysis) {
+    return null;
+  }
+
+  const summary = firstAnalysisText(
+    intakeData?.besluitSamenvatting,
+    decisionAnalysis?.besluitInhoud,
+    caseAnalysis?.kernconflict
+  );
+  const coreData = [
+    intakeData?.datumBesluit ? `Datum: ${intakeData.datumBesluit}` : null,
+    intakeData?.bestuursorgaan || decisionAnalysis?.bestuursorgaan
+      ? `Bestuursorgaan: ${intakeData?.bestuursorgaan ?? decisionAnalysis?.bestuursorgaan}`
+      : null,
+    `Procedure: ${getFlowLabel(flow)}`,
+    decisionAnalysis?.onderwerp ? `Onderwerp: ${decisionAnalysis.onderwerp}` : null,
+    decisionAnalysis?.besluitInhoud ? `Beslissing: ${decisionAnalysis.besluitInhoud}` : null,
+    decisionAnalysis?.termijnen ? `Termijn: ${decisionAnalysis.termijnen}` : null,
+  ].filter((item): item is string => Boolean(item));
+  const hooks = [
+    ...(caseAnalysis?.groundsMatrix?.map((ground) => ground.title) ?? []),
+    ...(caseAnalysis?.relevanteAanvullendeArgumenten?.map((argument) => argument.principle) ?? []),
+    ...(decisionAnalysis?.aandachtspunten ?? []),
+  ].slice(0, 4);
+  const missing = (caseAnalysis?.ontbrekendeInformatie ?? []).filter(Boolean).slice(0, 3);
+
+  return (
+    <Card title="Analyse" subtitle="Compacte samenvatting van besluit, intake en juridische aanknopingspunten">
+      <div className="max-h-48 overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-4 text-sm">
+        <div className="space-y-4">
+          {renderCompactSection("Korte samenvatting besluit", summary ? [summary] : [])}
+          {renderCompactSection("Herkende kerngegevens", coreData)}
+          {renderCompactSection("Mogelijke aanknopingspunten", hooks)}
+          {renderCompactSection("Ontbrekende informatie", missing)}
+        </div>
       </div>
+
+      <details className="mt-3 rounded-xl border border-[var(--border)] bg-[var(--surface-soft)] p-3 text-sm">
+        <summary className="cursor-pointer font-semibold text-[var(--foreground)]">Toon volledige analyse</summary>
+        <div className="mt-3 space-y-4">
+          {renderFullDecisionAnalysis(decisionAnalysis)}
+          {renderFullCaseAnalysis(caseAnalysis)}
+        </div>
+      </details>
     </Card>
   );
 }
@@ -533,7 +628,6 @@ export default function ResultPage() {
 
   const generatedReferences: ReferenceItem[] = resolvedGeneratedLetter?.references || [];
   const decisionStatus = getDecisionStatusPresentation(intakeData?.besluitAnalyseStatus);
-  const generationMode = getGenerationModePresentation(resolvedGeneratedLetter?.generationMode);
   const referencesSubtitle =
     flow === "bezwaar"
       ? "Deze bronnen blijven alleen zichtbaar in de interface en worden niet als losse restbijlage meegeexporteerd."
@@ -616,15 +710,35 @@ export default function ResultPage() {
             </Alert>
           )}
 
-          {intakeData?.besluitAnalyse && renderAnalysisCard(intakeData.besluitAnalyse)}
+          {renderCompactAnalysisCard({
+            flow,
+            intakeData,
+            caseAnalysis: resolvedGeneratedLetter?.caseAnalysis,
+          })}
 
-          {resolvedGeneratedLetter?.caseAnalysis && renderCaseAnalysisCard(resolvedGeneratedLetter.caseAnalysis)}
-
-          {generationMode && (
-            <Alert type={generationMode.type} title={generationMode.title}>
-              {generationMode.description}
+          {resolvedGeneratedLetter?.emailDelivery && (
+            <Alert
+              type={
+                resolvedGeneratedLetter.emailDelivery.status === "sent"
+                  ? "success"
+                  : resolvedGeneratedLetter.emailDelivery.status === "failed"
+                    ? "warning"
+                    : "info"
+              }
+              title={
+                resolvedGeneratedLetter.emailDelivery.status === "sent"
+                  ? "E-mail verzonden"
+                  : resolvedGeneratedLetter.emailDelivery.status === "failed"
+                    ? "E-mail niet verzonden"
+                    : "E-mail nog niet actief"
+              }
+            >
+              {resolvedGeneratedLetter.emailDelivery.message ??
+                `Status voor ${resolvedGeneratedLetter.emailDelivery.to}: ${resolvedGeneratedLetter.emailDelivery.status}`}
             </Alert>
           )}
+
+          {renderSupportSections(resolvedGeneratedLetter?.supportSections)}
 
           <Card
             title={`Je ${getFlowDocumentLabel(flow)}`}
@@ -717,7 +831,7 @@ export default function ResultPage() {
                   generatedLetter={{
                     ...(resolvedGeneratedLetter ?? {
                       references: [],
-                      generationMode: "static_fallback",
+                      generationMode: "validated",
                       guardReasons: [],
                     }),
                     letterText: cleanLetterTextForDelivery(letterText),

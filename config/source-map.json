@@ -137,8 +137,7 @@
       "requireHoldingExtraction": true
     },
     "routing": {
-      "decisionDocumentOverridesGenericWebsite": true,
-      "fallbackToSafeDraftOnConflict": true
+      "decisionDocumentOverridesGenericWebsite": true
     }
   }
 }
