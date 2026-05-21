@@ -180,6 +180,45 @@ test.describe("Contextual intake follow-up", () => {
     await expect(page.getByText(/(Wat is de soort besluit|Om wat voor besluit gaat het precies)/)).toHaveCount(0);
   });
 
+  test("chatbot vraagt zacht naar procespositie zonder extra verplichte metadata", async ({ page }) => {
+    await mockDecisionExtraction(page, "Gemeente Amsterdam");
+    await openAuthenticatedPage(page, "/intake/bezwaar");
+    await uploadMockDecision(page);
+
+    const answerInput = page.getByPlaceholder("Typ je antwoord...");
+    const nextButton = page.getByRole("button", { name: "Volgende" });
+
+    await answerInput.fill("Ik wil een nieuw besluit waarin de vergunning alsnog wordt verleend.");
+    await nextButton.click();
+
+    await answerInput.fill(
+      "Het bezwaar moet meenemen dat de feiten in het besluit niet kloppen, dat het onderzoek naar de omgeving onvolledig is en dat mijn belangen onvoldoende zijn afgewogen."
+    );
+    await nextButton.click();
+
+    await answerInput.fill("De weigering raakt mijn woonsituatie en mijn planning, maar verder geen aparte omstandigheden.");
+    await nextButton.click();
+
+    await expect(page.getByText(/Om je procespositie goed te duiden/)).toBeVisible();
+    await expect(page.getByText(/Weet je het niet/)).toBeVisible();
+  });
+
+  test("chatcorrectie naar beroep wisselt route en gebruikt beroepschrift-taal", async ({ page }) => {
+    await mockDecisionExtraction(page, "Gemeente Amsterdam");
+    await openAuthenticatedPage(page, "/intake/bezwaar");
+    await uploadMockDecision(page);
+
+    const answerInput = page.getByPlaceholder("Typ je antwoord...");
+    const nextButton = page.getByRole("button", { name: "Volgende" });
+
+    await answerInput.fill("Ik wil beroep indienen, niet bezwaar maken");
+    await nextButton.click();
+
+    await expect(page.getByText("Helder. We gaan verder met beroep zonder bezwaar.")).toBeVisible();
+    await expect(page.getByText(/(Welke punten|Wat) moet het beroepschrift zeker meenemen/)).toBeVisible();
+    await expect(page.getByText(/Wat moet het bezwaar zeker meenemen/)).toHaveCount(0);
+  });
+
   test("bevestigde tracebesluit-metadata voorkomt de soort-besluitvraag uit de screenshot", async ({ page }) => {
     await mockTraceDecisionExtraction(page);
     await openAuthenticatedPage(page, "/intake/bezwaar");

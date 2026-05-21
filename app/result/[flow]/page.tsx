@@ -93,7 +93,7 @@ function getDeliveryChecklist(flow: Flow): string[] {
 
   if (flow === "zienswijze") {
     return [
-      "controleer de reactietermijn uit de publicatie of begeleidende brief",
+      "controleer de mogelijke reactietermijn uit de publicatie of begeleidende brief",
       "voeg relevante stukken toe als die je zienswijze ondersteunen",
       "bewaar een kopie van je zienswijze en het verzendbewijs",
       "dien zo mogelijk in via het kanaal dat in de publicatie of brief staat",
@@ -105,7 +105,7 @@ function getDeliveryChecklist(flow: Flow): string[] {
       "voeg een kopie van het besluit of de beslissing op bezwaar toe",
       "stuur relevante bewijsstukken mee als je die hebt",
       "bewaar een kopie van het beroepschrift en het verzendbewijs",
-      "controleer altijd de beroepstermijn in het besluit of de beslissing op bezwaar",
+      "controleer de mogelijke beroepstermijn in het besluit of de beslissing op bezwaar",
     ];
   }
 
@@ -113,7 +113,7 @@ function getDeliveryChecklist(flow: Flow): string[] {
     "voeg een kopie van de beslissing toe en stuur bewijsstukken mee als je die hebt",
     "verstuur bij voorkeur aangetekend en per gewone post",
     "bewaar een kopie van je brief, je verzendbewijs en het ontvangstbewijs",
-    "is het de laatste dag van de termijn, breng de brief dan zelf langs of controleer of online indienen mogelijk is",
+    "lijkt de termijn krap, breng de brief dan zelf langs of controleer of online indienen mogelijk is",
   ];
 }
 
@@ -138,14 +138,14 @@ function getDeadlineHint(flow: Flow): string {
   }
 
   if (flow === "zienswijze") {
-    return "Controleer altijd de reactietermijn die bij het ontwerpbesluit of de publicatie staat.";
+    return "Termijnen zijn een aandachtspunt. Controleer de mogelijke reactietermijn die bij het ontwerpbesluit of de publicatie staat.";
   }
 
   if (flow === "beroep_zonder_bezwaar" || flow === "beroep_na_bezwaar") {
-    return "Beroepstermijnen zijn strikt. Controleer altijd de termijn in het besluit of de beslissing op bezwaar.";
+    return "Termijnen zijn een aandachtspunt. Controleer de mogelijke termijn in het besluit of de beslissing op bezwaar.";
   }
 
-  return "Controleer altijd welke termijn in het besluit of de rechtsmiddelenclausule staat.";
+  return "Termijnen zijn een aandachtspunt. Controleer welke mogelijke termijn in het besluit of de rechtsmiddelenclausule staat.";
 }
 
 function getDecisionStatusPresentation(status?: DecisionAnalysisStatus) {
@@ -568,7 +568,6 @@ export default function ResultPage() {
   const [manualReferences, setManualReferences] = useState(() => (flow ? readStoredResultDraft(flow) : ""));
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat | null>(null);
   const [copyTextStatus, setCopyTextStatus] = useState<"idle" | "done" | "error">("idle");
-  const [confirmed, setConfirmed] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
@@ -886,19 +885,6 @@ export default function ResultPage() {
             het verzendt. BriefKompas levert geen juridisch advies.
           </Alert>
 
-          <Card>
-            <label className="flex cursor-pointer items-start gap-3">
-              <input
-                type="checkbox"
-                checked={confirmed}
-                onChange={(e) => setConfirmed(e.target.checked)}
-                className="mt-1 cursor-pointer rounded"
-              />
-              <span className="text-sm text-[var(--muted-strong)]">
-                Ik heb de brief gecontroleerd en ben zelf verantwoordelijk voor de inhoud en verzending.
-              </span>
-            </label>
-          </Card>
         </div>
 
         <div className="space-y-4">

@@ -268,7 +268,7 @@ function buildRelevantAdditionalArguments(params: {
   );
   const decisionText = normalizeWhitespace(decisionSegments.join(" "));
   const allText = normalizeWhitespace(
-    [...buildAnalysisSegments(intakeData), intakeData.waaromBelanghebbende]
+    buildAnalysisSegments(intakeData)
       .filter(Boolean)
       .join(" ")
   );
@@ -1119,7 +1119,14 @@ function buildAlertDrivenNotes(params: {
 
 function hasClearProcessPosition(intakeData: IntakeFormData, knownText: string): boolean {
   if (hasText(intakeData.waaromBelanghebbende)) {
-    return true;
+    const positionText = normalizeWhitespace(intakeData.waaromBelanghebbende).toLowerCase();
+    if (/\b(weet ik niet|onbekend|geen idee|twijfel|onduidelijk|niet zeker)\b/.test(positionText)) {
+      return false;
+    }
+
+    return /\b(aanvrager|verzoeker|bezwaarmaker|appellant|eiser|belanghebbende|geadresseerde|aangeschrevene|vergunninghouder|eigenaar|huurder|bewoner|omwonende|buur|ondernemer|bedrijf|werkgever|werknemer|uitkering|boete|last opgelegd|mijn aanvraag|mijn vergunning|mijn woning|mijn perceel|mijn bedrijf|mijn inkomen|rechtstreeks|direct geraakt|nabij|naast)\b/.test(
+      positionText
+    );
   }
 
   return /(aanvrager|verzoeker|bezwaarmaker|appellant|belanghebbende|aangeschrevene|last opgelegd)/.test(knownText);

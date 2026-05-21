@@ -313,6 +313,7 @@ const validationMessageByStepId: Record<string, string> = {
   categorie: "Kies een categorie: boete, uitkering, belasting, vergunning of overig.",
   ontwerpbesluit: "Beschrijf kort en concreet waar het ontwerpbesluit over gaat.",
   belangen: "Omschrijf welke belangen van jou door dit ontwerp of besluit worden geraakt.",
+  procespositie: "Omschrijf kort hoe dit besluit of deze zaak jou raakt, of typ 'weet ik niet'.",
   doel: "Geef je doel, bijvoorbeeld: intrekken, herzien, aanpassen of matigen.",
   gronden: "Geef in ieder geval kort aan waarom je het niet eens bent met het besluit.",
   eerdere_bezwaargronden: "Vat kort samen welke hoofdpunten je eerder in bezwaar hebt aangevoerd.",
@@ -364,6 +365,14 @@ export const bezwaarSteps: ChatStep[] = [
     required: false,
     validation: () => true,
   },
+  {
+    id: "procespositie",
+    question:
+      "Om je procespositie goed te duiden: welke relatie heb je tot het besluit of de zaak? Bijvoorbeeld aanvrager, geadresseerde, eigenaar, omwonende, verzoeker of direct geraakt door gevolgen. Weet je het niet, typ dan 'weet ik niet'.",
+    field: "waaromBelanghebbende",
+    required: false,
+    validation: (value) => normalizeInput(value).length >= 2,
+  },
 ];
 
 export const zienswijzeSteps: ChatStep[] = [
@@ -407,6 +416,14 @@ export const zienswijzeSteps: ChatStep[] = [
     required: true,
     validation: (value) => normalizeInput(value).length >= 5,
   },
+  {
+    id: "procespositie",
+    question:
+      "Om je procespositie goed te duiden: welke relatie heb je tot het ontwerpbesluit of de zaak? Bijvoorbeeld omwonende, eigenaar, ondernemer, aanvrager of anders direct geraakt. Weet je het niet, typ dan 'weet ik niet'.",
+    field: "waaromBelanghebbende",
+    required: false,
+    validation: (value) => normalizeInput(value).length >= 2,
+  },
 ];
 
 export const beroepZonderBezwaarSteps: ChatStep[] = [
@@ -449,6 +466,14 @@ export const beroepZonderBezwaarSteps: ChatStep[] = [
     field: "persoonlijkeOmstandigheden",
     required: false,
     validation: () => true,
+  },
+  {
+    id: "procespositie",
+    question:
+      "Om je procespositie goed te duiden: welke relatie heb je tot het besluit of de zaak? Bijvoorbeeld aanvrager, geadresseerde, eigenaar, omwonende, verzoeker of anders direct geraakt. Weet je het niet, typ dan 'weet ik niet'.",
+    field: "waaromBelanghebbende",
+    required: false,
+    validation: (value) => normalizeInput(value).length >= 2,
   },
 ];
 
@@ -500,6 +525,14 @@ export const beroepNaBezwaarSteps: ChatStep[] = [
     field: "persoonlijkeOmstandigheden",
     required: false,
     validation: () => true,
+  },
+  {
+    id: "procespositie",
+    question:
+      "Om je procespositie goed te duiden: welke relatie heb je tot de beslissing op bezwaar of de onderliggende zaak? Bijvoorbeeld eerdere bezwaarmaker, aanvrager, geadresseerde, eigenaar, omwonende of anders direct geraakt. Weet je het niet, typ dan 'weet ik niet'.",
+    field: "waaromBelanghebbende",
+    required: false,
+    validation: (value) => normalizeInput(value).length >= 2,
   },
 ];
 

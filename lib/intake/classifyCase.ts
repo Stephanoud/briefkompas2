@@ -150,7 +150,7 @@ function scoreCaseType(haystack: string, categorie: string): Array<{ caseType: C
     "toeslag",
     0.9,
     "Trefwoorden voor toeslagbesluit gedetecteerd.",
-    /(toeslag|kinderopvangtoeslag|zorgtoeslag|huurtoeslag|kindgebonden budget|uht|herstel)/
+    /(toeslag|kinderopvangtoeslag|zorgtoeslag|huurtoeslag|kindgebonden budget|uht|hersteloperatie toeslagen|herstel toeslagen)/
   );
 
   if (categorie === "vergunning") {

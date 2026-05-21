@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { getStepsByFlow, interpretWooPeriodAnswer, interpretWooSubjectAnswer } from "@/lib/intake-flow";
+import { inferFlowFromProcedureText } from "@/lib/flow";
 import { determineProcedureAdvice } from "@/lib/procedure-route";
 import { assessDecisionProcedure } from "@/lib/decision-procedure";
 import {
@@ -398,5 +399,13 @@ test.describe("Contextual intake interpretation", () => {
 
     expect(assessment.suggestedFlow).toBe("zienswijze");
     expect(assessment.confidence).toBe("high");
+  });
+
+  test("23. expliciete chatcorrectie beroep wordt niet als bezwaar gelezen", () => {
+    expect(inferFlowFromProcedureText("Ik wil beroep indienen, niet bezwaar maken")).toBe(
+      "beroep_zonder_bezwaar"
+    );
+    expect(inferFlowFromProcedureText("Ik wil beroep na bezwaar instellen")).toBe("beroep_na_bezwaar");
+    expect(inferFlowFromProcedureText("Ik wil een zienswijze indienen")).toBe("zienswijze");
   });
 });

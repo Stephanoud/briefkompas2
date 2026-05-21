@@ -269,7 +269,7 @@ export default function PricingPage() {
   const flowLabel = activeFlow ? getFlowDocumentLabel(activeFlow) : "brief";
   const standardLetterLabel =
     activeFlow === "bezwaar"
-      ? "Bezwaarschrift met dossierbijlage"
+      ? "Bezwaarschrift met geschilsamenvatting"
       : activeFlow === "beroep_zonder_bezwaar"
         ? "Beroepschrift met toelichting op direct beroep"
         : activeFlow === "beroep_na_bezwaar"
@@ -316,12 +316,11 @@ export default function PricingPage() {
       {!canOfferProduct ? (
         <Card
           title="Intake nog niet compleet"
-          subtitle="We bieden pas een product aan wanneer er genoeg zaakgegevens zijn voor een dossiergerichte brief."
+          subtitle="Vul de ontbrekende gegevens aan voordat je een pakket kiest."
         >
           <div className="space-y-4">
-            <Alert type="warning" title="Productkeuze geblokkeerd">
-              De applicatie maakt geen generieke brief. Vul eerst de ontbrekende gegevens aan, zodat de beste
-              beschikbare brief kan worden gemaakt.
+            <Alert type="warning" title="Nog niet genoeg gegevens">
+              We missen nog informatie die nodig is om je brief goed op te stellen. Vul de ontbrekende punten aan.
             </Alert>
             {missingProductInfo.length > 0 && (
               <>

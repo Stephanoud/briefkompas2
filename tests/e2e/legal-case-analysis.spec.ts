@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { buildLetterPrompt } from "@/lib/ai/buildLetterPrompt";
+import { sanitizeGeneratedSupportSections } from "@/lib/ai/generateSupportSections";
 import { findLetterGuardViolations } from "@/lib/ai/output-guards";
+import { cleanLetterTextForDelivery } from "@/lib/letter-format";
 import { buildCaseFileAnalysis } from "@/lib/legal/case-file-analysis";
 import { classifyCase } from "@/lib/intake/classifyCase";
 import { determineRoute } from "@/lib/intake/determineRoute";
@@ -178,6 +180,80 @@ test.describe("Legal case analysis", () => {
 
     expect(result.caseType).toBe("onzeker_handmatige_triage");
     expect(result.reasons.join(" ").toLowerCase()).toContain("documentsignalen");
+  });
+
+  test("4b. tracebesluit met herstelwens wordt geen toeslagenzaak", () => {
+    const result = classifyCase({
+      flow: "beroep_zonder_bezwaar",
+      intakeData: {
+        flow: "beroep_zonder_bezwaar",
+        bestuursorgaan: "Minister van Infrastructuur en Milieu",
+        categorie: "overig",
+        doel: "Het tracebesluit herstellen of vernietigen",
+        gronden: "De gevolgen voor geluid, verkeer en leefomgeving zijn onvoldoende onderzocht.",
+        files: {},
+        besluitDocumentType: "tracebesluit",
+        besluitSamenvatting:
+          "Het Tracebesluit A12/A15 Ressen-Oudbroeken regelt wijziging en nieuwe aanleg van Rijkswegen.",
+        besluitAnalyse: {
+          bestuursorgaan: "Minister van Infrastructuur en Milieu",
+          onderwerp: "Wijziging en nieuwe aanleg Rijkswegen A12 en A15",
+          besluitInhoud:
+            "Het Tracebesluit A12/A15 Ressen-Oudbroeken regelt wijziging en nieuwe aanleg van Rijkswegen.",
+        },
+      },
+    });
+
+    expect(result.caseType).toBe("algemeen_bestuursrecht");
+    expect(result.caseType).not.toBe("toeslag");
+  });
+
+  test("4c. aandachtsblokfilter verwijdert verkeerde sector en verkeerde beroepsstap", () => {
+    const sections = sanitizeGeneratedSupportSections({
+      flow: "beroep_zonder_bezwaar",
+      intakeData: {
+        flow: "beroep_zonder_bezwaar",
+        bestuursorgaan: "Minister van Infrastructuur en Milieu",
+        categorie: "overig",
+        doel: "Vernietiging van het tracebesluit",
+        gronden: "Geluid, verkeer en leefomgeving zijn onvoldoende onderzocht.",
+        files: {},
+        besluitDocumentType: "tracebesluit",
+        besluitSamenvatting:
+          "Het Tracebesluit A12/A15 Ressen-Oudbroeken regelt wijziging en nieuwe aanleg van Rijkswegen.",
+        besluitAnalyse: {
+          onderwerp: "Wijziging en nieuwe aanleg Rijkswegen A12 en A15",
+          besluitInhoud:
+            "Het Tracebesluit A12/A15 Ressen-Oudbroeken regelt wijziging en nieuwe aanleg van Rijkswegen.",
+        },
+      },
+      sections: [
+        {
+          title: "Wat de overheid mogelijk zal aanvoeren",
+          items: [
+            "Toeslagen kan aanvoeren dat de berekening volgt uit de wet.",
+            "De minister kan aanvoeren dat de geluidseffecten in het tracebesluit al zijn onderzocht.",
+          ],
+        },
+        {
+          title: "Als uw beroep wordt afgewezen",
+          items: [
+            "U kunt overwegen om beroep bij de rechtbank in te stellen als de reactie ongunstig blijft.",
+            "Als de rechtbank uw beroep ongegrond verklaart, beoordeel dan of hoger beroep openstaat.",
+          ],
+        },
+      ],
+    });
+    const allItems = sections.flatMap((section) => section.items);
+
+    expect(allItems.join(" ").toLowerCase()).not.toContain("toeslagen");
+    expect(allItems.join(" ").toLowerCase()).not.toContain("beroep bij de rechtbank in te stellen");
+    expect(allItems).toContain(
+      "De minister kan aanvoeren dat de geluidseffecten in het tracebesluit al zijn onderzocht."
+    );
+    expect(allItems).toContain(
+      "Als de rechtbank uw beroep ongegrond verklaart, beoordeel dan of hoger beroep openstaat."
+    );
   });
 
   test("5. outputguard vangt ongefundeerde ecli, termijn en hoorzitting af", () => {
@@ -1250,6 +1326,61 @@ test.describe("Legal case analysis", () => {
     expect(prompt).not.toContain("Plaats deze nabrief-secties altijd direct na de brief");
   });
 
+  test("29b. prompt maakt geschiloverzicht onderdeel van de brief en geen bijlage", () => {
+    const prompt = buildLetterPrompt({
+      intakeData: {
+        flow: "bezwaar",
+        bestuursorgaan: "Minister van Infrastructuur en Milieu",
+        categorie: "overig",
+        doel: "heroverweging",
+        gronden: "Geluid, leefbaarheid en persoonlijke gevolgen zijn onvoldoende gewogen.",
+        files: {},
+      },
+      product: "basis",
+      payload: {
+        flow: "bezwaar",
+        caseType: "algemeen_bestuursrecht",
+        route: "bezwaar_bestuursrecht",
+        caseFacts: [],
+        decisionMeta: [],
+        selectedSources: [],
+        validatedAuthorities: [],
+        disallowedBehaviors: [],
+      },
+    });
+
+    expect(prompt).toContain("SAMENVATTING VAN HET GESCHIL");
+    expect(prompt).toContain("Feiten en context");
+    expect(prompt).toContain("kwaliteitslijn van begrijpelijke, probleemgerichte bezwaarafhandeling");
+    expect(prompt).toContain("Noem deze sectie nooit 'bijlage'");
+    expect(prompt).not.toContain("BIJLAGE A - SAMENVATTING VAN HET GESCHIL");
+    expect(prompt).not.toContain("Dossierbijlage bij bezwaar");
+  });
+
+  test("29c. oude bijlagekoppen voor geschiloverzicht worden genormaliseerd", () => {
+    const cleaned = cleanLetterTextForDelivery(
+      [
+        "BIJLAGE A - SAMENVATTING VAN HET GESCHIL",
+        "",
+        "- Bestreden besluit: tracebesluit A12/A15.",
+        "",
+        "BIJLAGE B - FEITEN EN CONTEXT",
+        "",
+        "De woning ligt nabij het trace.",
+        "",
+        "BIJLAGE E - GEWENSTE OPLOSSING",
+        "",
+        "Heroverweeg de belangenafweging.",
+      ].join("\n")
+    );
+
+    expect(cleaned).toContain("SAMENVATTING VAN HET GESCHIL");
+    expect(cleaned).toContain("Feiten en context");
+    expect(cleaned).toContain("Gewenste oplossing");
+    expect(cleaned).not.toContain("BIJLAGE A");
+    expect(cleaned).not.toContain("BIJLAGE B");
+  });
+
   test("30. detecteert relevante aanvullende argumenten zonder generieke checklist", () => {
     const analysis = buildCaseFileAnalysis({
       flow: "bezwaar",
@@ -1427,5 +1558,51 @@ test.describe("Legal case analysis", () => {
     expect(prompt).toContain("integrationMode=cautious");
     expect(prompt).toContain("Daarnaast is van belang dat...");
     expect(prompt).toContain("In dit kader had het bestuursorgaan moeten...");
+  });
+
+  test("27b. duidelijke procespositie voorkomt belanghebbende-aandachtspunt", () => {
+    const guard = {
+      ok: true,
+      fallbackMode: "none" as const,
+      generationMode: "validated" as const,
+      reasons: [],
+      hardBlockers: [],
+      softSignals: [],
+      missingFields: [],
+      caseType: "algemeen_bestuursrecht" as const,
+      route: "bezwaar_bestuursrecht" as const,
+      caseTypeConfidence: 0.9,
+      routeConfidence: 0.9,
+      selectedSourceSet: sourceSet,
+      rejectedSources: [],
+      validatedAuthorities: [],
+      reviewedAuthorities: [],
+      auditTrail: [],
+    };
+
+    const clearPosition = buildCaseFileAnalysis({
+      flow: "bezwaar",
+      intakeData: {
+        ...baseAuthorityIntake,
+        waaromBelanghebbende: "Ik ben de aanvrager en het besluit gaat over mijn vergunning.",
+      },
+      guard,
+      reviewedAuthorities: [],
+    });
+
+    const uncertainPosition = buildCaseFileAnalysis({
+      flow: "bezwaar",
+      intakeData: {
+        ...baseAuthorityIntake,
+        waaromBelanghebbende: "Weet ik niet.",
+      },
+      guard,
+      reviewedAuthorities: [],
+    });
+
+    expect(clearPosition.ontbrekendeInformatie).not.toContain("de juiste procespositie van de gebruiker");
+    expect(clearPosition.onzekerheden).not.toContain("De procespositie van de gebruiker is nog niet voldoende bevestigd.");
+    expect(uncertainPosition.ontbrekendeInformatie).toContain("de juiste procespositie van de gebruiker");
+    expect(uncertainPosition.onzekerheden).toContain("De procespositie van de gebruiker is nog niet voldoende bevestigd.");
   });
 });

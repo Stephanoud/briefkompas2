@@ -44,6 +44,7 @@ import {
   getFlowActionLabel,
   getFlowDocumentLabel,
   getFlowLabel,
+  inferFlowFromProcedureText,
   isFlow,
   requiresDecisionUpload,
   supportsDecisionUpload,
@@ -140,16 +141,7 @@ function getProcedureLabelFromAdvice(value: IntakeFormData["procedureAdvies"] | 
 }
 
 function parseProcedureFlow(value: string): Flow | null {
-  const normalized = value.toLowerCase();
-  if (/\b(woo|wet open overheid)\b/.test(normalized)) return "woo";
-  if (/\bzienswijze\b/.test(normalized)) return "zienswijze";
-  if (/\bbezwaar\b/.test(normalized) && !/\bna bezwaar\b/.test(normalized)) return "bezwaar";
-  if (/\bberoep\b/.test(normalized) && /\bna bezwaar\b/.test(normalized)) return "beroep_na_bezwaar";
-  if (/\bberoep\b/.test(normalized) && /\b(zonder bezwaar|rechtstreeks|direct)\b/.test(normalized)) {
-    return "beroep_zonder_bezwaar";
-  }
-  if (/\bberoep\b/.test(normalized)) return "beroep_zonder_bezwaar";
-  return null;
+  return inferFlowFromProcedureText(value);
 }
 
 function buildExtractedMetadataItems(
@@ -168,7 +160,6 @@ function buildExtractedMetadataItems(
     data.besluitSamenvatting
   );
   const motivation = getPrimaryDecisionMotivation(data);
-  const term = getFirstText(data.relevanteTermijn, data.besluitAnalyse?.termijnen, data.besluitAnalyse?.rechtsmiddelenclausule);
   const priorObjectionGrounds = getFirstText(data.eerdereBezwaargronden);
 
   const pushItem = (item: ExtractedMetadataItem, condition = true) => {
@@ -227,12 +218,6 @@ function buildExtractedMetadataItems(
     value: motivation ?? "",
     correctionPrompt: "Vul de belangrijkste reden of motivering van het bestuursorgaan in.",
     multiline: true,
-  });
-  pushItem({
-    id: "relevanteTermijn",
-    label: "Relevante termijn",
-    value: term ?? "",
-    correctionPrompt: "Vul de relevante bezwaar-, beroep- of reactietermijn in.",
   });
   pushItem({
     id: "eerdereBezwaargronden",
@@ -563,6 +548,16 @@ function buildIntroMessage(
     interpretation,
     intakeData: { flow },
   })}`;
+}
+
+function getExplicitProcedureSwitchFlow(answer: string, activeFlow: Flow): Flow | null {
+  const requestedFlow = inferFlowFromProcedureText(answer);
+
+  if (!requestedFlow || requestedFlow === activeFlow) {
+    return null;
+  }
+
+  return requestedFlow;
 }
 
 export default function IntakePage() {
@@ -1223,6 +1218,8 @@ export default function IntakePage() {
         return "Vul de gewenste uitkomst in: intrekking, herziening, aanpassing, verlaging of een nieuw besluit.";
       case "gronden":
         return "Vul in welke punten de brief moet meenemen: wat is feitelijk onjuist, onvoldoende onderzocht, niet goed gemotiveerd, niet afgewogen of te zwaar voor jou?";
+      case "procespositie":
+        return "Omschrijf kort je relatie tot de zaak, bijvoorbeeld aanvrager, geadresseerde, eigenaar, omwonende, verzoeker of direct geraakt door het besluit. Als je het niet weet, typ 'weet ik niet'.";
       case "documenten":
         return "Vul in welke stukken je zoekt, zoals e-mails, memo's, rapporten, notulen of besluiten.";
       case "digitale_verstrekking":
@@ -1370,6 +1367,23 @@ export default function IntakePage() {
 
     if (!currentStep) {
       setValidationError("Er is geen actieve vraag om te beantwoorden.");
+      return;
+    }
+
+    const procedureSwitchFlow = getExplicitProcedureSwitchFlow(trimmedInput, activeFlow);
+    if (procedureSwitchFlow) {
+      const userMessage = buildUserMessage(trimmedInput);
+      setMessages((prev) => [...prev, userMessage]);
+      setCurrentInput("");
+      setValidationError("");
+      setRouteCheckResult(null);
+      startSubstantiveFlow(procedureSwitchFlow, {
+        ...intakeData,
+        flow: procedureSwitchFlow,
+        procedureAdvies: procedureSwitchFlow,
+        procedureReden: "De gebruiker gaf in de chat aan een andere procedure te willen gebruiken.",
+        procedureBevestigd: true,
+      });
       return;
     }
 

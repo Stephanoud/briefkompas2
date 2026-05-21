@@ -81,10 +81,10 @@ export function buildLetterPrompt(params: {
                 "Betreft, kenmerk, datum besluit en datumregel",
                 "Inleiding",
                 "Feiten en bestreden besluit",
+                "Samenvatting van het geschil met korte subparagrafen",
                 "Gronden van bezwaar",
                 "Verzoek",
                 "Slotformule",
-                "Daarna eventueel een gestructureerde dossierbijlage voor de behandelaar",
               ];
 
   const promptPayload = {
@@ -127,27 +127,21 @@ export function buildLetterPrompt(params: {
         ? "Gebruik de besluitanalyse waar die betrouwbaar is, maar formuleer voorzichtig bij onderdelen die niet volledig uit het besluit blijken."
         : "Het besluit is beperkt uitgelezen. Gebruik de aangevulde kerngegevens en de intake, maar verzin geen details uit het besluit.";
 
-  const bezwaarDossierInstructions =
+  const bezwaarGeschilSamenvattingInstructions =
     payload.flow === "bezwaar"
       ? [
           "",
-          "Dossierbijlage bij bezwaar (verplicht):",
-          "- Voeg na de hoofdbrief een gestructureerde bijlage toe die functioneert als dossieroverzicht voor de behandelaar.",
-          "- Gebruik exact deze kopjes in deze volgorde, volledig in hoofdletters:",
-          "- BIJLAGE A - SAMENVATTING VAN HET GESCHIL",
-          "- BIJLAGE B - FEITEN EN CONTEXT",
-          "- BIJLAGE C - JURIDISCHE BEZWAREN",
-          "- BIJLAGE D - OVERZICHT BEWIJSSTUKKEN",
-          "- BIJLAGE E - GEWENSTE OPLOSSING",
-          "- BIJLAGE A is altijd verplicht en bevat maximaal 8 bullets.",
-          "- Neem in BIJLAGE A in elk geval op: bestreden besluit, bestuursorgaan, kern van het geschil, gewenste uitkomst, belangrijkste bezwaren en eventuele impact.",
-          "- Schrijf BIJLAGE B feitelijk en neutraal, met tijdlijn, communicatie en context, zonder juridische argumentatie.",
-          "- Werk in BIJLAGE C per bezwaargrond een korte titel en een compacte juridische toelichting uit. Categoriseer waar passend als motiveringsgebrek, zorgvuldigheidsbeginsel, evenredigheidsbeginsel, feitelijke onjuistheid, bevoegdheidsgebrek of procedureel gebrek.",
-          "- Gebruik in BIJLAGE D alleen bewijsstukken of documenten die daadwerkelijk blijken uit intake, besluitanalyse of gekoppelde bestanden. Maak onderscheid tussen meegezonden stukken en wel genoemde maar niet meegezonden stukken.",
-          "- Neem BIJLAGE E alleen op als de gewenste oplossing logisch en concreet uit intake of hoofdbrief volgt.",
-          "- Genereer geen lege secties. Als een sectie geen concrete inhoud heeft, laat je die weg, behalve BIJLAGE A. Behoud de vaste volgorde van de secties die je wel opneemt.",
+          "Samenvatting van het geschil bij bezwaar (verplicht, geen bijlage):",
+          "- Voeg na de inleiding en voor de gronden een gewone briefsectie toe met exact het kopje: SAMENVATTING VAN HET GESCHIL.",
+          "- Noem deze sectie nooit 'bijlage', 'dossierbijlage', 'bijlage A' of 'dossieroverzicht'. Het is onderdeel van de brief zelf.",
+          "- Gebruik onder dit kopje korte subparagrafen met precies deze volgorde waar er concrete inhoud voor is: Bestreden besluit, Feiten en context, Kern van het geschil, Belangen en gevolgen, Gewenste oplossing, Relevante stukken.",
+          "- Schrijf per subparagraaf 1 tot 3 korte zinnen of maximaal 3 compacte bullets. Het doel is dat het bestuursorgaan het geschil binnen 30 seconden begrijpt.",
+          "- Vat het geschil daadwerkelijk samen: wat is besloten, welke feiten/context zijn relevant, waar zijn partijen het over oneens, welk belang of gevolg speelt en welke oplossing wordt gevraagd.",
+          "- Houd feiten, context, bezwaren, belangen/gevolgen en bewijs zichtbaar gescheiden. Dit volgt de kwaliteitslijn van begrijpelijke, probleemgerichte bezwaarafhandeling en de lessen van Marseille en collega's: eerst het conflict en het burgerperspectief helder maken, daarna juridisch uitwerken.",
+          "- Zet juridische argumenten niet in een aparte bijlage. Werk ze na de samenvatting uit onder Gronden van bezwaar, per bezwaargrond met een korte titel en compacte toelichting.",
+          "- Gebruik onder Relevante stukken alleen bewijsstukken of documenten die daadwerkelijk blijken uit intake, besluitanalyse of gekoppelde bestanden. Als er geen concrete stukken zijn, laat deze subparagraaf weg.",
           "- Presenteer interpretaties nooit als vaststaande feiten en verzin geen bijlagen, geen bronnen en geen bewijsstukken.",
-          "- Koppel bewijs waar mogelijk aan de relevante feiten of bezwaren.",
+          "- Koppel bewijs waar mogelijk aan de relevante feiten of bezwaren, maar maak de samenvatting niet langer dan nodig.",
         ].join("\n")
       : "";
 
@@ -160,8 +154,9 @@ export function buildLetterPrompt(params: {
           "- Is de gewenste uitkomst concreet geformuleerd?",
           "- Zijn feiten, juridische argumenten en bewijs strikt gescheiden?",
           "- Is de tekst scanbaar met korte alineas, bullets en duidelijke kopjes?",
+          "- Is de samenvatting van het geschil een gewone briefsectie en geen bijlage?",
           "- Zijn geen fictieve elementen of niet-bestaande bijlagen toegevoegd?",
-          "- Helpt de dossierbijlage de behandelaar om sneller te beoordelen of gericht contact op te nemen?",
+          "- Helpt de samenvatting de behandelaar om sneller te begrijpen wat er feitelijk, juridisch en persoonlijk op het spel staat?",
           "- Als een van deze vragen negatief uitvalt, herschrijf je de relevante sectie voordat je antwoord geeft.",
         ].join("\n")
       : "";
@@ -259,10 +254,12 @@ export function buildLetterPrompt(params: {
     "- Voeg geen nabrief-secties toe zoals 'Wat de overheid mogelijk zal aanvoeren', 'Hoe u daarop kunt reageren', 'Wat gebeurt hierna?', 'Waar moet u op letten?', 'Als uw bezwaar/beroep wordt afgewezen' of 'Praktische tip'. Die informatie wordt buiten de brief apart in de interface getoond.",
     "- Als in het besluit zelf een rechtsgrond zichtbaar is, mag je die beschrijven, maar verzin geen extra artikelnummer of sectorspecifieke regeling.",
     "- Geen hallucinaties: geen niet-verifieerbare ECLI's, geen nieuwe wetten, geen verzonnen feiten, geen verzonnen termijnen.",
+    "- Behandel reactie-, bezwaar- en beroepstermijnen als aandachtspunt, niet als blokkade of definitief ontvankelijkheidsoordeel. Stel niet zelf vast dat de gebruiker te laat is; benoem hooguit voorzichtig wat uit het besluit of de rechtsmiddelenclausule als mogelijke termijn blijkt en dat het bestuursorgaan of de rechtbank ontvankelijkheid beoordeelt.",
     "- Doe bij niet tijdig beslissen niet alsof ingebrekestelling, ontvangst, tweewekentermijn of toepasselijkheid van een dwangsom vaststaan als dat niet expliciet uit dossierinput blijkt.",
     "- Nooit een citaat uit het besluit opnemen tenzij die passage letterlijk of bijna letterlijk in decisionAnalysis.dragendeOverwegingen of andere dossierinput staat.",
     "- Noem geen hoorzitting, geen eerdere correspondentie en geen procescontacten tenzij die expliciet uit intake, besluitanalyse of bijlagen blijken.",
     "- Ken de gebruiker geen rol of status toe zoals belanghebbende, vergunninghouder, verzoeker, appellant of bezwaarmaker tenzij dat uit de stukken blijkt.",
+    "- Gebruik gegevens over procespositie of belanghebbendheid niet als zelfstandig inhoudelijk argument in de brief, behalve als het besluit zelf daarover gaat of de gebruiker dit expliciet als grond aanvoert. Twijfel over procespositie hoort alleen in het nabrief-aandachtsblok.",
     "- Gebruik geen formuleringen als 'vaste jurisprudentie' of 'bestendige jurisprudentie' zonder een of meer geverifieerde uitspraken in validatedAuthorities.",
     "- Als documentsignalen of caseAnalysis twijfel geven over de module, neem geen sectorspecifieke module-aannames over en blijf bij veilige, dossiergedragen formuleringen.",
     "- Als caseAnalysis.onzekerheden of caseAnalysis.ontbrekendeInformatie wijzen op gaten, formuleer voorzichtig en presenteer aannames nooit als vaststaand.",
@@ -273,7 +270,7 @@ export function buildLetterPrompt(params: {
     "- Schrijf niet simpelweg 'de volledige heroverweging ontbreekt' zonder te specificeren welke bezwaargronden, argumenten of onderdelen niet zijn heroverwogen.",
     "- Controleer voor verzendingstekst expliciet of er zichtbare termijnen, hoorverplichtingen of andere procesdrempels in het dossier zitten en benoem die alleen als ze blijken uit de input.",
     "- Als besluituitlezing beperkt is, wees daar intern zorgvuldig mee: schrijf niet alsof je iets zeker weet terwijl dat niet uit intake of besluit blijkt.",
-    bezwaarDossierInstructions,
+    bezwaarGeschilSamenvattingInstructions,
     "",
     "Opmaakregels voor de uitvoer:",
     "- Lever platte tekst op zonder markdowntekens zoals **, #, >, ``` of ---.",

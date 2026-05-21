@@ -169,7 +169,7 @@ test.describe("Auth routing and result recovery", () => {
 
     await page.goto("/pricing/woo");
 
-    await expect(page.getByText(/Productkeuze geblokkeerd/)).toBeVisible();
+    await expect(page.getByText(/Nog niet genoeg gegevens/)).toBeVisible();
     await expect(page.getByText(/Gevraagde Woo-documenten/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Ga naar betaling" })).toHaveCount(0);
   });
@@ -191,12 +191,46 @@ test.describe("Auth routing and result recovery", () => {
 
     await page.goto("/pricing/woo");
 
-    await expect(page.getByText(/Productkeuze geblokkeerd/)).toBeVisible();
+    await expect(page.getByText(/Nog niet genoeg gegevens/)).toBeVisible();
     await page.getByLabel(/welke documenten of documentsoorten/i).fill("emails, notulen en besluitenlijsten");
     await page.getByRole("button", { name: "Aanvullingen opslaan" }).click();
 
     await expect(page.getByRole("heading", { name: "Kies je pakket" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Geselecteerd" })).toBeVisible();
+  });
+
+  test("ontbrekende reactietermijn blokkeert productkeuze niet", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.sessionStorage.setItem("briefkompas_product", "basis");
+      window.sessionStorage.setItem(
+        "briefkompas_intake",
+        JSON.stringify({
+          flow: "bezwaar",
+          bestuursorgaan: "Gemeente Amsterdam",
+          datumBesluit: "1 april 2026",
+          categorie: "vergunning",
+          besluitOnderwerp: "Omgevingsvergunning",
+          beslissingOfMaatregel: "De omgevingsvergunning is geweigerd.",
+          belangrijksteMotivering: "Volgens de gemeente past het plan niet binnen het beleid.",
+          doel: "Een nieuw besluit",
+          gronden: "De feiten kloppen niet en de belangen zijn onvoldoende afgewogen.",
+          files: {
+            besluit: {
+              name: "besluit.pdf",
+              size: 1234,
+              type: "application/pdf",
+              path: "stored:besluit.pdf",
+            },
+          },
+        })
+      );
+    });
+
+    await page.goto("/pricing/bezwaar");
+
+    await expect(page.getByRole("heading", { name: "Kies je pakket" })).toBeVisible();
+    await expect(page.getByText(/Relevante termijn/)).toHaveCount(0);
+    await expect(page.getByText(/Nog niet genoeg gegevens/)).toHaveCount(0);
   });
 
   test("intake wordt na opslagtoestemming uit lokale browseropslag hersteld", async ({ page }) => {

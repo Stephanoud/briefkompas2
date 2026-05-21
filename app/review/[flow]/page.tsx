@@ -227,9 +227,9 @@ export default function ReviewPage() {
     }
 
     return (
-      <Alert type="warning" title="Productkeuze nog geblokkeerd">
+      <Alert type="warning" title="Nog niet genoeg gegevens">
         <span className="block">
-          De applicatie maakt geen generieke brief. Vul eerst deze gegevens aan:
+          We missen nog informatie die nodig is om je brief goed op te stellen. Vul eerst deze gegevens aan:
         </span>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           {missingProductInfo.map((field) => (

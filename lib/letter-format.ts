@@ -32,7 +32,15 @@ const KNOWN_HEADINGS = new Set(
     "aan",
     "inleiding",
     "feiten en besluit",
+    "samenvatting van het geschil",
     "bestreden besluit",
+    "feiten en context",
+    "kern van het geschil",
+    "belangen en gevolgen",
+    "gewenste oplossing",
+    "relevante stukken",
+    "juridische bezwaren",
+    "overzicht bewijsstukken",
     "gronden van bezwaar",
     "bezwaargronden",
     "verzoek",
@@ -90,6 +98,23 @@ function stripInlineMarkdown(line: string): string {
     .trimEnd();
 }
 
+function normalizeLegacyDisputeAppendixHeading(line: string): string {
+  const normalized = line.replace(/[:.]$/, "").trim();
+  const match = normalized.match(/^bijlage\s+[a-e]\s*[-:]\s*(.+)$/i);
+  if (!match?.[1]) {
+    return line;
+  }
+
+  const heading = match[1].trim().toLowerCase();
+  if (heading === "samenvatting van het geschil") return "SAMENVATTING VAN HET GESCHIL";
+  if (heading === "feiten en context") return "Feiten en context";
+  if (heading === "juridische bezwaren") return "Juridische bezwaren";
+  if (heading === "overzicht bewijsstukken") return "Relevante stukken";
+  if (heading === "gewenste oplossing") return "Gewenste oplossing";
+
+  return line;
+}
+
 function isHeadingCandidate(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) {
@@ -142,7 +167,7 @@ export function sanitizeLetterText(letterText: string): string {
       if (/^```/.test(trimmed) || /^-{3,}$/.test(trimmed)) {
         return "";
       }
-      return stripInlineMarkdown(line);
+      return normalizeLegacyDisputeAppendixHeading(stripInlineMarkdown(line));
     })
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")

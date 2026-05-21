@@ -104,6 +104,96 @@ export function getFlowPath(flow: Flow): string {
   return `/intake/${flow}`;
 }
 
+export function inferFlowFromProcedureText(value: string): Flow | null {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  if (!normalized) {
+    return null;
+  }
+
+  const isExactly = (candidate: string) => normalized === candidate;
+  const hasRouteIntentBefore = (routeWord: string) =>
+    new RegExp(`\\b(wil|wilt|willen|ga|gaan|moet|moeten|kies|gebruik)\\b.{0,50}\\b${routeWord}\\b`, "i").test(
+      normalized
+    );
+  const hasRouteIntentAfter = (routeWord: string) =>
+    new RegExp(`\\b${routeWord}\\b.{0,50}\\b(indienen|instellen|aantekenen|maken|doen|gebruiken|kiezen)\\b`, "i").test(
+      normalized
+    );
+
+  const mentionsWoo = /\b(woo|wob|wet open overheid)\b/.test(normalized);
+  if (
+    mentionsWoo &&
+    (isExactly("woo") ||
+      /\b(woo-verzoek|woo verzoek|wob-verzoek|wob verzoek|wet open overheid|documenten opvragen)\b/.test(
+        normalized
+      ) ||
+      hasRouteIntentBefore("woo") ||
+      hasRouteIntentAfter("woo"))
+  ) {
+    return "woo";
+  }
+
+  const mentionsBeroep = /\b(beroep|beroepschrift|rechtbank|rechter)\b/.test(normalized);
+  const negatesBeroep = /\b(niet|geen)\s+(?:in\s+)?beroep\b/.test(normalized);
+  const explicitBeroep =
+    mentionsBeroep &&
+    !negatesBeroep &&
+    (isExactly("beroep") ||
+      /\b(in beroep|beroep instellen|beroep indienen|beroep aantekenen|beroepschrift)\b/.test(normalized) ||
+      /\b(rechtstreeks|direct|zonder bezwaar)\s+beroep\b/.test(normalized) ||
+      /\bberoep\b.{0,50}\b(rechtstreeks|direct|zonder bezwaar)\b/.test(normalized) ||
+      /\b(wil|wilt|willen|ga|gaan|moet|moeten)\b.{0,50}\b(rechtbank|rechter)\b/.test(normalized) ||
+      /\b(niet|geen)\s+(?:eerst\s+)?bezwaar(?:\s+(?:maken|indienen|aantekenen))?\b/.test(normalized) ||
+      hasRouteIntentBefore("beroep") ||
+      hasRouteIntentAfter("beroep"));
+
+  if (explicitBeroep) {
+    if (
+      /\b(na bezwaar|beslissing op bezwaar|besluit op bezwaar|op mijn bezwaar beslist|op ons bezwaar beslist)\b/.test(
+        normalized
+      ) &&
+      !/\b(zonder bezwaar|rechtstreeks beroep|direct beroep)\b/.test(normalized)
+    ) {
+      return "beroep_na_bezwaar";
+    }
+
+    return "beroep_zonder_bezwaar";
+  }
+
+  const mentionsZienswijze = /\bzienswijze(n)?\b/.test(normalized);
+  if (
+    mentionsZienswijze &&
+    (isExactly("zienswijze") ||
+      /\bzienswijze\b.{0,50}\b(indienen|naar voren brengen|geven|gebruiken|kiezen)\b/.test(normalized) ||
+      /\b(wil|wilt|willen|ga|gaan|moet|moeten|kies|gebruik)\b.{0,50}\bzienswijze\b/.test(normalized) ||
+      /\b(ontwerpbesluit|ontwerpbeschikking)\b/.test(normalized))
+  ) {
+    return "zienswijze";
+  }
+
+  const mentionsBezwaar = /\b(bezwaar|bezwaarschrift)\b/.test(normalized);
+  const negatesBezwaar =
+    /\b(niet|geen)\s+(?:eerst\s+)?bezwaar(?:\s+(?:maken|indienen|aantekenen))?\b/.test(normalized) ||
+    /\bzonder bezwaar\b/.test(normalized);
+
+  if (
+    mentionsBezwaar &&
+    !negatesBezwaar &&
+    (isExactly("bezwaar") ||
+      /\bbezwaar\b.{0,50}\b(maken|indienen|aantekenen|gebruiken|kiezen)\b/.test(normalized) ||
+      /\b(wil|wilt|willen|ga|gaan|moet|moeten|kies|gebruik)\b.{0,50}\bbezwaar\b/.test(normalized) ||
+      /\bbezwaarschrift\b/.test(normalized))
+  ) {
+    return "bezwaar";
+  }
+
+  return null;
+}
+
 export const homepageProcedureOptions = ALL_FLOWS.map((flow) => ({
   flow,
   title: getFlowActionLabel(flow),

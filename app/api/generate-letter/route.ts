@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { Flow, GeneratedLetterSupportSection, IntakeFormData, Product } from "@/types";
+import { Flow, IntakeFormData, Product } from "@/types";
 import { getReferences } from "@/src/data/references";
 import { ReferenceItem } from "@/src/types/references";
 import { generateLetter } from "@/lib/ai/generateLetter";
 import { buildLetterPrompt } from "@/lib/ai/buildLetterPrompt";
+import { generateAfterLetterSupportSections } from "@/lib/ai/generateSupportSections";
 import { findLetterGuardViolations } from "@/lib/ai/output-guards";
 import { classifyCase } from "@/lib/intake/classifyCase";
 import { detectBestuursorgaanScope } from "@/lib/intake/bestuursorganen";
@@ -165,11 +166,6 @@ type MissingCriticalInfoField = {
   question: string;
   inputType: "text" | "textarea" | "upload";
 };
-
-interface AuthorityResponsePair {
-  counterargument: string;
-  rebuttal: string;
-}
 
 function firstText(...values: Array<string | null | undefined>): string | undefined {
   return values.map((value) => (hasText(value) ? normalizeWhitespace(value) : "")).find(Boolean);
@@ -402,15 +398,6 @@ function getMissingCriticalInfo(flow: Flow, data: IntakeFormData): MissingCritic
     });
   }
 
-  if (!hasText(getDecisionTerm(data))) {
-    addMissingField(missingFields, {
-      field: "relevanteTermijn",
-      label: "Relevante termijn",
-      question: "Vul de relevante bezwaar-, beroep- of reactietermijn in.",
-      inputType: "text",
-    });
-  }
-
   if (!hasText(getDesiredOutcome(flow, data))) {
     addMissingField(missingFields, requiredFieldPrompt("doel"));
   }
@@ -418,7 +405,8 @@ function getMissingCriticalInfo(flow: Flow, data: IntakeFormData): MissingCritic
   return missingFields;
 }
 
-function buildAuthorityResponsePairs(params: {
+/*
+function _buildAuthorityResponsePairs(params: {
   flow: Flow;
   intakeData: IntakeFormData;
   caseType?: CaseType;
@@ -615,73 +603,7 @@ function buildAuthorityResponsePairs(params: {
   return pairs.slice(0, 3);
 }
 
-function buildProcedureExplanation(params: {
-  flow: Flow;
-  caseType?: CaseType;
-}): string {
-  const { flow, caseType } = params;
-
-  if (caseType === "niet_tijdig_beslissen") {
-    return "In het algemeen geldt dat na indiening eerst wordt beoordeeld of de termijn echt is verstreken en of de eerdere ingebrekestelling en ontvangst voldoende vaststaan.";
-  }
-
-  if (flow === "zienswijze") {
-    return "In het algemeen geldt dat het bestuursorgaan uw zienswijze meeneemt bij het definitieve besluit en pas daarna duidelijk wordt welke vervolgstap openstaat.";
-  }
-
-  if (flow === "beroep_zonder_bezwaar" || flow === "beroep_na_bezwaar") {
-    return "In het algemeen geldt dat de rechtbank eerst beoordeelt of uw beroepschrift ontvankelijk is en daarna het dossier en de reactie van het bestuursorgaan betrekt.";
-  }
-
-  if (flow === "woo") {
-    return "In het algemeen geldt dat het bestuursorgaan uw verzoek of bezwaar in behandeling neemt, een schriftelijke reactie geeft en daarbij het dossier en de motivering verder moet concretiseren.";
-  }
-
-  return "In het algemeen geldt dat het bestuursorgaan eerst de ontvangst bevestigt, het dossier beoordeelt en daarna schriftelijk op uw bezwaar reageert.";
-}
-
-function buildAttentionItems(params: {
-  flow: Flow;
-  intakeData: IntakeFormData;
-}): string[] {
-  const { flow, intakeData } = params;
-  const items = [
-    hasText(intakeData.besluitAnalyse?.rechtsmiddelenclausule)
-      ? `Controleer of de verdere termijnen aansluiten op de rechtsmiddelenclausule in het besluit: ${intakeData.besluitAnalyse?.rechtsmiddelenclausule}.`
-      : "Controleer steeds de termijn en de datum van bekendmaking in het besluit of de rechtsmiddelenclausule.",
-    flow === "beroep_zonder_bezwaar" || flow === "beroep_na_bezwaar"
-      ? "Let op de schriftelijke reactie van de rechtbank en van het bestuursorgaan, en houd de gevraagde stukken compleet bij de hand."
-      : "Let op de schriftelijke reactie van het bestuursorgaan en op de vraag of om aanvullende stukken of een toelichting wordt gevraagd.",
-    flow === "zienswijze"
-      ? "Houd er rekening mee dat u mogelijk nog een definitief besluit ontvangt voordat een volgende processtap openstaat."
-      : "In het algemeen kunt u worden uitgenodigd om uw standpunt mondeling toe te lichten; bereid dan kort uw kernpunten en stukken voor.",
-  ];
-
-  return items.filter(Boolean);
-}
-
-function buildRejectedNextStep(params: {
-  flow: Flow;
-  caseType?: CaseType;
-}): string {
-  const { flow, caseType } = params;
-
-  if (flow === "zienswijze") {
-    return "U kunt overwegen het definitieve besluit af te wachten en daarna te beoordelen of bezwaar of beroep openstaat.";
-  }
-
-  if (flow === "bezwaar" || flow === "woo") {
-    if (caseType === "niet_tijdig_beslissen") {
-      return "U kunt overwegen om de vervolgstap bij de rechtbank te zetten als nog steeds niet is beslist en de procesdrempels zijn gehaald.";
-    }
-
-    return "U kunt overwegen om beroep bij de rechtbank in te stellen als de reactie op uw bezwaar of Woo-besluit ongunstig blijft.";
-  }
-
-  return "U kunt overwegen om te bekijken of hoger beroep of een andere vervolgstap openstaat binnen deze procedure.";
-}
-
-function buildPracticalTips(params: {
+function _buildPracticalTips(params: {
   intakeData: IntakeFormData;
 }): string[] {
   const tips = [
@@ -696,42 +618,7 @@ function buildPracticalTips(params: {
   return tips.slice(0, 2);
 }
 
-function buildAfterLetterSupportSections(params: {
-  flow: Flow;
-  intakeData: IntakeFormData;
-  caseType?: CaseType;
-}): GeneratedLetterSupportSection[] {
-  const { flow, intakeData, caseType } = params;
-  const pairs = buildAuthorityResponsePairs({ flow, intakeData, caseType }).slice(0, 3);
-
-  return [
-    {
-      title: "Wat de overheid mogelijk zal aanvoeren",
-      items: pairs.map((pair) => pair.counterargument),
-    },
-    {
-      title: "Hoe u daarop kunt reageren",
-      items: pairs.map((pair) => pair.rebuttal),
-    },
-    {
-      title: "Wat gebeurt hierna?",
-      items: [buildProcedureExplanation({ flow, caseType })],
-    },
-    {
-      title: "Waar moet u op letten?",
-      items: buildAttentionItems({ flow, intakeData }),
-    },
-    {
-      title: "Als uw bezwaar/beroep wordt afgewezen",
-      items: [buildRejectedNextStep({ flow, caseType })],
-    },
-    {
-      title: "Praktische tip",
-      items: buildPracticalTips({ intakeData }),
-    },
-  ].filter((section) => section.items.length > 0);
-}
-
+*/
 function buildCaseFacts(data: IntakeFormData, flow: Flow): string[] {
   if (flow === "woo") {
     return [
@@ -1086,7 +973,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           {
             error:
-              "De brief kon niet veilig genoeg worden gegenereerd met de beschikbare gegevens. Vul de intake aan met concretere gronden, datum/termijn of besluitpassages en probeer opnieuw.",
+              "De brief kon niet veilig genoeg worden gegenereerd met de beschikbare gegevens. Vul de intake aan met concretere gronden, datum of besluitpassages en probeer opnieuw.",
             guard: {
               ...guard,
               ok: false,
@@ -1100,10 +987,11 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const supportSections = buildAfterLetterSupportSections({
+      const supportSections = await generateAfterLetterSupportSections(openai, {
         flow,
         intakeData,
-        caseType: guard.caseType,
+        payload,
+        letterText: cleanedRetryText,
       });
       const generatedLetter = {
         letterText: cleanedRetryText,
@@ -1143,10 +1031,11 @@ export async function POST(req: NextRequest) {
       generationMode: guard.generationMode,
       guardReasons: guard.reasons,
       caseAnalysis,
-      supportSections: buildAfterLetterSupportSections({
+      supportSections: await generateAfterLetterSupportSections(openai, {
         flow,
         intakeData,
-        caseType: guard.caseType,
+        payload,
+        letterText: cleanedLetterText,
       }),
     };
     const emailDelivery = await sendGeneratedLetterEmail({

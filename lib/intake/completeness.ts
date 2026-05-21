@@ -294,15 +294,6 @@ export function getMissingCriticalInfo(flow: Flow, data: IntakeFormData): Missin
     });
   }
 
-  if (!hasText(getDecisionTerm(data))) {
-    addMissingField(missingFields, {
-      field: "relevanteTermijn",
-      label: "Relevante termijn",
-      question: "Vul de relevante bezwaar-, beroep- of reactietermijn in.",
-      inputType: "text",
-    });
-  }
-
   if (!hasText(getDesiredOutcome(flow, data))) {
     addMissingField(missingFields, requiredFieldPrompt("doel"));
   }
