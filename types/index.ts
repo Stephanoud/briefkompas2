@@ -24,10 +24,24 @@ export type AttachmentDocumentKind =
 export type AuthorityVerificationStatus = "verified" | "mixed" | "not_usable";
 export type LegalStatementLabel =
   | "letterlijk uit besluit"
+  | "letterlijk uit intake"
   | "letterlijk uit wet"
   | "volgt uit geverifieerde jurisprudentie"
   | "afgeleide interpretatie"
   | "gebruikersstelling / nog niet geverifieerd";
+export type CounterAnalysisConfidence = "hoog" | "middel" | "laag";
+export type CounterAnalysisSourceLabel =
+  | "letterlijk uit besluit"
+  | "letterlijk uit intake"
+  | "afgeleide interpretatie"
+  | "gebruikersstelling / nog niet geverifieerd";
+export type CounterAnalysisLegalPrinciple =
+  | "motiveringsbeginsel"
+  | "zorgvuldigheidsbeginsel"
+  | "evenredigheidsbeginsel"
+  | "belangenafweging"
+  | "ruimtelijke aanvaardbaarheid"
+  | "geluid / woon- en leefklimaat";
 
 export interface DecisionConsideration {
   passage: string;
@@ -47,6 +61,22 @@ export interface GroundSupportEntry {
   juridischProbleem: LabeledLegalStatement;
   relevantFeitOfBewijs?: LabeledLegalStatement;
   jurisprudentieOfWet?: LabeledLegalStatement[];
+}
+
+export interface CounterAnalysisEntry {
+  decisionClaim: string;
+  userImpact: string;
+  legalTension: string;
+  legalPrinciple: CounterAnalysisLegalPrinciple[];
+  pleadingPoint: string;
+  confidence: CounterAnalysisConfidence;
+  sourceLabels: {
+    decisionClaim: CounterAnalysisSourceLabel | CounterAnalysisSourceLabel[];
+    userImpact: CounterAnalysisSourceLabel | CounterAnalysisSourceLabel[];
+    legalTension: CounterAnalysisSourceLabel | CounterAnalysisSourceLabel[];
+    legalPrinciple: CounterAnalysisSourceLabel | CounterAnalysisSourceLabel[];
+    pleadingPoint: CounterAnalysisSourceLabel | CounterAnalysisSourceLabel[];
+  };
 }
 
 export type AdditionalLegalArgumentPrinciple =
@@ -131,6 +161,7 @@ export interface CaseFileAnalysisSummary {
   toelichting?: string;
   labeledStellingen?: LabeledLegalStatement[];
   groundsMatrix?: GroundSupportEntry[];
+  juridischeTegenanalyse?: CounterAnalysisEntry[];
   relevanteAanvullendeArgumenten?: AdditionalLegalArgument[];
   workflowProfile?: LegalWorkflowProfile;
   jurisprudentieControle?: {

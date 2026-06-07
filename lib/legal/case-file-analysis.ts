@@ -1,6 +1,9 @@
 import {
   AdditionalLegalArgument,
   CaseFileAnalysisSummary,
+  CounterAnalysisEntry,
+  CounterAnalysisLegalPrinciple,
+  CounterAnalysisSourceLabel,
   Flow,
   GroundSupportEntry,
   IntakeFormData,
@@ -823,6 +826,283 @@ function selectSupportingAuthorities(params: {
     .slice(0, 1);
 }
 
+type DecisionClaimCandidate = {
+  statement: string;
+  label: CounterAnalysisSourceLabel;
+  source: string;
+};
+
+function asSourceLabelArray(
+  value: CounterAnalysisSourceLabel | CounterAnalysisSourceLabel[]
+): CounterAnalysisSourceLabel[] {
+  return Array.isArray(value) ? value : [value];
+}
+
+function primarySourceLabel(
+  value: CounterAnalysisSourceLabel | CounterAnalysisSourceLabel[],
+  fallback: LegalStatementLabel
+): LegalStatementLabel {
+  const labels = asSourceLabelArray(value);
+  const preferred = [
+    "letterlijk uit besluit",
+    "letterlijk uit intake",
+    "gebruikersstelling / nog niet geverifieerd",
+    "afgeleide interpretatie",
+  ] satisfies LegalStatementLabel[];
+
+  return preferred.find((label) => labels.includes(label as CounterAnalysisSourceLabel)) ?? fallback;
+}
+
+function firstAvailableText(...values: Array<string | null | undefined>): string | undefined {
+  return values.map((value) => (hasText(value) ? normalizeWhitespace(value) : "")).find(Boolean);
+}
+
+function splitIntoCounterAnalysisPoints(value?: string | null, maxItems = 5): string[] {
+  if (!hasText(value)) {
+    return [];
+  }
+
+  const normalized = normalizeWhitespace(value.replace(/\r\n/g, "\n"));
+  const sentencePoints = splitIntoPoints(normalized, maxItems);
+  const commaPoints = normalized
+    .split(/\n+|;|,(?!\d)/)
+    .map((part) => normalizeWhitespace(part.replace(/^[-*]\s*/, "")))
+    .filter((part) => part.length >= 6);
+
+  return [...new Set([...sentencePoints, ...commaPoints])].slice(0, maxItems);
+}
+
+function getDecisionClaimCandidates(intakeData: IntakeFormData): DecisionClaimCandidate[] {
+  const decisionAnalysis = intakeData.besluitAnalyse;
+  const candidates: DecisionClaimCandidate[] = [];
+
+  (decisionAnalysis?.dragendeOverwegingen ?? []).slice(0, 4).forEach((item, index) => {
+    if (!hasText(item.passage)) {
+      return;
+    }
+
+    candidates.push({
+      statement: shorten(item.passage, 220),
+      label: "letterlijk uit besluit",
+      source: `dragende overweging ${index + 1}${hasText(item.duiding) ? `: ${shorten(item.duiding, 90)}` : ""}`,
+    });
+  });
+
+  if (candidates.length > 0) {
+    return candidates;
+  }
+
+  const decisionContext = firstAvailableText(
+    decisionAnalysis?.besluitInhoud,
+    intakeData.beslissingOfMaatregel,
+    intakeData.besluitSamenvatting,
+    decisionAnalysis?.onderwerp,
+    intakeData.besluitOnderwerp,
+    intakeData.belangrijksteMotivering,
+    decisionAnalysis?.rechtsgrond
+  );
+
+  if (decisionContext) {
+    candidates.push({
+      statement: shorten(stripTrailingPunctuation(decisionContext), 190),
+      label: "afgeleide interpretatie",
+      source: "besluitinhoud, onderwerp of rechtsgrond",
+    });
+  }
+
+  return candidates;
+}
+
+function getUserImpactCandidates(intakeData: IntakeFormData): string[] {
+  return [
+    ...splitIntoCounterAnalysisPoints(intakeData.gronden, 5),
+    ...splitIntoCounterAnalysisPoints(intakeData.persoonlijkeOmstandigheden, 3),
+    ...(hasText(intakeData.eerdereBezwaargronden)
+      ? splitIntoCounterAnalysisPoints(intakeData.eerdereBezwaargronden, 3)
+      : []),
+  ]
+    .map((item) => shorten(stripTrailingPunctuation(item), 180))
+    .filter((item, index, items) => item.length > 0 && items.indexOf(item) === index);
+}
+
+function determineCounterPrinciples(params: {
+  text: string;
+  caseType: CaseType;
+}): CounterAnalysisLegalPrinciple[] {
+  const normalized = params.text.toLowerCase();
+  const principles: CounterAnalysisLegalPrinciple[] = [];
+  const add = (principle: CounterAnalysisLegalPrinciple) => {
+    if (!principles.includes(principle)) {
+      principles.push(principle);
+    }
+  };
+
+  add("motiveringsbeginsel");
+
+  if (/(onderzoek|onderbouwing|feit|stukken|dossier|zorgvuldig|rapport|meting|geluid|verkeer|tunnel)/.test(normalized)) {
+    add("zorgvuldigheidsbeginsel");
+  }
+
+  if (/(belang|gevolg|onevenred|evenred|waardedaling|woning|omwonende|hinder|leefklimaat)/.test(normalized)) {
+    add("belangenafweging");
+    add("evenredigheidsbeginsel");
+  }
+
+  if (
+    params.caseType === "omgevingswet_vergunning" ||
+    /(omgevingsvergunning|ruimtelijk|aanvaardbaar|tunnel|bouw|verkeer|woning|omgeving)/.test(normalized)
+  ) {
+    add("ruimtelijke aanvaardbaarheid");
+  }
+
+  if (/(geluid|woon- en leefklimaat|leefklimaat|tunnelmond|verkeer|verkeersintensiteit|woning|hinder)/.test(normalized)) {
+    add("geluid / woon- en leefklimaat");
+  }
+
+  if (principles.length === 1) {
+    add("zorgvuldigheidsbeginsel");
+  }
+
+  return principles.slice(0, 5);
+}
+
+function buildLegalTensionText(params: {
+  decisionClaim: string;
+  userImpact: string;
+  principles: CounterAnalysisLegalPrinciple[];
+}): string {
+  const claim = shorten(stripTrailingPunctuation(params.decisionClaim), 140);
+  const impact = shorten(stripTrailingPunctuation(params.userImpact), 140);
+  const normalized = `${params.decisionClaim} ${params.userImpact} ${params.principles.join(" ")}`.toLowerCase();
+
+  if (/(tunnelmond|verkeer|verkeersintensiteit|directe omgeving|woning|woon- en leefklimaat|leefklimaat)/.test(normalized)) {
+    return ensureSentence(
+      `De bestuurlijke conclusie (${claim}) schuurt met het aangevoerde belang (${impact}), omdat niet kenbaar is waarom de gevolgen voor de directe omgeving en het woon- en leefklimaat op die plek aanvaardbaar zijn`
+    );
+  }
+
+  if (/(geluid|hinder|akoestisch)/.test(normalized)) {
+    return ensureSentence(
+      `Als het besluit geluid of hinder vooral abstract behandelt, is onvoldoende duidelijk hoe het bestuursorgaan het concrete gevolg voor de gebruiker heeft betrokken: ${impact}`
+    );
+  }
+
+  if (/(waardedaling|waarde|financi)/.test(normalized)) {
+    return ensureSentence(
+      `Het besluit lijkt uit te gaan van: ${claim}, maar maakt niet kenbaar hoe het concrete belang rond ${impact} in de belangenafweging is betrokken`
+    );
+  }
+
+  return ensureSentence(
+    `Het besluit lijkt uit te gaan van: ${claim}, maar uit de beschikbare gegevens blijkt niet kenbaar hoe het bestuursorgaan het concrete gebruikersbelang heeft betrokken: ${impact}`
+  );
+}
+
+function buildPleadingPointText(params: {
+  decisionClaim: string;
+  userImpact: string;
+  principles: CounterAnalysisLegalPrinciple[];
+}): string {
+  const claim = shorten(stripTrailingPunctuation(params.decisionClaim), 145);
+  const impact = shorten(stripTrailingPunctuation(params.userImpact), 150);
+  const normalized = `${params.decisionClaim} ${params.userImpact} ${params.principles.join(" ")}`.toLowerCase();
+
+  if (/(tunnelmond|verkeer|verkeersintensiteit|directe omgeving|woning|woon- en leefklimaat|leefklimaat)/.test(normalized)) {
+    return [
+      `Volgens mijn gegevens geldt: ${impact}.`,
+      `Het besluit kan daarom niet volstaan met de conclusie uit het besluit: ${claim}.`,
+      "Het bestuursorgaan moet concreet en navolgbaar uitleggen waarom de verkeersintensiteit, verkeersconcentratie en gevolgen voor het woon- en leefklimaat in de directe omgeving ruimtelijk aanvaardbaar zijn.",
+      "Voor zover die uitleg uit de beschikbare stukken niet blijkt, is de motivering en belangenafweging onvoldoende.",
+    ].join(" ");
+  }
+
+  if (/(geluid|hinder|akoestisch)/.test(normalized)) {
+    return [
+      `Volgens mijn gegevens speelt concreet: ${impact}.`,
+      `Daarom moet uit het besluit blijken hoe dit gevolg is beoordeeld bij de conclusie uit het besluit: ${claim}.`,
+      "Voor zover geluid of hinder alleen algemeen is benoemd, is onvoldoende inzichtelijk of mijn woon- en leefklimaat concreet is meegewogen.",
+    ].join(" ");
+  }
+
+  return [
+    `Volgens mijn gegevens geldt: ${impact}.`,
+    `Dat staat op spanning met de bestuurlijke conclusie uit het besluit: ${claim}.`,
+    "Het bestuursorgaan moet kenbaar maken hoe dit punt is onderzocht, gemotiveerd en afgewogen; voor zover dat niet uit de beschikbare stukken blijkt, kan de motivering de uitkomst niet dragen.",
+  ].join(" ");
+}
+
+function determineCounterConfidence(params: {
+  decisionClaimLabel: CounterAnalysisSourceLabel;
+  hasUserImpact: boolean;
+  intakeData: IntakeFormData;
+}): CounterAnalysisEntry["confidence"] {
+  if (params.decisionClaimLabel === "letterlijk uit besluit" && params.hasUserImpact && params.intakeData.besluitAnalyseStatus === "read") {
+    return "hoog";
+  }
+
+  if (params.decisionClaimLabel === "letterlijk uit besluit" && params.hasUserImpact) {
+    return "middel";
+  }
+
+  return "laag";
+}
+
+// Deze laag spiegelt bestuurlijke claims aan concrete gebruikersimpact, zonder niet-geverifieerde feiten sterker te maken dan hun bronlabel toelaat.
+export function buildJuridischeTegenanalyse(params: {
+  flow: Flow;
+  intakeData: IntakeFormData;
+  caseType: CaseType;
+  reviewedAuthorities: ValidatedCitation[];
+}): CounterAnalysisEntry[] {
+  const { intakeData, caseType } = params;
+  const claims = getDecisionClaimCandidates(intakeData);
+  const userImpacts = getUserImpactCandidates(intakeData);
+
+  if (claims.length === 0 || userImpacts.length === 0) {
+    return [];
+  }
+
+  const maxEntries = Math.min(Math.max(claims.length, userImpacts.length), 4);
+
+  return Array.from({ length: maxEntries }, (_, index) => {
+    const claim = claims[index] ?? claims[0];
+    const userImpact = userImpacts[index] ?? userImpacts[0];
+    const principles = determineCounterPrinciples({
+      text: `${claim.statement} ${userImpact} ${intakeData.doel ?? ""}`,
+      caseType,
+    });
+    const legalTension = buildLegalTensionText({
+      decisionClaim: claim.statement,
+      userImpact,
+      principles,
+    });
+
+    return {
+      decisionClaim: ensureSentence(claim.statement),
+      userImpact: ensureSentence(userImpact),
+      legalTension,
+      legalPrinciple: principles,
+      pleadingPoint: buildPleadingPointText({
+        decisionClaim: claim.statement,
+        userImpact,
+        principles,
+      }),
+      confidence: determineCounterConfidence({
+        decisionClaimLabel: claim.label,
+        hasUserImpact: hasText(userImpact),
+        intakeData,
+      }),
+      sourceLabels: {
+        decisionClaim: claim.label,
+        userImpact: ["letterlijk uit intake", "gebruikersstelling / nog niet geverifieerd"],
+        legalTension: "afgeleide interpretatie",
+        legalPrinciple: "afgeleide interpretatie",
+        pleadingPoint: "afgeleide interpretatie",
+      },
+    };
+  });
+}
+
 function buildLabeledStatements(params: {
   flow: Flow;
   intakeData: IntakeFormData;
@@ -940,8 +1220,9 @@ function buildGroundsMatrix(params: {
   flow: Flow;
   intakeData: IntakeFormData;
   reviewedAuthorities: ValidatedCitation[];
+  juridischeTegenanalyse?: CounterAnalysisEntry[];
 }): GroundSupportEntry[] {
-  const { flow, intakeData, reviewedAuthorities } = params;
+  const { flow, intakeData, reviewedAuthorities, juridischeTegenanalyse = [] } = params;
   const decisionAnalysis = intakeData.besluitAnalyse;
   const userFacts = [
     ...splitIntoPoints(intakeData.gronden, 3),
@@ -949,6 +1230,33 @@ function buildGroundsMatrix(params: {
     ...(hasText(intakeData.eerdereBezwaargronden) ? splitIntoPoints(intakeData.eerdereBezwaargronden, 2) : []),
   ];
   const grounds: GroundSupportEntry[] = [];
+
+  if (juridischeTegenanalyse.length > 0) {
+    return juridischeTegenanalyse.slice(0, 4).map((entry, index) => ({
+      title: `Grond ${index + 1}: ${entry.legalPrinciple.join(", ")}`,
+      decisionPassage: createStatement({
+        statement: entry.decisionClaim,
+        label: primarySourceLabel(entry.sourceLabels.decisionClaim, "afgeleide interpretatie"),
+        source: "juridische tegenanalyse",
+        note: `confidence: ${entry.confidence}`,
+      }),
+      juridischProbleem: createStatement({
+        statement: entry.legalTension,
+        label: primarySourceLabel(entry.sourceLabels.legalTension, "afgeleide interpretatie"),
+        source: "juridische tegenanalyse",
+      }),
+      relevantFeitOfBewijs: createStatement({
+        statement: entry.userImpact,
+        label: primarySourceLabel(entry.sourceLabels.userImpact, "gebruikersstelling / nog niet geverifieerd"),
+        source: "juridische tegenanalyse",
+        note: "controleer of dit feit met stukken kan worden onderbouwd",
+      }),
+      jurisprudentieOfWet: selectSupportingAuthorities({
+        text: `${entry.decisionClaim} ${entry.legalTension} ${entry.legalPrinciple.join(" ")}`,
+        reviewedAuthorities,
+      }),
+    }));
+  }
 
   (decisionAnalysis?.dragendeOverwegingen ?? []).slice(0, 4).forEach((item, index) => {
     const fact = userFacts[index] ?? userFacts[0];
@@ -984,9 +1292,9 @@ function buildGroundsMatrix(params: {
   if (grounds.length === 0 && hasText(intakeData.gronden)) {
     splitIntoPoints(intakeData.gronden, flow === "woo" ? 2 : 3).forEach((point, index) => {
       grounds.push({
-        title: `Grond ${index + 1}: nog te koppelen aan concrete besluitpassage`,
+        title: `Grond ${index + 1}: intakepunt bij ontbrekende besluitcontext`,
         juridischProbleem: createStatement({
-          statement: buildDerivedProblemText(point),
+          statement: `Voor zover dit punt klopt, moet het bestuursorgaan kenbaar maken hoe dit concrete bezwaar is betrokken bij de motivering en belangenafweging: ${shorten(point, 180)}`,
           label: "afgeleide interpretatie",
           source: "grondmatrix",
         }),
@@ -1715,10 +2023,17 @@ export function buildCaseFileAnalysis(params: {
     guard,
     reviewedAuthorities,
   });
+  const juridischeTegenanalyse = buildJuridischeTegenanalyse({
+    flow,
+    intakeData,
+    caseType: guard.caseType,
+    reviewedAuthorities,
+  });
   const groundsMatrix = buildGroundsMatrix({
     flow,
     intakeData,
     reviewedAuthorities,
+    juridischeTegenanalyse,
   });
   const relevanteAanvullendeArgumenten = buildRelevantAdditionalArguments({
     intakeData,
@@ -1840,6 +2155,7 @@ export function buildCaseFileAnalysis(params: {
     toelichting: explanationParts.join(" "),
     labeledStellingen,
     groundsMatrix,
+    juridischeTegenanalyse,
     relevanteAanvullendeArgumenten,
     workflowProfile,
     jurisprudentieControle,

@@ -1,8 +1,38 @@
-import { Product, IntakeFormData } from "@/types";
+import { CounterAnalysisEntry, CounterAnalysisSourceLabel, Product, IntakeFormData } from "@/types";
 import { PromptPayload } from "@/lib/legal/types";
 
 function sanitize(value?: string | null): string {
   return (value ?? "onbekend").trim() || "onbekend";
+}
+
+function formatSourceLabels(value: CounterAnalysisSourceLabel | CounterAnalysisSourceLabel[]): string {
+  return Array.isArray(value) ? value.join(", ") : value;
+}
+
+function buildCounterAnalysisPromptSection(entries: CounterAnalysisEntry[]): string {
+  const lines = [
+    "Juridische tegenanalyse:",
+    "Gebruik deze tegenanalyse als primaire bron voor de inhoudelijke beroepsgronden. Schrijf geen losse generieke gronden als er concrete pleadingPoints beschikbaar zijn.",
+  ];
+
+  if (entries.length === 0) {
+    lines.push("- Geen juridische tegenanalyse beschikbaar; werk dan alleen met dossiergedragen besluitinformatie en concrete intakefeiten.");
+    return lines.join("\n");
+  }
+
+  entries.slice(0, 4).forEach((entry, index) => {
+    lines.push(
+      `- Entry ${index + 1}:`,
+      `  - bestuurlijke bewering: ${entry.decisionClaim} [bron: ${formatSourceLabels(entry.sourceLabels.decisionClaim)}]`,
+      `  - gebruikersbelang: ${entry.userImpact} [bron: ${formatSourceLabels(entry.sourceLabels.userImpact)}]`,
+      `  - juridisch spanningspunt: ${entry.legalTension} [bron: ${formatSourceLabels(entry.sourceLabels.legalTension)}]`,
+      `  - beginsel: ${entry.legalPrinciple.join(", ")} [bron: ${formatSourceLabels(entry.sourceLabels.legalPrinciple)}]`,
+      `  - voorgestelde beroepsgrond: ${entry.pleadingPoint} [bron: ${formatSourceLabels(entry.sourceLabels.pleadingPoint)}]`,
+      `  - confidence: ${entry.confidence}`
+    );
+  });
+
+  return lines.join("\n");
 }
 
 export function buildLetterPrompt(params: {
@@ -126,6 +156,9 @@ export function buildLetterPrompt(params: {
       : payload.decisionAnalysisStatus === "partial"
         ? "Gebruik de besluitanalyse waar die betrouwbaar is, maar formuleer voorzichtig bij onderdelen die niet volledig uit het besluit blijken."
         : "Het besluit is beperkt uitgelezen. Gebruik de aangevulde kerngegevens en de intake, maar verzin geen details uit het besluit.";
+  const counterAnalysisSection = buildCounterAnalysisPromptSection(
+    payload.caseAnalysis?.juridischeTegenanalyse ?? []
+  );
 
   const bezwaarGeschilSamenvattingInstructions =
     payload.flow === "bezwaar"
@@ -222,6 +255,8 @@ export function buildLetterPrompt(params: {
     `- Leeskwaliteit: ${payload.decisionReadability ?? "unknown"}`,
     `- Instructie: ${decisionStatusInstruction}`,
     "",
+    counterAnalysisSection,
+    "",
     "Gestructureerde promptinput (bindend):",
     JSON.stringify(promptPayload, null, 2),
     "",
@@ -231,6 +266,8 @@ export function buildLetterPrompt(params: {
     "- Reageer primair op de dragende overwegingen uit decisionAnalysis.dragendeOverwegingen. Als die ontbreken, wees zichtbaar terughoudend met algemene gronden.",
     "- Bouw geen grond op als je daarvoor geen combinatie hebt van besluitpassage, concreet juridisch probleem en relevant feit of bewijs uit intake of bijlagen.",
     "- Gebruik caseAnalysis.labeledStellingen en caseAnalysis.groundsMatrix als interne steunstructuur. Een juridische stelling zonder herleidbaar label mag niet dragend worden gebruikt.",
+    "- Gebruik caseAnalysis.juridischeTegenanalyse als primaire inhoudelijke bron voor concrete beroepsgronden wanneer die beschikbaar is.",
+    "- Schrijf geen losse generieke motiverings-, zorgvuldigheids- of evenredigheidsgronden als er concrete pleadingPoints in de juridische tegenanalyse staan.",
     "- Gebruik caseAnalysis.relevanteAanvullendeArgumenten om te beoordelen of zorgvuldigheidsbeginsel, motiveringsbeginsel, evenredigheidsbeginsel, gelijkheidsbeginsel, persoonlijke omstandigheden of financiele impact relevant maar nog onderbenut zijn.",
     "- Neem een aanvullend argument alleen op als caseAnalysis.relevanteAanvullendeArgumenten daar een concrete reden en steunfeit of passage voor geeft. Maak hiervan nooit een generieke checklist.",
     "- Als een aanvullend argument integrationMode=direct heeft, verwerk je het gewoon als onderdeel van de inhoudelijke grond en koppel je het aan het relevante dossierfeit of de relevante besluitpassage.",
@@ -247,6 +284,9 @@ export function buildLetterPrompt(params: {
     "- Gebruik jurisprudentie als kwaliteitsversterker, niet als standaardonderdeel. Als er geen duidelijke meerwaarde is, laat je jurisprudentie weg.",
     "- Noem jurisprudentie uitsluitend wanneer de uitspraak al in validatedAuthorities staat als verified en useInLetter=true. Als er geen gevalideerde jurisprudentie met duidelijke meerwaarde is, noem je geen jurisprudentie.",
     "- Gebruik geen jurisprudentie als ECLI, instantie, datum, geverifieerde kernoverweging of beoordeelde feitelijke vergelijkbaarheid ontbreken.",
+    "- Voeg geen ECLI's toe en voeg geen wetsartikelen toe tenzij die al in besluitanalyse, selectedSources of validatedAuthorities staan.",
+    "- Noem geen alternatief trace, multicriteria-analyse of rapport tenzij dat letterlijk in besluitanalyse, intake of uploads staat.",
+    "- Als een punt vooral uit intake komt, formuleer in de brief met 'volgens mijn gegevens' of 'voor zover uit de beschikbare stukken blijkt'.",
     "- Gebruik geen jurisprudentie als validatedAuthorities niet expliciet aangeeft of de uitspraak de gebruiker helpt, de overheid helpt of onderscheidbaar is.",
     "- Als een uitspraak de overheid helpt en validatedAuthorities niet expliciet distinguishable=yes aangeeft, laat je die uitspraak volledig weg.",
     "- Gebruik in een gewone burgerbrief meestal maximaal 1 tot 2 uitspraken en alleen compact gekoppeld aan een concrete grond.",

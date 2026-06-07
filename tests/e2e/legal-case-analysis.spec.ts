@@ -1560,6 +1560,101 @@ test.describe("Legal case analysis", () => {
     expect(prompt).toContain("In dit kader had het bestuursorgaan moeten...");
   });
 
+  test("33. Helperzoomtunnel krijgt concrete juridische tegenanalyse in plaats van generieke fallback", () => {
+    const intakeData = {
+      flow: "beroep_zonder_bezwaar" as const,
+      bestuursorgaan: "Gemeente Groningen",
+      categorie: "omgevingsvergunning",
+      doel: "vernietiging of aanpassing van de omgevingsvergunning",
+      gronden:
+        "Mijn woning ligt op circa 75 meter van de tunnelmond. De verkeersintensiteit stijgt volgens mijn gegevens met circa 40%. Het verkeer concentreert zich op de weg direct voor mijn woning.",
+      persoonlijkeOmstandigheden:
+        "Ik vrees aantasting van mijn woon- en leefklimaat door verkeer in de directe omgeving van mijn woning.",
+      files: {
+        besluit: {
+          name: "omgevingsvergunning-helperzoomtunnel.pdf",
+          size: 1024,
+          type: "application/pdf",
+          path: "/tmp/omgevingsvergunning-helperzoomtunnel.pdf",
+        },
+      },
+      besluitAnalyseStatus: "partial" as const,
+      besluitAnalyse: {
+        onderwerp: "Omgevingsvergunning Helperzoomtunnel",
+        rechtsgrond: "omgevingsvergunning",
+        besluitInhoud:
+          "Het project Helperzoomtunnel wordt volgens het besluit ruimtelijk aanvaardbaar geacht.",
+        bijlageReferenties: ["bijlagen bij de omgevingsvergunning"],
+      },
+    };
+    const analysis = buildCaseFileAnalysis({
+      flow: "beroep_zonder_bezwaar",
+      intakeData,
+      guard: {
+        ok: true,
+        fallbackMode: "none",
+        generationMode: "validated",
+        reasons: [],
+        hardBlockers: [],
+        softSignals: [],
+        missingFields: [],
+        caseType: "omgevingswet_vergunning",
+        route: "beroep_rechtstreeks_bestuursrecht",
+        caseTypeConfidence: 0.91,
+        routeConfidence: 0.94,
+        selectedSourceSet: {
+          ...sourceSet,
+          caseType: "omgevingswet_vergunning",
+          route: "beroep_rechtstreeks_bestuursrecht",
+        },
+        rejectedSources: [],
+        validatedAuthorities: [],
+        reviewedAuthorities: [],
+        auditTrail: [],
+      },
+      reviewedAuthorities: [],
+    });
+
+    const counterText = JSON.stringify(analysis.juridischeTegenanalyse ?? []);
+    const pleadingText = (analysis.juridischeTegenanalyse ?? [])
+      .map((entry) => entry.pleadingPoint)
+      .join(" ");
+
+    expect(analysis.juridischeTegenanalyse?.length).toBeGreaterThanOrEqual(2);
+    expect(counterText).not.toContain("vraagt om inhoudelijke toetsing");
+    expect(pleadingText).toMatch(
+      /woon- en leefklimaat|verkeersintensiteit|directe omgeving|ruimtelijke aanvaardbaarheid/i
+    );
+    expect(analysis.groundsMatrix?.[0].juridischProbleem.statement).toBe(
+      analysis.juridischeTegenanalyse?.[0].legalTension
+    );
+    expect(analysis.groundsMatrix?.[0].relevantFeitOfBewijs?.statement).toBe(
+      analysis.juridischeTegenanalyse?.[0].userImpact
+    );
+
+    const prompt = buildLetterPrompt({
+      intakeData,
+      product: "basis",
+      payload: {
+        flow: "beroep_zonder_bezwaar",
+        caseType: "omgevingswet_vergunning",
+        route: "beroep_rechtstreeks_bestuursrecht",
+        caseFacts: [],
+        decisionMeta: [],
+        decisionAnalysis: intakeData.besluitAnalyse,
+        caseAnalysis: analysis,
+        decisionAnalysisStatus: "partial",
+        decisionReadability: "medium",
+        selectedSources: [],
+        validatedAuthorities: [],
+        disallowedBehaviors: [],
+      },
+    });
+
+    expect(prompt).toContain("Juridische tegenanalyse");
+    expect(prompt).toContain("Gebruik deze tegenanalyse als primaire bron");
+  });
+
   test("27b. duidelijke procespositie voorkomt belanghebbende-aandachtspunt", () => {
     const guard = {
       ok: true,
