@@ -113,6 +113,13 @@ test.describe("Dossier quality check", () => {
     await expect(page.getByRole("heading", { name: "Dossiercheck" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Termijn" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Bewijsstukken" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Genereer/ })).toBeVisible();
+    const argumentButton = page.getByRole("button", { name: /Verder naar mogelijke argumenten/ });
+    await expect(argumentButton).toBeVisible();
+    await argumentButton.click();
+
+    await expect(page).toHaveURL(/\/argumenten\/bezwaar$/);
+    await expect(page.getByRole("heading", { name: "Mogelijke argumenten" })).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: /Onvoldoende motivering/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Overslaan" })).toBeVisible();
   });
 });

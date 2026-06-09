@@ -8,6 +8,7 @@ export { ChatBubble } from "./ChatBubble";
 export { UploadBox } from "./UploadBox";
 export { DecisionExtractionSummary } from "./DecisionExtractionSummary";
 export { DossierCheckPanel } from "./DossierCheckPanel";
+export { LegalArgumentSelector } from "./LegalArgumentSelector";
 export { LetterPreview } from "./LetterPreview";
 export { default as Container } from "./Container";
 export { ConsentCheckboxGroup } from "./ConsentCheckboxGroup";

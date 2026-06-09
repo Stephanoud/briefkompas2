@@ -99,9 +99,9 @@ function CheckoutContent() {
         <div className="my-8 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
           <h3 className="font-semibold mb-2">Volgende stap:</h3>
           <p>
-            Klik hieronder voor de Dossiercheck. Daarna kun je je{" "}
-            {activeFlow ? getFlowDocumentLabel(activeFlow) : "brief"} genereren. Je krijgt daarna
-            een bewerkbare versie die je kunt aanpassen.
+            Klik hieronder voor de Dossiercheck. Daarna kun je optioneel mogelijke argumentlijnen
+            aanvinken voordat je je {activeFlow ? getFlowDocumentLabel(activeFlow) : "brief"} genereert.
+            Je krijgt daarna een bewerkbare versie die je kunt aanpassen.
           </p>
         </div>
 

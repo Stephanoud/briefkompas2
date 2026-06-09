@@ -64,7 +64,7 @@ export default function DossierCheckPage() {
     const withFlow = { ...resolvedIntakeData, flow };
     setIntakeData(withFlow);
     writeStoredIntake(withFlow);
-    router.push(`/generate/${flow}`);
+    router.push(`/argumenten/${flow}`);
   };
 
   if (!flow) {
@@ -105,8 +105,8 @@ export default function DossierCheckPage() {
         <div className="mt-6 rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">
           <p className="font-semibold">Wat gebeurt hierna?</p>
           <p className="mt-1">
-            Als u doorgaat, maken we uw {getFlowDocumentLabel(flow)} met de gegevens uit uw intake en uploads.
-            U kunt de brief daarna nog controleren en aanpassen.
+            Als u doorgaat, kunt u optioneel aangeven welke mogelijke argumentlijnen aandacht verdienen.
+            Daarna maken we uw {getFlowDocumentLabel(flow)} met de gegevens uit uw intake en uploads.
           </p>
         </div>
 
@@ -128,7 +128,7 @@ export default function DossierCheckPage() {
             Productkeuze
           </Button>
           <Button type="button" onClick={handleGenerate} className="flex-1">
-            Genereer {getFlowDocumentLabel(flow)}
+            Verder naar mogelijke argumenten
           </Button>
         </div>
       </Card>

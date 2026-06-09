@@ -23,6 +23,15 @@ export type DecisionExtractionOverviewFieldKey =
 export type DecisionExtractionFieldStatus = "found" | "uncertain" | "missing";
 export type DossierCheckLevel = "green" | "orange" | "red";
 export type DossierCheckCategory = "termijn" | "belanghebbendheid" | "onderbouwing" | "bewijsstukken";
+export type LegalArgumentOptionId =
+  | "onvoldoende_motivering"
+  | "onzorgvuldige_voorbereiding"
+  | "onevenredige_gevolgen"
+  | "feitelijke_onjuistheden"
+  | "vertrouwensbeginsel"
+  | "gelijkheidsbeginsel"
+  | "onvoldoende_belangenafweging"
+  | "anders";
 export type DecisionProcedureKind =
   | "bezwaar"
   | "administratief_beroep"
@@ -203,6 +212,11 @@ export interface DossierQualityCheck {
   disclaimer: string;
 }
 
+export interface LegalArgumentSelection {
+  id: LegalArgumentOptionId;
+  customText?: string;
+}
+
 export interface CaseFileAnalysisSummary {
   module: string;
   procedurefase: string;
@@ -268,6 +282,7 @@ export interface IntakeFormData {
   gronden?: string;
   persoonlijkeOmstandigheden?: string;
   eerdereBezwaargronden?: string;
+  mogelijkeArgumenten?: LegalArgumentSelection[];
   wooOnderwerp?: string;
   wooPeriode?: string;
   wooDocumenten?: string;

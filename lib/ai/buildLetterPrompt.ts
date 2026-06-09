@@ -1,4 +1,8 @@
 import { CounterAnalysisEntry, CounterAnalysisSourceLabel, Product, IntakeFormData } from "@/types";
+import {
+  buildSelectedLegalArgumentPromptSection,
+  toLegalArgumentPromptItems,
+} from "@/lib/legal-argument-options";
 import { PromptPayload } from "@/lib/legal/types";
 
 function sanitize(value?: string | null): string {
@@ -120,6 +124,7 @@ export function buildLetterPrompt(params: {
   const promptPayload = {
     caseFacts: payload.caseFacts,
     decisionMeta: payload.decisionMeta,
+    selectedLegalArgumentLines: toLegalArgumentPromptItems(intakeData.mogelijkeArgumenten),
     caseAnalysis: payload.caseAnalysis,
     decisionAnalysisStatus: payload.decisionAnalysisStatus,
     decisionReadability: payload.decisionReadability,
@@ -158,6 +163,9 @@ export function buildLetterPrompt(params: {
         : "Het besluit is beperkt uitgelezen. Gebruik de aangevulde kerngegevens en de intake, maar verzin geen details uit het besluit.";
   const counterAnalysisSection = buildCounterAnalysisPromptSection(
     payload.caseAnalysis?.juridischeTegenanalyse ?? []
+  );
+  const selectedLegalArgumentSection = buildSelectedLegalArgumentPromptSection(
+    intakeData.mogelijkeArgumenten
   );
 
   const bezwaarGeschilSamenvattingInstructions =
@@ -256,6 +264,7 @@ export function buildLetterPrompt(params: {
     `- Instructie: ${decisionStatusInstruction}`,
     "",
     counterAnalysisSection,
+    ...(selectedLegalArgumentSection ? ["", selectedLegalArgumentSection] : []),
     "",
     "Gestructureerde promptinput (bindend):",
     JSON.stringify(promptPayload, null, 2),
@@ -268,6 +277,7 @@ export function buildLetterPrompt(params: {
     "- Gebruik caseAnalysis.labeledStellingen en caseAnalysis.groundsMatrix als interne steunstructuur. Een juridische stelling zonder herleidbaar label mag niet dragend worden gebruikt.",
     "- Gebruik caseAnalysis.juridischeTegenanalyse als primaire inhoudelijke bron voor concrete beroepsgronden wanneer die beschikbaar is.",
     "- Schrijf geen losse generieke motiverings-, zorgvuldigheids- of evenredigheidsgronden als er concrete pleadingPoints in de juridische tegenanalyse staan.",
+    "- Gebruik selectedLegalArgumentLines alleen als gebruikerssignaal voor mogelijke invalshoeken; verwerk zo'n lijn alleen als het dossier daar concrete steun voor geeft.",
     "- Gebruik caseAnalysis.relevanteAanvullendeArgumenten om te beoordelen of zorgvuldigheidsbeginsel, motiveringsbeginsel, evenredigheidsbeginsel, gelijkheidsbeginsel, persoonlijke omstandigheden of financiele impact relevant maar nog onderbenut zijn.",
     "- Neem een aanvullend argument alleen op als caseAnalysis.relevanteAanvullendeArgumenten daar een concrete reden en steunfeit of passage voor geeft. Maak hiervan nooit een generieke checklist.",
     "- Als een aanvullend argument integrationMode=direct heeft, verwerk je het gewoon als onderdeel van de inhoudelijke grond en koppel je het aan het relevante dossierfeit of de relevante besluitpassage.",
