@@ -21,6 +21,8 @@ export type DecisionExtractionOverviewFieldKey =
   | "onderwerp"
   | "korteSamenvatting";
 export type DecisionExtractionFieldStatus = "found" | "uncertain" | "missing";
+export type DossierCheckLevel = "green" | "orange" | "red";
+export type DossierCheckCategory = "termijn" | "belanghebbendheid" | "onderbouwing" | "bewijsstukken";
 export type DecisionProcedureKind =
   | "bezwaar"
   | "administratief_beroep"
@@ -184,6 +186,21 @@ export interface DecisionExtractionOverview {
   fields: Record<DecisionExtractionOverviewFieldKey, DecisionExtractionOverviewField>;
   missingFields: DecisionExtractionOverviewFieldKey[];
   warnings: string[];
+}
+
+export interface DossierCheckItem {
+  category: DossierCheckCategory;
+  title: string;
+  level: DossierCheckLevel;
+  label: string;
+  explanation: string;
+  signals: string[];
+}
+
+export interface DossierQualityCheck {
+  items: DossierCheckItem[];
+  generatedAt: string;
+  disclaimer: string;
 }
 
 export interface CaseFileAnalysisSummary {

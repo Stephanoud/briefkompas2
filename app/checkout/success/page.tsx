@@ -65,7 +65,7 @@ function CheckoutContent() {
     setDeliveryEmailError("");
 
     if (activeFlow) {
-      router.push(`/generate/${activeFlow}`);
+      router.push(`/dossiercheck/${activeFlow}`);
     }
   };
 
@@ -79,8 +79,8 @@ function CheckoutContent() {
           </h1>
           <p className="text-gray-600">
             {bypassPayment
-              ? "De betaalomgeving is overgeslagen. Je brief kan direct worden gegenereerd."
-              : "Dank je voor je bestelling. Je brief wordt nu gegenereerd."}
+              ? "De betaalomgeving is overgeslagen. Controleer eerst kort de kwaliteit van je dossier."
+              : "Dank je voor je bestelling. Controleer eerst kort de kwaliteit van je dossier."}
           </p>
         </div>
 
@@ -99,9 +99,9 @@ function CheckoutContent() {
         <div className="my-8 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
           <h3 className="font-semibold mb-2">Volgende stap:</h3>
           <p>
-            Klik hieronder om je {activeFlow ? getFlowDocumentLabel(activeFlow) : "brief"} te
-            genereren. Dit duurt enkele seconden. Je krijgt daarna een bewerkbare versie die je kunt
-            aanpassen.
+            Klik hieronder voor de Dossiercheck. Daarna kun je je{" "}
+            {activeFlow ? getFlowDocumentLabel(activeFlow) : "brief"} genereren. Je krijgt daarna
+            een bewerkbare versie die je kunt aanpassen.
           </p>
         </div>
 
@@ -125,7 +125,7 @@ function CheckoutContent() {
         </div>
 
         <Button onClick={handleGenerateLetter} disabled={!deliveryEmail.trim()} size="lg" className="w-full mb-4">
-          Genereer mijn brief -&gt;
+          Naar Dossiercheck -&gt;
         </Button>
 
         <Button variant="secondary" onClick={() => router.push("/")} className="w-full">
