@@ -13,6 +13,22 @@ export type DecisionReadability = "high" | "medium" | "low";
 export type LetterGenerationMode = "validated" | "dynamic_ai";
 export type RechtsmiddelenClausule = "bezwaar" | "beroep" | "zienswijze" | "onbekend";
 export type ProcedureAdvice = Flow | "bezwaarfase" | "niet_tijdig_beslissen";
+export type DecisionExtractionOverviewFieldKey =
+  | "bestuursorgaan"
+  | "besluitdatum"
+  | "procedure"
+  | "termijnEindigt"
+  | "onderwerp"
+  | "korteSamenvatting";
+export type DecisionExtractionFieldStatus = "found" | "uncertain" | "missing";
+export type DecisionProcedureKind =
+  | "bezwaar"
+  | "administratief_beroep"
+  | "rechtstreeks_beroep"
+  | "beroep_rechtbank"
+  | "zienswijze"
+  | "woo"
+  | "onbekend";
 export type AttachmentDocumentKind =
   | "bezwaarbrief"
   | "aanvulling_bezwaar"
@@ -150,6 +166,26 @@ export interface DecisionAnalysisSummary {
   correspondentieVerwijzingen?: string[];
 }
 
+export interface DecisionProcedureDetection {
+  procedure: DecisionProcedureKind;
+  confidence: number;
+  explanation: string;
+  evidence: string[];
+  suggestedFlow?: Flow | null;
+}
+
+export interface DecisionExtractionOverviewField {
+  value?: string | null;
+  confidence: number;
+  status: DecisionExtractionFieldStatus;
+}
+
+export interface DecisionExtractionOverview {
+  fields: Record<DecisionExtractionOverviewFieldKey, DecisionExtractionOverviewField>;
+  missingFields: DecisionExtractionOverviewFieldKey[];
+  warnings: string[];
+}
+
 export interface CaseFileAnalysisSummary {
   module: string;
   procedurefase: string;
@@ -208,6 +244,8 @@ export interface IntakeFormData {
   besluitAnalyse?: DecisionAnalysisSummary | null;
   besluitAnalyseStatus?: DecisionAnalysisStatus;
   besluitLeeskwaliteit?: DecisionReadability | null;
+  procedureDetectie?: DecisionProcedureDetection | null;
+  besluitExtractieOverzicht?: DecisionExtractionOverview | null;
   categorie?: string;
   doel: string;
   gronden?: string;
@@ -269,6 +307,8 @@ export interface DecisionExtractionResult {
   analysisSource?: DecisionDocumentSource | null;
   documentType?: string | null;
   decisionAnalysis?: DecisionAnalysisSummary | null;
+  procedureDetection?: DecisionProcedureDetection | null;
+  extractionOverview?: DecisionExtractionOverview | null;
   analysisStatus?: DecisionAnalysisStatus;
   readability?: DecisionReadability | null;
   extracted: boolean;

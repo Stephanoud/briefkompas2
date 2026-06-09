@@ -6,6 +6,7 @@ export { Input } from "./Input";
 export { Textarea } from "./Textarea";
 export { ChatBubble } from "./ChatBubble";
 export { UploadBox } from "./UploadBox";
+export { DecisionExtractionSummary } from "./DecisionExtractionSummary";
 export { LetterPreview } from "./LetterPreview";
 export { default as Container } from "./Container";
 export { ConsentCheckboxGroup } from "./ConsentCheckboxGroup";

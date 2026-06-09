@@ -3,6 +3,7 @@
 import { type ReactNode, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getFlowActionLabel, getFlowDocumentLabel, getFlowLabel, isFlow } from "@/lib/flow";
+import { getDecisionProcedureDetectionLabel } from "@/lib/decision-procedure";
 import { getMissingGenerationInfo, humanizeMissingInfoField } from "@/lib/intake/completeness";
 import { readStoredIntake, writeStoredIntake } from "@/lib/browser-persistence";
 import { useAppStore } from "@/lib/store";
@@ -326,11 +327,37 @@ export default function ReviewPage() {
     <div className="mx-auto max-w-2xl">
       <Card title="Overzicht van je antwoorden" subtitle={`Controleer je intake voor ${getFlowLabel(flow)}`}>
         <div className="space-y-6">
-          {intakeData.procedureAdvies && (
-            <Alert type="info" title="Procedurecheck">
-              <span className="block font-semibold">{getProcedureAdviceLabel(intakeData.procedureAdvies)}</span>
-              {intakeData.procedureReden && (
-                <span className="block pt-2">{intakeData.procedureReden}</span>
+          {(intakeData.procedureAdvies || intakeData.procedureDetectie) && (
+            <Alert
+              type={
+                intakeData.procedureDetectie?.confidence !== undefined &&
+                intakeData.procedureDetectie.confidence < 70
+                  ? "warning"
+                  : "info"
+              }
+              title="Procedurecheck"
+            >
+              <span className="block font-semibold">
+                {intakeData.procedureDetectie
+                  ? `${getDecisionProcedureDetectionLabel(intakeData.procedureDetectie)} (${intakeData.procedureDetectie.confidence}%)`
+                  : getProcedureAdviceLabel(intakeData.procedureAdvies)}
+              </span>
+              {(intakeData.procedureDetectie?.explanation || intakeData.procedureReden) && (
+                <span className="block pt-2">
+                  {intakeData.procedureDetectie?.explanation ?? intakeData.procedureReden}
+                </span>
+              )}
+              {intakeData.procedureDetectie?.evidence?.length ? (
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {intakeData.procedureDetectie.evidence.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {intakeData.procedureDetectie?.confidence !== undefined && intakeData.procedureDetectie.confidence < 70 && (
+                <span className="block pt-2 font-semibold">
+                  Wij zijn niet zeker van de procedure. Controleer dit handmatig.
+                </span>
               )}
             </Alert>
           )}

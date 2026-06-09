@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { getStepsByFlow, interpretWooPeriodAnswer, interpretWooSubjectAnswer } from "@/lib/intake-flow";
-import { inferFlowFromProcedureText } from "@/lib/flow";
+import { inferFlowFromProcedureText, usesProcedureCheck } from "@/lib/flow";
 import { determineProcedureAdvice } from "@/lib/procedure-route";
 import { assessDecisionProcedure } from "@/lib/decision-procedure";
+import { buildDecisionExtractionOverview } from "@/lib/decision-extraction-overview";
 import {
   createInitialIntakeInterpretation,
   findNextUnansweredStepIndex,
@@ -369,6 +370,7 @@ test.describe("Contextual intake interpretation", () => {
     });
 
     expect(assessment.suggestedFlow).toBe("bezwaar");
+    expect(assessment.confidence).toBeGreaterThanOrEqual(85);
     expect(assessment.shouldAutoSwitch).toBeTruthy();
   });
 
@@ -383,7 +385,8 @@ test.describe("Contextual intake interpretation", () => {
     });
 
     expect(assessment.suggestedFlow).toBe("beroep_na_bezwaar");
-    expect(assessment.confidence).toBe("high");
+    expect(assessment.detectedProcedure.procedure).toBe("beroep_rechtbank");
+    expect(assessment.confidence).toBeGreaterThanOrEqual(90);
   });
 
   test("22. documentcontrole herkent ontwerpbesluit als zienswijzeroute", () => {
@@ -398,10 +401,104 @@ test.describe("Contextual intake interpretation", () => {
     });
 
     expect(assessment.suggestedFlow).toBe("zienswijze");
-    expect(assessment.confidence).toBe("high");
+    expect(assessment.detectedProcedure.procedure).toBe("zienswijze");
+    expect(assessment.confidence).toBeGreaterThanOrEqual(90);
   });
 
-  test("23. expliciete chatcorrectie beroep wordt niet als bezwaar gelezen", () => {
+  test("23. documentcontrole herkent administratief beroep als aparte procedure", () => {
+    const assessment = assessDecisionProcedure({
+      selectedFlow: "bezwaar",
+      extraction: {
+        extracted: true,
+        extractedText:
+          "Tegen dit besluit kunt u binnen zes weken administratief beroep instellen bij gedeputeerde staten.",
+      },
+    });
+
+    expect(assessment.detectedProcedure.procedure).toBe("administratief_beroep");
+    expect(assessment.suggestedFlow).toBeNull();
+    expect(assessment.confidence).toBeGreaterThanOrEqual(80);
+  });
+
+  test("24. documentcontrole herkent WOO-gerelateerde procedure als de rechtsmiddelstap onzeker is", () => {
+    const assessment = assessDecisionProcedure({
+      selectedFlow: "bezwaar",
+      extraction: {
+        extracted: true,
+        extractedText:
+          "Besluit op uw Woo-verzoek. Een inventarislijst is bijgevoegd. Enkele documenten worden gedeeltelijk openbaar gemaakt wegens persoonlijke beleidsopvattingen.",
+      },
+    });
+
+    expect(assessment.detectedProcedure.procedure).toBe("woo");
+    expect(assessment.suggestedFlow).toBeNull();
+    expect(assessment.confidence).toBeGreaterThanOrEqual(70);
+  });
+
+  test("25. procedurecheck staat aan voor besluitroutes en uit voor WOO-verzoek", () => {
+    expect(usesProcedureCheck("bezwaar")).toBeTruthy();
+    expect(usesProcedureCheck("beroep_zonder_bezwaar")).toBeTruthy();
+    expect(usesProcedureCheck("beroep_na_bezwaar")).toBeTruthy();
+    expect(usesProcedureCheck("zienswijze")).toBeTruthy();
+    expect(usesProcedureCheck("woo")).toBeFalsy();
+  });
+
+  test("26. extractie-overzicht toont confidence en ontbrekende kerngegevens", () => {
+    const overview = buildDecisionExtractionOverview(
+      {
+        extracted: true,
+        datumBesluit: "12 mei 2026",
+        samenvatting: "De gemeente heeft vergunning verleend voor een uitrit.",
+        analysisStatus: "read",
+        readability: "high",
+        decisionAnalysis: {
+          bestuursorgaan: "Gemeente Groningen",
+          onderwerp: "Omgevingsvergunning uitrit",
+        },
+        procedureDetection: {
+          procedure: "bezwaar",
+          confidence: 92,
+          explanation: "Het document bevat een bezwaarclausule.",
+          evidence: ["bezwaarclausule aanwezig"],
+          suggestedFlow: "bezwaar",
+        },
+      },
+      {
+        termijnEindigt: {
+          value: "23 juni 2026",
+          confidence: 88,
+        },
+        onderwerp: {
+          confidence: 91,
+        },
+      }
+    );
+
+    expect(overview.fields.bestuursorgaan.status).toBe("found");
+    expect(overview.fields.procedure.value).toBe("Bezwaar");
+    expect(overview.fields.termijnEindigt.value).toBe("23 juni 2026");
+    expect(overview.fields.termijnEindigt.confidence).toBe(88);
+    expect(overview.missingFields).toEqual([]);
+    expect(overview.warnings).toEqual([]);
+  });
+
+  test("27. extractie-overzicht waarschuwt bij ontbrekende besluitdatum, termijn en bestuursorgaan", () => {
+    const overview = buildDecisionExtractionOverview({
+      extracted: false,
+      analysisStatus: "failed",
+      readability: "low",
+    });
+
+    expect(overview.fields.besluitdatum.status).toBe("missing");
+    expect(overview.fields.termijnEindigt.status).toBe("missing");
+    expect(overview.fields.bestuursorgaan.status).toBe("missing");
+    expect(overview.missingFields).toContain("besluitdatum");
+    expect(overview.missingFields).toContain("termijnEindigt");
+    expect(overview.missingFields).toContain("bestuursorgaan");
+    expect(overview.warnings).toHaveLength(3);
+  });
+
+  test("28. expliciete chatcorrectie beroep wordt niet als bezwaar gelezen", () => {
     expect(inferFlowFromProcedureText("Ik wil beroep indienen, niet bezwaar maken")).toBe(
       "beroep_zonder_bezwaar"
     );

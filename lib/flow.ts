@@ -20,8 +20,7 @@ export function isWooFlow(flow: Flow): boolean {
 }
 
 export function usesProcedureCheck(flow: Flow): boolean {
-  void flow;
-  return false;
+  return flow !== "woo";
 }
 
 export function requiresDecisionUpload(flow: Flow): boolean {

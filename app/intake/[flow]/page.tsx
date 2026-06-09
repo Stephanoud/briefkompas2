@@ -38,8 +38,11 @@ import {
 } from "@/lib/intake/interpretation";
 import {
   assessDecisionProcedure,
+  getDecisionProcedureDetectionLabel,
+  isLowConfidenceProcedureAssessment,
   type DecisionProcedureAssessment,
 } from "@/lib/decision-procedure";
+import { buildDecisionExtractionOverview } from "@/lib/decision-extraction-overview";
 import {
   getFlowActionLabel,
   getFlowDocumentLabel,
@@ -49,6 +52,7 @@ import {
   requiresDecisionUpload,
   supportsDecisionUpload,
   resolveFlowFromRoute,
+  usesProcedureCheck,
 } from "@/lib/flow";
 import { extractTextFromPdfInBrowser } from "@/lib/client-pdf-extraction";
 import { ChatMessage, DecisionExtractionResult, Flow, IntakeFormData } from "@/types";
@@ -57,6 +61,7 @@ import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { Textarea } from "@/components/Textarea";
 import { UploadBox } from "@/components/UploadBox";
+import { DecisionExtractionSummary } from "@/components/DecisionExtractionSummary";
 import { ChatBubble } from "@/components/ChatBubble";
 import { StepHeader, Alert } from "@/components";
 
@@ -440,6 +445,7 @@ function hasReadableDecisionExtraction(data: Partial<IntakeFormData>): boolean {
       data.besluitSamenvatting ||
       data.besluitTekst ||
       data.besluitAnalyse ||
+      (data.procedureDetectie && data.procedureDetectie.procedure !== "onbekend") ||
       data.besluitDocumentType
   );
 }
@@ -489,6 +495,27 @@ function getDocumentAnalysisPresentation(status?: IntakeFormData["besluitAnalyse
     type: "warning" as const,
     description:
       "Het besluit kon niet volledig worden uitgelezen. Vul ontbrekende kerngegevens verplicht aan of upload een scherpere afbeelding of doorzoekbare PDF.",
+  };
+}
+
+function buildDecisionExtractionFromIntakeData(
+  data: Partial<IntakeFormData>,
+  warning?: string | null
+): DecisionExtractionResult {
+  return {
+    datumBesluit: data.datumBesluit ?? null,
+    kenmerk: data.kenmerk ?? null,
+    samenvatting: data.besluitSamenvatting ?? null,
+    extractedText: data.besluitTekst ?? null,
+    analysisSource: data.besluitBronType ?? null,
+    documentType: data.besluitDocumentType ?? null,
+    decisionAnalysis: data.besluitAnalyse ?? null,
+    procedureDetection: data.procedureDetectie ?? null,
+    extractionOverview: data.besluitExtractieOverzicht ?? null,
+    analysisStatus: data.besluitAnalyseStatus,
+    readability: data.besluitLeeskwaliteit ?? null,
+    extracted: hasReadableDecisionExtraction(data),
+    warning: warning ?? null,
   };
 }
 
@@ -650,13 +677,33 @@ export default function IntakePage() {
     hasDecisionFile &&
     !hasPendingMetadataConfirmations &&
     currentStepIndex >= steps.length;
-  const totalSteps = steps.length + (supportsDecisionUpload(activeFlow) ? 1 : 0);
-  const visibleStepNumber =
-    supportsDecisionUpload(activeFlow) && !hasDecisionFile
+  const decisionUploadStepOffset = supportsDecisionUpload(activeFlow) ? 2 : 0;
+  const totalSteps = steps.length + decisionUploadStepOffset;
+  const visibleStepNumber = !supportsDecisionUpload(activeFlow)
+    ? questionsCompleted
+      ? steps.length
+      : Math.min(currentStepIndex + 1, steps.length)
+    : !hasDecisionFile
       ? 1
-      : (supportsDecisionUpload(activeFlow) ? 1 : 0) +
-        (questionsCompleted ? steps.length : Math.min(currentStepIndex + 1, steps.length));
+      : hasPendingMetadataConfirmations
+        ? 2
+        : decisionUploadStepOffset +
+          (questionsCompleted ? steps.length : Math.min(currentStepIndex + 1, steps.length));
   const isIntakeReady = stage === "substantive" && questionsCompleted;
+  const displayedRouteCheckResult = useMemo(() => {
+    if (routeCheckResult) {
+      return routeCheckResult;
+    }
+
+    if (!usesProcedureCheck(activeFlow) || !hasReadableDecisionExtraction(intakeData)) {
+      return null;
+    }
+
+    return assessDecisionProcedure({
+      selectedFlow: activeFlow,
+      extraction: buildDecisionExtractionFromIntakeData(intakeData, documentAnalysisMessage || null),
+    });
+  }, [activeFlow, documentAnalysisMessage, intakeData, routeCheckResult]);
 
   useEffect(() => {
     if (hasCheckedStoredProgressRef.current) {
@@ -933,7 +980,7 @@ export default function IntakePage() {
         : undefined,
       intakeData: params.semanticPreviewData,
       missingFacts: params.interpretedTurn.state.missingFacts,
-      routeExplanation: routeCheckResult?.explanation,
+      routeExplanation: displayedRouteCheckResult?.explanation,
       documentAnalysisMessage,
     };
 
@@ -1670,6 +1717,8 @@ export default function IntakePage() {
     let extractedAnalysis = intakeData.besluitAnalyse;
     let extractedAnalysisStatus = intakeData.besluitAnalyseStatus;
     let extractedReadability = intakeData.besluitLeeskwaliteit;
+    let extractedProcedureDetection = intakeData.procedureDetectie;
+    let extractedOverview = intakeData.besluitExtractieOverzicht;
     let analysisNote = "";
     let serverExtractionFailed = false;
 
@@ -1702,6 +1751,8 @@ export default function IntakePage() {
         extractedAnalysis = extraction.decisionAnalysis ?? extractedAnalysis;
         extractedAnalysisStatus = extraction.analysisStatus ?? extractedAnalysisStatus;
         extractedReadability = extraction.readability ?? extractedReadability;
+        extractedProcedureDetection = extraction.procedureDetection ?? extractedProcedureDetection;
+        extractedOverview = extraction.extractionOverview ?? extractedOverview;
         analysisNote = extraction.warning ?? "";
       } else if (payload && "error" in payload && payload.error) {
         serverExtractionFailed = true;
@@ -1797,6 +1848,8 @@ export default function IntakePage() {
       besluitAnalyse: extractedAnalysis,
       besluitAnalyseStatus: extractedAnalysisStatus,
       besluitLeeskwaliteit: extractedReadability,
+      procedureDetectie: extractedProcedureDetection,
+      besluitExtractieOverzicht: extractedOverview ?? null,
       files: {
         ...intakeData.files,
         besluit: {
@@ -1807,6 +1860,13 @@ export default function IntakePage() {
         },
       },
     } as Partial<IntakeFormData>;
+    updatedData = {
+      ...updatedData,
+      besluitExtractieOverzicht: buildDecisionExtractionOverview(
+        buildDecisionExtractionFromIntakeData(updatedData, analysisNote),
+        extractedOverview
+      ),
+    };
 
     const extractedPriorObjectionGrounds = getReferencedDocumentFieldValue(
       "zoek dat in het document",
@@ -1820,24 +1880,12 @@ export default function IntakePage() {
       };
     }
 
-    if (supportsDecisionUpload(activeFlow)) {
+    if (usesProcedureCheck(activeFlow)) {
       const hasReadableExtraction = hasReadableDecisionExtraction(updatedData);
       const assessment = hasReadableExtraction
         ? assessDecisionProcedure({
             selectedFlow: activeFlow,
-            extraction: {
-              datumBesluit: updatedData.datumBesluit ?? null,
-              kenmerk: updatedData.kenmerk ?? null,
-              samenvatting: updatedData.besluitSamenvatting ?? null,
-              extractedText: updatedData.besluitTekst ?? null,
-              analysisSource: updatedData.besluitBronType ?? null,
-              documentType: updatedData.besluitDocumentType ?? null,
-              decisionAnalysis: updatedData.besluitAnalyse ?? null,
-              analysisStatus: updatedData.besluitAnalyseStatus,
-              readability: updatedData.besluitLeeskwaliteit ?? null,
-              extracted: hasReadableExtraction,
-              warning: analysisNote || null,
-            },
+            extraction: buildDecisionExtractionFromIntakeData(updatedData, analysisNote),
           })
         : null;
       const extractionNotes: string[] = [];
@@ -1898,8 +1946,9 @@ export default function IntakePage() {
     router.push(`/review/${activeFlow}`);
   };
 
-  const procedureSummaryLabel =
-    routeCheckResult?.suggestedFlow ? getFlowActionLabel(routeCheckResult.suggestedFlow) : null;
+  const procedureSummaryLabel = displayedRouteCheckResult
+    ? getDecisionProcedureDetectionLabel(displayedRouteCheckResult.detectedProcedure)
+    : null;
   const shouldShowAnswerInput =
     stage === "route_confirm" ||
     (stage === "substantive" &&
@@ -1997,6 +2046,41 @@ export default function IntakePage() {
       )}
     </div>
   ) : null;
+  const procedureAssessmentPanel = displayedRouteCheckResult ? (
+    <Alert
+      type={
+        isLowConfidenceProcedureAssessment(displayedRouteCheckResult)
+          ? "warning"
+          : displayedRouteCheckResult.alertType
+      }
+      title="Waarschijnlijk juiste procedure"
+    >
+      {procedureSummaryLabel && (
+        <span className="block text-base font-semibold text-[var(--foreground)]">
+          {"\u2713"} {procedureSummaryLabel} ({displayedRouteCheckResult.confidence}%)
+        </span>
+      )}
+      <span className="block pt-2">{displayedRouteCheckResult.explanation}</span>
+      {displayedRouteCheckResult.evidence.length > 0 && (
+        <>
+          <span className="block pt-3 font-semibold text-[var(--foreground)]">
+            Wij vonden in het besluit:
+          </span>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {displayedRouteCheckResult.evidence.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {isLowConfidenceProcedureAssessment(displayedRouteCheckResult) && (
+        <span className="block pt-3 font-semibold">
+          Wij zijn niet zeker van de procedure. Controleer dit handmatig.
+        </span>
+      )}
+      <span className="block pt-3">Controleer dit altijd zelf.</span>
+    </Alert>
+  ) : null;
 
   return (
     <div className="max-w-2xl mx-auto min-h-[78vh] flex flex-col justify-center">
@@ -2034,7 +2118,7 @@ export default function IntakePage() {
 
             {isAnalyzingDocument && (
               <Alert type="info" title="Besluit wordt geanalyseerd">
-                We lezen datum, kenmerk en relevante tekst uit je bestand en controleren of bezwaar, beroep of zienswijze waarschijnlijk past.
+                We lezen datum, kenmerk en relevante tekst uit je bestand en controleren welke procedure waarschijnlijk past.
               </Alert>
             )}
 
@@ -2048,71 +2132,12 @@ export default function IntakePage() {
               </Alert>
             )}
 
-            {(intakeData.besluitSamenvatting || intakeData.besluitTekst || intakeData.besluitAnalyse) && (
-              <Alert type="success" title="Uit het besluit gehaald">
-                <div className="space-y-2 text-sm">
-                  {intakeData.bestuursorgaan && (
-                    <p>
-                      <span className="font-semibold text-[var(--foreground)]">Bestuursorgaan:</span>{" "}
-                      {intakeData.bestuursorgaan}
-                    </p>
-                  )}
-                  {intakeData.besluitAnalyse?.onderwerp && (
-                    <p>
-                      <span className="font-semibold text-[var(--foreground)]">Onderwerp:</span>{" "}
-                      {intakeData.besluitAnalyse.onderwerp}
-                    </p>
-                  )}
-                  {intakeData.besluitAnalyse?.rechtsgrond && (
-                    <p>
-                      <span className="font-semibold text-[var(--foreground)]">Rechtsgrond:</span>{" "}
-                      {intakeData.besluitAnalyse.rechtsgrond}
-                    </p>
-                  )}
-                  {intakeData.besluitAnalyse?.besluitInhoud && (
-                    <p>
-                      <span className="font-semibold text-[var(--foreground)]">Besluitinhoud:</span>{" "}
-                      {intakeData.besluitAnalyse.besluitInhoud}
-                    </p>
-                  )}
-                  {intakeData.besluitAnalyse?.termijnen && (
-                    <p>
-                      <span className="font-semibold text-[var(--foreground)]">Termijnen:</span>{" "}
-                      {intakeData.besluitAnalyse.termijnen}
-                    </p>
-                  )}
-                  {intakeData.besluitSamenvatting && (
-                    <p>
-                      <span className="font-semibold text-[var(--foreground)]">Samenvatting:</span>{" "}
-                      {intakeData.besluitSamenvatting}
-                    </p>
-                  )}
-                  {intakeData.besluitTekst && (
-                    <p>
-                      <span className="font-semibold text-[var(--foreground)]">Tekstfragment:</span>{" "}
-                      {truncatePreview(intakeData.besluitTekst, 320)}
-                    </p>
-                  )}
-                </div>
-              </Alert>
+            {intakeData.besluitExtractieOverzicht && (
+              <DecisionExtractionSummary overview={intakeData.besluitExtractieOverzicht} />
             )}
-          </div>
-        )}
 
-        {routeCheckResult && (
-          <Alert type={routeCheckResult.alertType} title={routeCheckResult.title}>
-            {procedureSummaryLabel && (
-              <span className="block font-semibold text-[var(--foreground)]">
-                Waarschijnlijke route: {procedureSummaryLabel}
-              </span>
-            )}
-            <span className="block pt-2">{routeCheckResult.explanation}</span>
-            {routeCheckResult.shouldConfirmSwitch && (
-              <span className="block pt-2 text-xs opacity-80">
-                Bevestig hieronder of je wilt wisselen van route.
-              </span>
-            )}
-          </Alert>
+            {procedureAssessmentPanel}
+          </div>
         )}
 
         <div className="bg-white rounded-xl border border-[var(--border)] p-4 mb-4 h-96 overflow-y-auto chat-container">

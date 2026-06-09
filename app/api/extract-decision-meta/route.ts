@@ -6,8 +6,14 @@ import {
   DecisionAnalysisSummary,
   DecisionDocumentSource,
   DecisionExtractionResult,
+  DecisionProcedureDetection,
   DecisionReadability,
 } from "@/types";
+import {
+  inferDecisionProcedureDetection,
+  sanitizeDecisionProcedureDetection,
+} from "@/lib/decision-procedure";
+import { buildDecisionExtractionOverview } from "@/lib/decision-extraction-overview";
 
 export const runtime = "nodejs";
 
@@ -82,6 +88,9 @@ type LlmDecisionAnalysis = {
   samenvatting?: string | null;
   datumBesluit?: string | null;
   kenmerk?: string | null;
+  termijnEindigt?: string | null;
+  termijnEinde?: string | null;
+  deadline?: string | null;
   documentType?: string | null;
   bestuursorgaan?: string | null;
   onderwerp?: string | null;
@@ -99,6 +108,10 @@ type LlmDecisionAnalysis = {
   bijlagenLijst?: string[] | null;
   inventarislijstOfDocumenttabel?: string[] | null;
   correspondentieVerwijzingen?: string[] | null;
+  procedureDetectie?: unknown | null;
+  procedureDetection?: unknown | null;
+  extractieOverzicht?: unknown | null;
+  decisionExtractionOverview?: unknown | null;
   leeskwaliteit?: DecisionReadability | null;
 };
 
@@ -523,6 +536,59 @@ function buildDecisionAnalysis(analysis?: LlmDecisionAnalysis | null): DecisionA
   return normalized;
 }
 
+function mergeRawExtractionOverview(rawOverview: unknown, termijnEindigt?: string | null): unknown {
+  const deadline = sanitizeOptionalString(termijnEindigt, 120);
+  if (!deadline) {
+    return rawOverview ?? null;
+  }
+
+  const rawRecord =
+    rawOverview && typeof rawOverview === "object" && !Array.isArray(rawOverview)
+      ? { ...(rawOverview as Record<string, unknown>) }
+      : {};
+  const rawFields =
+    rawRecord.fields && typeof rawRecord.fields === "object" && !Array.isArray(rawRecord.fields)
+      ? { ...(rawRecord.fields as Record<string, unknown>) }
+      : rawRecord.velden && typeof rawRecord.velden === "object" && !Array.isArray(rawRecord.velden)
+        ? { ...(rawRecord.velden as Record<string, unknown>) }
+        : null;
+
+  if (rawFields) {
+    const existingField =
+      rawFields.termijnEindigt &&
+      typeof rawFields.termijnEindigt === "object" &&
+      !Array.isArray(rawFields.termijnEindigt)
+        ? (rawFields.termijnEindigt as Record<string, unknown>)
+        : {};
+
+    return {
+      ...rawRecord,
+      fields: {
+        ...rawFields,
+        termijnEindigt: {
+          ...existingField,
+          value: deadline,
+        },
+      },
+    };
+  }
+
+  const existingField =
+    rawRecord.termijnEindigt &&
+    typeof rawRecord.termijnEindigt === "object" &&
+    !Array.isArray(rawRecord.termijnEindigt)
+      ? (rawRecord.termijnEindigt as Record<string, unknown>)
+      : {};
+
+  return {
+    ...rawRecord,
+    termijnEindigt: {
+      ...existingField,
+      value: deadline,
+    },
+  };
+}
+
 function mergeAnalyses(
   primary: LlmDecisionAnalysis | null,
   secondary: LlmDecisionAnalysis | null
@@ -541,6 +607,14 @@ function mergeAnalyses(
     samenvatting: primary?.samenvatting ?? secondary?.samenvatting ?? null,
     datumBesluit: primary?.datumBesluit ?? secondary?.datumBesluit ?? null,
     kenmerk: primary?.kenmerk ?? secondary?.kenmerk ?? null,
+    termijnEindigt:
+      primary?.termijnEindigt ??
+      primary?.termijnEinde ??
+      primary?.deadline ??
+      secondary?.termijnEindigt ??
+      secondary?.termijnEinde ??
+      secondary?.deadline ??
+      null,
     documentType: primary?.documentType ?? secondary?.documentType ?? null,
     bestuursorgaan: primary?.bestuursorgaan ?? secondary?.bestuursorgaan ?? null,
     onderwerp: primary?.onderwerp ?? secondary?.onderwerp ?? null,
@@ -558,6 +632,18 @@ function mergeAnalyses(
     bijlagenLijst: primary?.bijlagenLijst ?? secondary?.bijlagenLijst ?? null,
     inventarislijstOfDocumenttabel: primary?.inventarislijstOfDocumenttabel ?? secondary?.inventarislijstOfDocumenttabel ?? null,
     correspondentieVerwijzingen: primary?.correspondentieVerwijzingen ?? secondary?.correspondentieVerwijzingen ?? null,
+    procedureDetectie:
+      primary?.procedureDetectie ??
+      primary?.procedureDetection ??
+      secondary?.procedureDetectie ??
+      secondary?.procedureDetection ??
+      null,
+    extractieOverzicht:
+      primary?.extractieOverzicht ??
+      primary?.decisionExtractionOverview ??
+      secondary?.extractieOverzicht ??
+      secondary?.decisionExtractionOverview ??
+      null,
     leeskwaliteit: primary?.leeskwaliteit ?? secondary?.leeskwaliteit ?? null,
   };
 }
@@ -581,7 +667,7 @@ async function analyzeDecisionText(openai: OpenAI, extractedText: string): Promi
   const completion = await openai.chat.completions.create({
     model: TEXT_ANALYSIS_MODEL,
     temperature: 0,
-    max_tokens: 1500,
+    max_tokens: 1900,
     messages: [
       {
         role: "system",
@@ -592,7 +678,7 @@ async function analyzeDecisionText(openai: OpenAI, extractedText: string): Promi
         role: "user",
         content:
           "Analyseer de volgende besluittekst en geef uitsluitend JSON terug in dit formaat:\n" +
-          '{"samenvatting":"...", "datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "rechtsmiddelenclausule":"...", "dragendeOverwegingen":[{"passage":"...", "duiding":"..."}], "wettelijkeGrondslagen":["..."], "procedureleAanwijzingen":["..."], "beleidsReferenties":["..."], "jurisprudentieReferenties":["..."], "bijlageReferenties":["..."], "bijlagenLijst":["..."], "inventarislijstOfDocumenttabel":["..."], "correspondentieVerwijzingen":["..."], "aandachtspunten":["..."], "leeskwaliteit":"high|medium|low"}\n\n' +
+          '{"samenvatting":"...", "datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "termijnEindigt":"...", "rechtsmiddelenclausule":"...", "dragendeOverwegingen":[{"passage":"...", "duiding":"..."}], "wettelijkeGrondslagen":["..."], "procedureleAanwijzingen":["..."], "beleidsReferenties":["..."], "jurisprudentieReferenties":["..."], "bijlageReferenties":["..."], "bijlagenLijst":["..."], "inventarislijstOfDocumenttabel":["..."], "correspondentieVerwijzingen":["..."], "aandachtspunten":["..."], "procedureDetectie":{"procedure":"bezwaar|administratief_beroep|rechtstreeks_beroep|beroep_rechtbank|zienswijze|woo|onbekend","confidence":0,"uitleg":"...","evidence":["..."],"suggestedFlow":"bezwaar|zienswijze|beroep_zonder_bezwaar|beroep_na_bezwaar|null"}, "extractieOverzicht":{"bestuursorgaan":{"confidence":0},"besluitdatum":{"confidence":0},"procedure":{"confidence":0},"termijnEindigt":{"confidence":0},"onderwerp":{"confidence":0},"korteSamenvatting":{"confidence":0}}, "leeskwaliteit":"high|medium|low"}\n\n' +
           "Regels:\n" +
           `${LEGAL_RECOGNITION_GUIDANCE}\n` +
           "- samenvatting: maximaal 650 tekens.\n" +
@@ -602,6 +688,7 @@ async function analyzeDecisionText(openai: OpenAI, extractedText: string): Promi
           "- rechtsgrond: alleen invullen als wet of regeling expliciet zichtbaar is.\n" +
           "- besluitInhoud: kern van wat is besloten, maximaal 350 tekens.\n" +
           "- termijnen: alleen als een bezwaar-, betaal- of hersteltermijn zichtbaar is.\n" +
+          "- termijnEindigt: alleen invullen als in het besluit zelf een concrete einddatum/einddag staat. Bereken geen bezwaar-, beroeps- of zienswijzetermijn.\n" +
           "- rechtsmiddelenclausule: neem de kern van de clausule op als bezwaar, beroep, zienswijze of beroep niet tijdig expliciet in het document staat.\n" +
           "- dragendeOverwegingen: maximaal 4 objecten. Neem alleen overwegingen op die de uitkomst werkelijk dragen, met een korte letterlijke of bijna-letterlijke passage en een korte duiding.\n" +
           "- wettelijkeGrondslagen: noem alleen wetten, artikelen of regelingen die expliciet in het document staan.\n" +
@@ -612,6 +699,14 @@ async function analyzeDecisionText(openai: OpenAI, extractedText: string): Promi
           "- correspondentieVerwijzingen: noteer alleen expliciete verwijzingen naar eerdere correspondentie, brieven of e-mails.\n" +
           "- beleidsReferenties, jurisprudentieReferenties en bijlageReferenties: noteer alleen expliciete verwijzingen uit het document.\n" +
           "- aandachtspunten: maximaal 4 korte punten met potentieel relevante kwesties of onzekerheden.\n" +
+          "- procedureDetectie: bepaal de waarschijnlijk juiste procedure op basis van rechtsmiddelenclausule en documentcontext. Kies alleen uit bezwaar, administratief_beroep, rechtstreeks_beroep, beroep_rechtbank, zienswijze, woo of onbekend.\n" +
+          "- procedureDetectie.confidence: geheel getal 0-100. Wees lager dan 70 bij twijfel of als de clausule ontbreekt.\n" +
+          "- procedureDetectie.uitleg: maximaal 280 tekens, kort waarom deze procedure waarschijnlijk is.\n" +
+          "- procedureDetectie.evidence: maximaal 5 korte signalen uit het document, bijvoorbeeld bezwaarclausule aanwezig, termijn van 6 weken genoemd, besluit van bestuursorgaan, beslissing op bezwaar, rechtbank genoemd, administratief beroep genoemd, ontwerpbesluit, zienswijze, WOO-besluit.\n" +
+          "- procedureDetectie.suggestedFlow: gebruik bezwaar, zienswijze, beroep_zonder_bezwaar of beroep_na_bezwaar als dit aansluit op een bestaande BriefKompas-route; gebruik null bij administratief_beroep, woo of onbekend.\n" +
+          "- extractieOverzicht: geef per onderdeel alleen een confidence-score 0-100. Gebruik 0 als het onderdeel ontbreekt, lager dan 70 bij twijfel en 70 of hoger alleen als het onderdeel betrouwbaar uit de tekst blijkt.\n" +
+          "- Procedure in extractieOverzicht is alleen documentherkenning op basis van clausule/context, geen definitief juridisch advies.\n" +
+          "- Houd expliciet rekening met Omgevingswet, Participatiewet, Wmo, WIA/WW, gemeentelijke vergunningen en WOO-besluiten.\n" +
           "- Let extra op woorden als geen besluit, niet-ontvankelijk, ingebrekestelling, concreet zicht op legalisatie, sociaal netwerk, definitieve berekening, zoekslag, gedeeltelijke openbaarmaking, opzet en grove schuld.\n" +
           "- leeskwaliteit: high, medium of low.\n" +
           "- Geen markdown, geen code fences, alleen JSON.\n\n" +
@@ -638,7 +733,7 @@ async function extractFromImageWithOpenAI(
   const completion = await openai.chat.completions.create({
     model: IMAGE_ANALYSIS_MODEL,
     temperature: 0,
-    max_tokens: 2600,
+    max_tokens: 3000,
     messages: [
       {
         role: "system",
@@ -652,7 +747,7 @@ async function extractFromImageWithOpenAI(
             type: "text",
             text:
               "Lees deze afbeelding van een besluit en geef uitsluitend JSON terug in dit formaat:\n" +
-              '{"extractedText":"...", "samenvatting":"...", "datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "rechtsmiddelenclausule":"...", "dragendeOverwegingen":[{"passage":"...", "duiding":"..."}], "wettelijkeGrondslagen":["..."], "procedureleAanwijzingen":["..."], "beleidsReferenties":["..."], "jurisprudentieReferenties":["..."], "bijlageReferenties":["..."], "bijlagenLijst":["..."], "inventarislijstOfDocumenttabel":["..."], "correspondentieVerwijzingen":["..."], "aandachtspunten":["..."], "leeskwaliteit":"high|medium|low"}\n\n' +
+              '{"extractedText":"...", "samenvatting":"...", "datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "termijnEindigt":"...", "rechtsmiddelenclausule":"...", "dragendeOverwegingen":[{"passage":"...", "duiding":"..."}], "wettelijkeGrondslagen":["..."], "procedureleAanwijzingen":["..."], "beleidsReferenties":["..."], "jurisprudentieReferenties":["..."], "bijlageReferenties":["..."], "bijlagenLijst":["..."], "inventarislijstOfDocumenttabel":["..."], "correspondentieVerwijzingen":["..."], "aandachtspunten":["..."], "procedureDetectie":{"procedure":"bezwaar|administratief_beroep|rechtstreeks_beroep|beroep_rechtbank|zienswijze|woo|onbekend","confidence":0,"uitleg":"...","evidence":["..."],"suggestedFlow":"bezwaar|zienswijze|beroep_zonder_bezwaar|beroep_na_bezwaar|null"}, "extractieOverzicht":{"bestuursorgaan":{"confidence":0},"besluitdatum":{"confidence":0},"procedure":{"confidence":0},"termijnEindigt":{"confidence":0},"onderwerp":{"confidence":0},"korteSamenvatting":{"confidence":0}}, "leeskwaliteit":"high|medium|low"}\n\n' +
               "Regels:\n" +
               `${LEGAL_RECOGNITION_GUIDANCE}\n` +
               "- extractedText: relevante zichtbare tekst in leesvolgorde, maximaal 6000 tekens.\n" +
@@ -665,6 +760,15 @@ async function extractFromImageWithOpenAI(
               "- neem ook zichtbare bijlagenlijsten, inventarislijsten, documenttabellen en verwijzingen naar eerdere correspondentie mee.\n" +
               "- neem beleidsverwijzingen ook mee als ze alleen in voetnoot of eindnoot staan.\n" +
               "- rechtsgrond en termijnen alleen invullen als die zichtbaar zijn.\n" +
+              "- termijnEindigt: alleen invullen als in het besluit zelf een concrete einddatum/einddag zichtbaar is. Bereken geen bezwaar-, beroeps- of zienswijzetermijn.\n" +
+              "- procedureDetectie: bepaal de waarschijnlijk juiste procedure op basis van rechtsmiddelenclausule en documentcontext. Kies alleen uit bezwaar, administratief_beroep, rechtstreeks_beroep, beroep_rechtbank, zienswijze, woo of onbekend.\n" +
+              "- procedureDetectie.confidence: geheel getal 0-100. Wees lager dan 70 bij twijfel of als de clausule ontbreekt.\n" +
+              "- procedureDetectie.uitleg: maximaal 280 tekens, kort waarom deze procedure waarschijnlijk is.\n" +
+              "- procedureDetectie.evidence: maximaal 5 korte zichtbare signalen, bijvoorbeeld bezwaarclausule aanwezig, termijn van 6 weken genoemd, besluit van bestuursorgaan, beslissing op bezwaar, rechtbank genoemd, administratief beroep genoemd, ontwerpbesluit, zienswijze, WOO-besluit.\n" +
+              "- procedureDetectie.suggestedFlow: gebruik bezwaar, zienswijze, beroep_zonder_bezwaar of beroep_na_bezwaar als dit aansluit op een bestaande BriefKompas-route; gebruik null bij administratief_beroep, woo of onbekend.\n" +
+              "- extractieOverzicht: geef per onderdeel alleen een confidence-score 0-100. Gebruik 0 als het onderdeel ontbreekt, lager dan 70 bij twijfel en 70 of hoger alleen als het onderdeel betrouwbaar zichtbaar is.\n" +
+              "- Procedure in extractieOverzicht is alleen documentherkenning op basis van clausule/context, geen definitief juridisch advies.\n" +
+              "- Houd expliciet rekening met Omgevingswet, Participatiewet, Wmo, WIA/WW, gemeentelijke vergunningen en WOO-besluiten.\n" +
               "- let extra op woorden als geen besluit, niet-ontvankelijk, ingebrekestelling, concreet zicht op legalisatie, sociaal netwerk, definitieve berekening, zoekslag, gedeeltelijke openbaarmaking, opzet en grove schuld.\n" +
               "- aandachtspunten: maximaal 4 korte punten.\n" +
               "- Geen markdown, geen code fences, alleen JSON.",
@@ -698,7 +802,7 @@ async function extractKeyFieldsFromImageWithOpenAI(
   const completion = await openai.chat.completions.create({
     model: IMAGE_ANALYSIS_MODEL,
     temperature: 0,
-    max_tokens: 1500,
+    max_tokens: 1800,
     messages: [
       {
         role: "system",
@@ -712,7 +816,7 @@ async function extractKeyFieldsFromImageWithOpenAI(
             type: "text",
             text:
               "De afbeelding kan deels onleesbaar zijn. Bepaal toch zo betrouwbaar mogelijk de kerngegevens en geef alleen JSON terug in dit formaat:\n" +
-              '{"datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "rechtsmiddelenclausule":"...", "dragendeOverwegingen":[{"passage":"...", "duiding":"..."}], "wettelijkeGrondslagen":["..."], "procedureleAanwijzingen":["..."], "beleidsReferenties":["..."], "jurisprudentieReferenties":["..."], "bijlageReferenties":["..."], "bijlagenLijst":["..."], "inventarislijstOfDocumenttabel":["..."], "correspondentieVerwijzingen":["..."], "aandachtspunten":["..."], "leeskwaliteit":"high|medium|low"}\n\n' +
+              '{"datumBesluit":"...", "kenmerk":"...", "documentType":"...", "bestuursorgaan":"...", "onderwerp":"...", "rechtsgrond":"...", "besluitInhoud":"...", "termijnen":"...", "termijnEindigt":"...", "rechtsmiddelenclausule":"...", "dragendeOverwegingen":[{"passage":"...", "duiding":"..."}], "wettelijkeGrondslagen":["..."], "procedureleAanwijzingen":["..."], "beleidsReferenties":["..."], "jurisprudentieReferenties":["..."], "bijlageReferenties":["..."], "bijlagenLijst":["..."], "inventarislijstOfDocumenttabel":["..."], "correspondentieVerwijzingen":["..."], "aandachtspunten":["..."], "procedureDetectie":{"procedure":"bezwaar|administratief_beroep|rechtstreeks_beroep|beroep_rechtbank|zienswijze|woo|onbekend","confidence":0,"uitleg":"...","evidence":["..."],"suggestedFlow":"bezwaar|zienswijze|beroep_zonder_bezwaar|beroep_na_bezwaar|null"}, "extractieOverzicht":{"bestuursorgaan":{"confidence":0},"besluitdatum":{"confidence":0},"procedure":{"confidence":0},"termijnEindigt":{"confidence":0},"onderwerp":{"confidence":0},"korteSamenvatting":{"confidence":0}}, "leeskwaliteit":"high|medium|low"}\n\n' +
               "Regels:\n" +
               `${LEGAL_RECOGNITION_GUIDANCE}\n` +
               "- Vul alleen gegevens in die echt zichtbaar of sterk afleidbaar zijn.\n" +
@@ -720,6 +824,15 @@ async function extractKeyFieldsFromImageWithOpenAI(
               "- dragendeOverwegingen en overige referenties alleen opnemen als die echt zichtbaar zijn.\n" +
               "- neem waar zichtbaar ook rechtsmiddelenclausule, bijlagenlijst, inventarislijst of documenttabel en correspondentieverwijzingen mee.\n" +
               "- neem beleidsverwijzingen ook mee als ze alleen in voetnoot of eindnoot staan.\n" +
+              "- termijnEindigt: alleen invullen als in het besluit zelf een concrete einddatum/einddag zichtbaar is. Bereken geen bezwaar-, beroeps- of zienswijzetermijn.\n" +
+              "- procedureDetectie: bepaal de waarschijnlijk juiste procedure op basis van rechtsmiddelenclausule en documentcontext. Kies alleen uit bezwaar, administratief_beroep, rechtstreeks_beroep, beroep_rechtbank, zienswijze, woo of onbekend.\n" +
+              "- procedureDetectie.confidence: geheel getal 0-100. Wees lager dan 70 bij twijfel of als de clausule ontbreekt.\n" +
+              "- procedureDetectie.uitleg: maximaal 280 tekens, kort waarom deze procedure waarschijnlijk is.\n" +
+              "- procedureDetectie.evidence: maximaal 5 korte zichtbare signalen, bijvoorbeeld bezwaarclausule aanwezig, termijn van 6 weken genoemd, besluit van bestuursorgaan, beslissing op bezwaar, rechtbank genoemd, administratief beroep genoemd, ontwerpbesluit, zienswijze, WOO-besluit.\n" +
+              "- procedureDetectie.suggestedFlow: gebruik bezwaar, zienswijze, beroep_zonder_bezwaar of beroep_na_bezwaar als dit aansluit op een bestaande BriefKompas-route; gebruik null bij administratief_beroep, woo of onbekend.\n" +
+              "- extractieOverzicht: geef per onderdeel alleen een confidence-score 0-100. Gebruik 0 als het onderdeel ontbreekt, lager dan 70 bij twijfel en 70 of hoger alleen als het onderdeel betrouwbaar zichtbaar is.\n" +
+              "- Procedure in extractieOverzicht is alleen documentherkenning op basis van clausule/context, geen definitief juridisch advies.\n" +
+              "- Houd expliciet rekening met Omgevingswet, Participatiewet, Wmo, WIA/WW, gemeentelijke vergunningen en WOO-besluiten.\n" +
               "- let extra op woorden als geen besluit, niet-ontvankelijk, ingebrekestelling, concreet zicht op legalisatie, sociaal netwerk, definitieve berekening, zoekslag, gedeeltelijke openbaarmaking, opzet en grove schuld.\n" +
               "- aandachtspunten: maximaal 4 korte punten.\n" +
               "- Geen markdown, geen code fences, alleen JSON.",
@@ -832,16 +945,19 @@ function buildResponse(params: {
   samenvatting?: string | null;
   datumBesluit?: string | null;
   kenmerk?: string | null;
+  termijnEindigt?: string | null;
   analysisSource: DecisionDocumentSource;
   documentType?: string | null;
   decisionAnalysis?: DecisionAnalysisSummary | null;
+  procedureDetection?: DecisionProcedureDetection | unknown | null;
+  extractionOverview?: unknown | null;
   analysisStatus: DecisionAnalysisStatus;
   readability: DecisionReadability;
   warning?: string | null;
 }): DecisionExtractionResult {
   const extractedText = trimLength(params.extractedText, MAX_EXTRACTED_TEXT_LENGTH);
 
-  return {
+  const response: DecisionExtractionResult = {
     datumBesluit: params.datumBesluit ?? null,
     kenmerk: params.kenmerk ?? null,
     samenvatting: params.samenvatting ? trimLength(params.samenvatting, 650) : null,
@@ -858,6 +974,21 @@ function buildResponse(params: {
       Boolean(params.kenmerk) ||
       Boolean(params.samenvatting),
     warning: params.warning ?? null,
+  };
+
+  const responseWithProcedure: DecisionExtractionResult = {
+    ...response,
+    procedureDetection:
+      sanitizeDecisionProcedureDetection(params.procedureDetection, response) ??
+      inferDecisionProcedureDetection(response),
+  };
+
+  return {
+    ...responseWithProcedure,
+    extractionOverview: buildDecisionExtractionOverview(
+      responseWithProcedure,
+      mergeRawExtractionOverview(params.extractionOverview, params.termijnEindigt)
+    ),
   };
 }
 
@@ -922,9 +1053,15 @@ export async function POST(req: NextRequest) {
           samenvatting: sanitizeOptionalString(analysis?.samenvatting, 650),
           datumBesluit: sanitizeOptionalString(analysis?.datumBesluit, 120) ?? fallbackDate,
           kenmerk: sanitizeOptionalString(analysis?.kenmerk, 120) ?? fallbackKenmerk,
+          termijnEindigt:
+            sanitizeOptionalString(analysis?.termijnEindigt, 120) ??
+            sanitizeOptionalString(analysis?.termijnEinde, 120) ??
+            sanitizeOptionalString(analysis?.deadline, 120),
           analysisSource: "pdf",
           documentType: sanitizeOptionalString(analysis?.documentType, 120),
           decisionAnalysis,
+          procedureDetection: analysis?.procedureDetectie ?? analysis?.procedureDetection,
+          extractionOverview: analysis?.extractieOverzicht ?? analysis?.decisionExtractionOverview,
           analysisStatus,
           readability,
           warning: extractedText.trim()
@@ -948,6 +1085,7 @@ export async function POST(req: NextRequest) {
           analysisSource: "image",
           documentType: null,
           decisionAnalysis: null,
+          procedureDetection: null,
           analysisStatus: "failed",
           readability: "low",
           warning: buildQualityWarning({
@@ -992,9 +1130,15 @@ export async function POST(req: NextRequest) {
             sanitizeOptionalString(mergedAnalysis?.datumBesluit, 120) ?? extractDateFromText(extractedText),
           kenmerk:
             sanitizeOptionalString(mergedAnalysis?.kenmerk, 120) ?? extractKenmerkFromText(extractedText),
+          termijnEindigt:
+            sanitizeOptionalString(mergedAnalysis?.termijnEindigt, 120) ??
+            sanitizeOptionalString(mergedAnalysis?.termijnEinde, 120) ??
+            sanitizeOptionalString(mergedAnalysis?.deadline, 120),
           analysisSource: "image",
           documentType: sanitizeOptionalString(mergedAnalysis?.documentType, 120),
           decisionAnalysis,
+          procedureDetection: mergedAnalysis?.procedureDetectie ?? mergedAnalysis?.procedureDetection,
+          extractionOverview: mergedAnalysis?.extractieOverzicht ?? mergedAnalysis?.decisionExtractionOverview,
           analysisStatus,
           readability,
           warning: buildQualityWarning({
@@ -1015,6 +1159,7 @@ export async function POST(req: NextRequest) {
           analysisSource: "image",
           documentType: null,
           decisionAnalysis: null,
+          procedureDetection: null,
           analysisStatus: "failed",
           readability: "low",
           warning: buildQualityWarning({
