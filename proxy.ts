@@ -5,7 +5,6 @@ import {
   normalizeNextPath,
   resolveAuthenticatedPath,
   TEST_AUTH_COOKIE_NAME,
-  TEST_AUTH_DEFAULT_PATH,
 } from "@/lib/testAuth";
 
 export function proxy(request: NextRequest) {
@@ -33,7 +32,7 @@ export function proxy(request: NextRequest) {
   }
 
   if (isAuthenticated) {
-    return NextResponse.redirect(new URL(TEST_AUTH_DEFAULT_PATH, request.url));
+    return NextResponse.next();
   }
 
   const loginUrl = new URL("/login", request.url);
